@@ -3,21 +3,13 @@ import path from "path";
 import os from "os";
 import { ClientAdapter, McpServer, Agent } from "../types.js";
 
-export class CursorAdapter implements ClientAdapter {
-  id = "cursor";
-  name = "Cursor";
-
-  private get baseDir() {
-    const homeDir = process.env.SYNCTAX_HOME || os.homedir();
-    return path.join(homeDir, ".cursor");
-  }
+export class OpenCodeAdapter implements ClientAdapter {
+  id = "opencode";
+  name = "OpenCode";
 
   private get configPath() {
-    return path.join(this.baseDir, "mcp.json");
-  }
-
-  private get modesPath() {
-    return path.join(this.baseDir, "modes.json");
+    const homeDir = process.env.SYNCTAX_HOME || os.homedir();
+    return path.join(homeDir, ".config", "opencode", "config.json");
   }
 
   async detect(): Promise<boolean> {
@@ -38,8 +30,8 @@ export class CursorAdapter implements ClientAdapter {
     try {
       const data = await fs.readFile(this.configPath, "utf-8");
       const parsed = JSON.parse(data);
-      const mcpServers = parsed.mcpServers || {};
 
+      const mcpServers = parsed.mcp || {};
       for (const [key, val] of Object.entries<any>(mcpServers)) {
         result.mcps[key] = {
           command: val.command,
@@ -47,25 +39,18 @@ export class CursorAdapter implements ClientAdapter {
           env: val.env,
         };
       }
-    } catch (error: any) {
-      if (error.code !== "ENOENT") throw new Error(`Failed to read Cursor MCP config: ${error.message}`);
-    }
 
-    try {
-      const data = await fs.readFile(this.modesPath, "utf-8");
-      const parsed = JSON.parse(data);
-      const modes = parsed.modes || {};
-
-      for (const [key, val] of Object.entries<any>(modes)) {
+      const agents = parsed.agents || {};
+      for (const [key, val] of Object.entries<any>(agents)) {
         result.agents[key] = {
           name: val.name || key,
           description: val.description,
-          prompt: val.systemPrompt || "",
+          prompt: val.system_message || "",
           model: val.model
         };
       }
     } catch (error: any) {
-      if (error.code !== "ENOENT") throw new Error(`Failed to read Cursor Modes config: ${error.message}`);
+      if (error.code !== "ENOENT") throw new Error(`Failed to read OpenCode config: ${error.message}`);
     }
 
     return result;
@@ -83,34 +68,26 @@ export class CursorAdapter implements ClientAdapter {
       // file might not exist
     }
 
-    existing.mcpServers = resources.mcps;
-    await fs.writeFile(this.configPath, JSON.stringify(existing, null, 2), "utf-8");
+    existing.mcp = resources.mcps;
 
-    // Write agents as modes
     if (Object.keys(resources.agents).length > 0) {
-      let existingModes: any = { modes: {} };
-      try {
-        const data = await fs.readFile(this.modesPath, "utf-8");
-        existingModes = JSON.parse(data);
-      } catch (e) {
-        // file might not exist
-      }
-
+      existing.agents = existing.agents || {};
       for (const [key, agent] of Object.entries(resources.agents)) {
-        existingModes.modes[key] = {
+        existing.agents[key] = {
           name: agent.name,
           description: agent.description,
-          systemPrompt: agent.prompt,
+          system_message: agent.prompt,
           model: agent.model
         };
       }
-      await fs.writeFile(this.modesPath, JSON.stringify(existingModes, null, 2), "utf-8");
     }
+
+    await fs.writeFile(this.configPath, JSON.stringify(existing, null, 2), "utf-8");
   }
 
 
   getMemoryFileName(): string {
-    return ".cursorrules";
+    return "AGENTS.md";
   }
 
   async readMemory(projectDir: string): Promise<string | null> {
