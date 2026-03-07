@@ -1,0 +1,36 @@
+{
+  "name": "synctax",
+  "version": "0.1.0",
+  "description": "Terminal-first canonical config sync CLI for agentic developer tools",
+  "type": "commonjs",
+  "bin": {
+    "synctax": "dist/cli.js"
+  },
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "npm run build && node --test tests/*.test.js",
+    "start": "node dist/cli.js"
+  },
+  "keywords": [
+    "cli",
+    "agents",
+    "sync",
+    "mcp",
+    "synctax"
+  ],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "@types/node": "24.3.0",
+    "typescript": "5.9.2"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Kaos599/Synctax.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Kaos599/Synctax/issues"
+  },
+  "homepage": "https://github.com/Kaos599/Synctax#readme"
+}
