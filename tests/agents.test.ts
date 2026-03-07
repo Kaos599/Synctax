@@ -90,4 +90,24 @@ describe("Agents Domain", () => {
     const data = await adapter.read();
     expect(data.agents["Planner"].prompt).toBe("Plan my tasks");
   });
+
+
+  it("ClaudeAdapter ignores non-agent extensions but captures various .agent/.claude extensions", async () => {
+    const adapter = new ClaudeAdapter();
+    const agentsDir = path.join(mockHome, ".claude", "agents");
+    await fs.mkdir(agentsDir, { recursive: true });
+
+    // Pre-seed an agent
+    const content = `---\nname: ValidAgent\n---\nYou are a coding expert.\n`;
+    await fs.writeFile(path.join(agentsDir, "ValidAgent.md"), content);
+    await fs.writeFile(path.join(agentsDir, "AnotherAgent.agent"), content);
+    await fs.writeFile(path.join(agentsDir, "ClaudeAgent.claude"), content);
+    await fs.writeFile(path.join(agentsDir, "BadAgent.txt"), content);
+
+    const data = await adapter.read();
+    expect(data.agents["ValidAgent"]).toBeDefined();
+    expect(data.agents["AnotherAgent"]).toBeDefined();
+    expect(data.agents["ClaudeAgent"]).toBeDefined();
+    expect(data.agents["BadAgent"]).toBeUndefined();
+  });
 });

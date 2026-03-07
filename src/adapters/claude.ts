@@ -77,8 +77,8 @@ export class ClaudeAdapter implements ClientAdapter {
     try {
       const files = await fs.readdir(this.agentsDir);
       for (const file of files) {
-        if (!file.endsWith(".md")) continue;
-        const name = file.replace(".md", "");
+        if (!file.match(/\.(md|agent|claude)$/)) continue;
+        const name = file.replace(/\.(md|agent|claude)$/, "");
         const content = await fs.readFile(path.join(this.agentsDir, file), "utf-8");
 
         let prompt = content;
@@ -116,8 +116,8 @@ export class ClaudeAdapter implements ClientAdapter {
     try {
       const files = await fs.readdir(this.skillsDir);
       for (const file of files) {
-        if (!file.endsWith(".md")) continue;
-        const name = file.replace(".md", "");
+        if (!file.match(/\.(md|agent|claude)$/)) continue;
+        const name = file.replace(/\.(md|agent|claude)$/, "");
         const rawContent = await fs.readFile(path.join(this.skillsDir, file), "utf-8");
 
         let content = rawContent;
