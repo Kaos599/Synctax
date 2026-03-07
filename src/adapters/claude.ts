@@ -155,7 +155,7 @@ export class ClaudeAdapter implements ClientAdapter {
     return result;
   }
 
-  async write(resources: { mcps: Record<string, McpServer>, agents: Record<string, Agent>, skills: Record<string, Skill>, permissions?: Permissions }): Promise<void> {
+  async write(resources: { mcps: Record<string, McpServer>, agents: Record<string, Agent>, skills: Record<string, Skill>, permissions?: Permissions, models?: Models, prompts?: Prompts }): Promise<void> {
     const dir = path.dirname(this.configPath);
     await fs.mkdir(dir, { recursive: true }).catch(() => {});
 
