@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 import { Command } from "commander";
 import { printBanner } from "../src/banner.js";
-import { initCommand, listCommand, statusCommand, syncCommand, memorySyncCommand, pullCommand, moveCommand, profileCreateCommand, profileUseCommand } from "../src/commands.js";
+import { initCommand, listCommand, statusCommand, syncCommand, memorySyncCommand, pullCommand, moveCommand, profileCreateCommand, profileUseCommand, addCommand, removeCommand, restoreCommand, doctorCommand, profilePullCommand, profilePublishCommand } from "../src/commands.js";
 
 printBanner();
 
@@ -94,4 +94,55 @@ profileCmd
   .option("--no-sync", "Switch profile without syncing clients yet")
   .action((name, options) => {
     profileUseCommand(name, options);
+  });
+
+program
+  .command("add <domain> <name>")
+  .description("Add a resource")
+  .option("--command <cmd>")
+  .option("--push")
+  .action((domain, name, options) => {
+    addCommand(domain, name, options);
+  });
+
+program
+  .command("remove <domain> <name>")
+  .description("Remove a resource")
+  .option("--dry-run")
+  .option("--from-all")
+  .action((domain, name, options) => {
+    removeCommand(domain, name, options);
+  });
+
+program
+  .command("restore")
+  .description("Restore config from backup")
+  .option("--from <timestamp>")
+  .action((options) => {
+    restoreCommand(options);
+  });
+
+program
+  .command("doctor")
+  .description("Diagnose common issues")
+  .option("--fix", "Attempt to automatically fix detected issues")
+  .action((options) => {
+    doctorCommand(options);
+  });
+
+profileCmd
+  .command("pull <url>")
+  .description("Download and import a profile from a remote URL")
+  .option("--name <name>", "Override the profile name")
+  .option("--apply", "Immediately switch to and sync")
+  .action((url, options) => {
+    profilePullCommand(url, options);
+  });
+
+profileCmd
+  .command("publish <name>")
+  .description("Export a profile to a shareable JSON file")
+  .option("--output <path>", "File path to save the export")
+  .action((name, options) => {
+    profilePublishCommand(name, options);
   });

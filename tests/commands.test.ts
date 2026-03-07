@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { pullCommand, moveCommand } from "../src/commands.js";
 import { ConfigManager } from "../src/config.js";
 import { adapters } from "../src/adapters/index.js";
@@ -23,14 +23,14 @@ describe("CLI Commands", () => {
       version: 1,
       source: "claude",
       clients: {},
-      resources: { mcps: {}, agents: {} }
+      resources: { mcps: {}, agents: {}, skills: {}, permissions: { allowedPaths: [] }, models: {}, prompts: {}, credentials: { envRefs: {} } }
     });
 
     adapters["mockclient"] = {
       id: "mockclient",
       name: "Mock Client",
       detect: async () => true,
-      read: async () => ({
+      read: async () => ({ permissions: { allowedPaths: [] },  skills: {},
         mcps: {
           "mock-mcp": { command: "mock" }
         },
@@ -77,5 +77,92 @@ describe("CLI Commands", () => {
 
     const config = await manager.read();
     expect(config.resources.mcps["moveable-mcp"].scope).toBe("global");
+  });
+
+
+  it("addCommand and removeCommand modify resources", async () => {
+    const { addCommand, removeCommand } = await import("../src/commands.js");
+
+    await addCommand("mcp", "new-mcp", { command: "node", args: ["index.js"] });
+    let config = await manager.read();
+    expect(config.resources.mcps["new-mcp"].command).toBe("node");
+
+    await removeCommand("mcp", "new-mcp", {});
+    config = await manager.read();
+    expect(config.resources.mcps["new-mcp"]).toBeUndefined();
+  });
+
+  it("restoreCommand uses newest backup", async () => {
+    const { restoreCommand } = await import("../src/commands.js");
+
+    await manager.write({
+      version: 1, source: "claude", clients: {}, resources: { mcps: { "old": { command: "old" } }, agents: {}, skills: {}, permissions: { allowedPaths: [], deniedPaths: [], allowedCommands: [], deniedCommands: [], networkAllow: false } }
+    } as any);
+    await manager.backup();
+
+    // overwrite with bad data
+    await manager.write({
+      version: 1, source: "claude", clients: {}, resources: { mcps: { "bad": { command: "bad" } }, agents: {}, skills: {}, permissions: { allowedPaths: [], deniedPaths: [], allowedCommands: [], deniedCommands: [], networkAllow: false } }
+    } as any);
+
+    await restoreCommand({});
+
+    const config = await manager.read();
+    expect(config.resources.mcps["old"]).toBeDefined();
+    expect(config.resources.mcps["bad"]).toBeUndefined();
+  });
+
+
+  it("doctorCommand diagnoses setup issues", async () => {
+    const { doctorCommand } = await import("../src/commands.js");
+
+    // Create an invalid scenario
+    await manager.write({
+      version: 1, source: "mockclient", clients: { "missingclient": { enabled: true } }, resources: { mcps: { "old": { command: "old" } }, agents: {}, skills: {}, permissions: { allowedPaths: [], deniedPaths: [], allowedCommands: [], deniedCommands: [], networkAllow: false } }
+    } as any);
+
+    // Should return false due to missing client
+    const result = await doctorCommand({});
+    expect(result).toBe(false);
+
+    // Valid scenario
+    await manager.write({
+      version: 1, source: "mockclient", clients: { "mockclient": { enabled: true } }, resources: { mcps: {}, agents: {}, skills: {}, permissions: { allowedPaths: [], deniedPaths: [], allowedCommands: [], deniedCommands: [], networkAllow: false } }
+    } as any);
+
+    expect(await doctorCommand({})).toBe(true);
+  });
+
+  it("profilePullCommand downloads profile and profilePublishCommand strips secrets", async () => {
+    const { profilePullCommand, profilePublishCommand } = await import("../src/commands.js");
+
+    // Mock fetch for pull
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({
+         name: "team-profile",
+         profile: { include: ["team-mcp"], exclude: [] },
+         resources: { mcps: { "team-mcp": { command: "echo" } } }
+      })
+    } as any);
+
+    await profilePullCommand("https://dummy.url");
+    const config = await manager.read();
+    expect(config.profiles["team-profile"].include).toContain("team-mcp");
+    expect(config.resources.mcps["team-mcp"].command).toBe("echo");
+
+    // Add credentials and verify publish strips them
+    await manager.write({
+      ...config,
+      resources: {
+        ...config.resources,
+        credentials: { envRefs: { "SECRET": "VALUE" } }
+      }
+    });
+
+    const published = await profilePublishCommand("team-profile");
+    expect(published).toBeDefined();
+    // Assuming the implementation returns the stripped JSON object
+    expect(published.resources.credentials).toBeUndefined();
   });
 });

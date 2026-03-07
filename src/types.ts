@@ -7,7 +7,6 @@ export const McpServerSchema = z.object({
   transport: z.enum(["stdio", "sse", "http"]).optional(),
   scope: z.enum(["global", "local"]).optional(),
 });
-
 export type McpServer = z.infer<typeof McpServerSchema>;
 
 export const AgentSchema = z.object({
@@ -18,15 +17,46 @@ export const AgentSchema = z.object({
   tools: z.array(z.string()).optional(),
   scope: z.enum(["global", "local"]).optional(),
 });
-
 export type Agent = z.infer<typeof AgentSchema>;
+
+export const SkillSchema = z.object({
+  name: z.string(),
+  description: z.string().optional(),
+  trigger: z.string().optional(),
+  content: z.string(),
+  scope: z.enum(["global", "local"]).optional(),
+});
+export type Skill = z.infer<typeof SkillSchema>;
+
+export const PermissionsSchema = z.object({
+  allowedPaths: z.array(z.string()).default([]),
+  deniedPaths: z.array(z.string()).default([]),
+  allowedCommands: z.array(z.string()).default([]),
+  deniedCommands: z.array(z.string()).default([]),
+  networkAllow: z.boolean().default(false),
+});
+export type Permissions = z.infer<typeof PermissionsSchema>;
+
+export const CredentialsSchema = z.object({
+  envRefs: z.record(z.string(), z.string()).default({}),
+});
+export type Credentials = z.infer<typeof CredentialsSchema>;
+
+export const ModelsSchema = z.object({
+  defaultModel: z.string().optional(),
+});
+export type Models = z.infer<typeof ModelsSchema>;
+
+export const PromptsSchema = z.object({
+  globalSystemPrompt: z.string().optional(),
+});
+export type Prompts = z.infer<typeof PromptsSchema>;
 
 export const ProfileSchema = z.object({
   include: z.array(z.string()).optional(),
   exclude: z.array(z.string()).optional(),
   extends: z.string().optional(),
 });
-
 export type Profile = z.infer<typeof ProfileSchema>;
 
 export const ConfigSchema = z.object({
@@ -43,17 +73,37 @@ export const ConfigSchema = z.object({
   resources: z.object({
     mcps: z.record(z.string(), McpServerSchema).default({}),
     agents: z.record(z.string(), AgentSchema).default({}),
+    skills: z.record(z.string(), SkillSchema).default({}),
+    permissions: PermissionsSchema.default({}),
+    models: ModelsSchema.optional(),
+    prompts: PromptsSchema.optional(),
+    credentials: CredentialsSchema.optional(),
   }).default({}),
 });
-
 export type Config = z.infer<typeof ConfigSchema>;
 
 export interface ClientAdapter {
   id: string;
   name: string;
   detect(): Promise<boolean>;
-  read(): Promise<{ mcps: Record<string, McpServer>, agents: Record<string, Agent> }>;
-  write(resources: { mcps: Record<string, McpServer>, agents: Record<string, Agent> }): Promise<void>;
+  read(): Promise<{
+    mcps: Record<string, McpServer>,
+    agents: Record<string, Agent>,
+    skills: Record<string, Skill>,
+    permissions?: Permissions,
+    models?: Models,
+    prompts?: Prompts,
+    credentials?: Credentials
+  }>;
+  write(resources: {
+    mcps: Record<string, McpServer>,
+    agents: Record<string, Agent>,
+    skills: Record<string, Skill>,
+    permissions?: Permissions,
+    models?: Models,
+    prompts?: Prompts,
+    credentials?: Credentials
+  }): Promise<void>;
 
   // Memory (Context files)
   getMemoryFileName(): string;

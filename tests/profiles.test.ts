@@ -22,7 +22,7 @@ describe("Profiles Domain", () => {
       profiles: {
         default: {}
       },
-      resources: { mcps: {}, agents: {} }
+      resources: { mcps: {}, agents: {}, skills: {}, permissions: { allowedPaths: [] }, models: {}, prompts: {}, credentials: { envRefs: {} } }
     });
   });
 
@@ -49,7 +49,7 @@ describe("Profiles Domain", () => {
         default: {},
         personal: {}
       },
-      resources: { mcps: {}, agents: {} }
+      resources: { mcps: {}, agents: {}, skills: {}, permissions: { allowedPaths: [] }, models: {}, prompts: {}, credentials: { envRefs: {} } }
     });
 
     await profileUseCommand("personal", { noSync: true });
