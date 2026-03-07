@@ -1,0 +1,134 @@
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+import { initCommand, memorySyncCommand, moveCommand, doctorCommand } from "../src/commands.js";
+import { ConfigManager } from "../src/config.js";
+import { GithubCopilotAdapter } from "../src/adapters/github-copilot.js";
+import { GithubCopilotCliAdapter } from "../src/adapters/github-copilot-cli.js";
+import { ClaudeAdapter } from "../src/adapters/claude.js";
+import { adapters } from "../src/adapters/index.js";
+import fs from "fs/promises";
+import path from "path";
+import os from "os";
+
+describe("TDD Sanity Checks for Copilot Flags", () => {
+  let mockHome: string;
+  let manager: ConfigManager;
+
+  beforeEach(async () => {
+    mockHome = await fs.mkdtemp(path.join(os.tmpdir(), "synctax-sanity-test-"));
+    process.env.SYNCTAX_HOME = mockHome;
+    manager = new ConfigManager();
+  });
+
+  afterEach(async () => {
+    await fs.rm(mockHome, { recursive: true, force: true });
+    delete process.env.SYNCTAX_HOME;
+    vi.clearAllMocks();
+  });
+
+  it("sanity: initCommand sets up base config correctly", async () => {
+    // Suppress console output
+    const consoleSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+
+    await initCommand({ force: true, detect: false, source: "mock" });
+
+    const config = await manager.read();
+    expect(config.version).toBe(1);
+    expect(config.source).toBe("mock");
+    expect(config.resources).toBeDefined();
+
+    consoleSpy.mockRestore();
+  });
+
+  it("sanity: moveCommand locates and updates scopes safely", async () => {
+    const consoleSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    await manager.write({
+      version: 1, source: "mock",
+      clients: {},
+      resources: {
+        mcps: { "test-mcp": { command: "test", scope: "local" } },
+        agents: {}, skills: {}, permissions: { allowedPaths: [], deniedPaths: [], allowedCommands: [], deniedCommands: [], networkAllow: false }
+      }
+    } as any);
+
+    await moveCommand("mcp", "test-mcp", { toGlobal: true });
+
+    const config = await manager.read();
+    expect(config.resources.mcps["test-mcp"].scope).toBe("global");
+    consoleSpy.mockRestore();
+  });
+
+  it("sanity: memorySyncCommand correctly iterates across enabled clients", async () => {
+    const consoleSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    const cwdSpy = vi.spyOn(process, "cwd").mockReturnValue(mockHome);
+    const cwd = process.cwd();
+
+    await manager.write({
+      version: 1, source: "claude",
+      clients: { "cursor": { enabled: true } },
+      resources: { mcps: {}, agents: {}, skills: {}, permissions: { allowedPaths: [], deniedPaths: [], allowedCommands: [], deniedCommands: [], networkAllow: false } }
+    } as any);
+
+    // Mock a local CLAUDE.md file
+    const sourceAdapter = new ClaudeAdapter();
+    await fs.writeFile(path.join(cwd, "CLAUDE.md"), "Sanity Context");
+
+    await memorySyncCommand({ source: "claude", dryRun: false });
+
+    // Validate the cursor rules were written
+    const cursorRules = await fs.readFile(path.join(cwd, ".cursorrules"), "utf-8");
+    expect(cursorRules).toBe("Sanity Context");
+
+    // Clean up current dir
+    await fs.rm(path.join(cwd, "CLAUDE.md"));
+    await fs.rm(path.join(cwd, ".cursorrules"));
+    consoleSpy.mockRestore();
+    cwdSpy.mockRestore();
+  });
+
+  it("sanity: GithubCopilotAdapter initializes properly", async () => {
+    const adapter = new GithubCopilotAdapter();
+    expect(adapter.id).toBe("github-copilot");
+    expect(adapter.name).toBe("Github Copilot");
+  });
+
+  it("sanity: GithubCopilotCliAdapter initializes properly", async () => {
+    const adapter = new GithubCopilotCliAdapter();
+    expect(adapter.id).toBe("github-copilot-cli");
+    expect(adapter.name).toBe("Github Copilot CLI");
+  });
+
+  it("sanity: ClaudeAdapter read parses advanced config blocks", async () => {
+    const adapter = new ClaudeAdapter();
+    const settingsPath = path.join(mockHome, ".claude", "settings.json");
+    await fs.mkdir(path.dirname(settingsPath), { recursive: true });
+
+    await fs.writeFile(settingsPath, JSON.stringify({
+      preferredModel: "claude-3-opus",
+      customInstructions: "Sanity Prompts",
+      allow_paths: ["/safe/path"]
+    }));
+
+    const data = await adapter.read();
+    expect(data.models?.defaultModel).toBe("claude-3-opus");
+    expect(data.prompts?.globalSystemPrompt).toBe("Sanity Prompts");
+    expect(data.permissions?.allowedPaths).toContain("/safe/path");
+  });
+
+  it("sanity: doctorCommand executes full cycle without crashing", async () => {
+    const consoleSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+
+    await manager.write({
+      version: 1, source: "claude",
+      clients: { "claude": { enabled: true } },
+      resources: { mcps: {}, agents: {}, skills: {}, permissions: { allowedPaths: [], deniedPaths: [], allowedCommands: [], deniedCommands: [], networkAllow: false } }
+    } as any);
+
+    // Provide the config so doctor passes
+    await fs.mkdir(path.join(mockHome, ".claude"));
+    await fs.writeFile(path.join(mockHome, ".claude", "settings.json"), "{}");
+
+    const result = await doctorCommand({});
+    expect(result).toBe(true);
+    consoleSpy.mockRestore();
+  });
+});
