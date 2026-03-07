@@ -1,0 +1,14 @@
+# Synctax Intelligence Journal
+
+## Core Development Patterns
+1. **RED-Green TDD Approach**: Every single new feature, adapter, command, or bug fix *must* be prefaced with a failing unit test in the `tests/` directory. Once the test predictably fails on the exact logic being targeted, write the code to pass it safely (GREEN).
+2. **Checksheets for Reviews**: When a bot (or Copilot) assigns a PR comment or throws an automated complaint, verify it via TDD checks. Do not blindly assume the bot's flagged lines are erroneous without proving it in a sandbox.
+
+## Security & Path Integrity
+1. **Sandbox Mocking**: Do not ever mutate global config paths directly in tests. Always bind logic back to `process.env.SYNCTAX_HOME || os.homedir()`. During tests, set `SYNCTAX_HOME` to an ephemeral `os.tmpdir()` sandbox.
+2. **Current Working Directory (CWD)**: When dealing with contextual rules (like `.cursorrules` targeting `process.cwd()`), make absolutely sure to spy and mock `process.cwd()` during testing to avoid accidentally destroying the developer's actual project context settings.
+3. **Merge-Conservative Security**: In permissions, "Deny" lists **must always win** when resolving conflicts between objects. Never assume permissive security on external profile pulls.
+
+## Tech Quirk Logging
+- **Chokidar (v5+)**: Chokidar is now strictly an ESM module. When dynamically mocking or hooking into it within TypeScript, be very careful with synthetic default exports and use `await import("chokidar")` instead of hard CommonJS patterns that blow up the Vitest runner.
+- **Zod Objects**: Rely on `.default({})` when mapping missing client resources in the Config schema so that the core engine logic doesn't crash on `Object.keys()` iterations against `undefined`.

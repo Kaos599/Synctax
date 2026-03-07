@@ -1,16 +1,19 @@
 # Tech Context
 
 ## Technologies Used
-- Runtime: Node.js 20+ via **Bun**
+- Runtime: Node.js 20+ executing via **Bun**
 - Language: TypeScript
 - Testing: Vitest
 - Validation: Zod
-- CLI UI: Commander.js, Chalk
+- CLI UI: Commander.js, Chalk, cli-table3
+- Automation: Chokidar (File Watching)
 
 ## Development Setup
-- Project is initialized via `bun init`. Tests are run using `bun run test`.
-- Filesystem mocks utilize temporary directories hooked via the `SYNCTAX_HOME` environment variable to sandbox OS pathing (`os.homedir()`).
+- Installed dependencies: `bun add commander chalk zod chokidar cli-table3`
+- Tests run extremely quickly via `bun run test`.
+- TDD Sandbox: `tests/` create an ephemeral `os.tmpdir()` sandbox mapped to `SYNCTAX_HOME`. Every spec cleans up after itself.
 
 ## Technical Constraints
-- The tool must execute perfectly on Mac, Windows, and Linux paths.
-- Secrets must never be stored raw in the configuration JSON.
+- The tool must execute perfectly handling Mac, Windows, and Linux path resolutions.
+- System secrets (`credentials`) must be stripped during `profile publish` events.
+- Dependencies must heavily bias towards ESM to remain modern, dictating careful import handling for packages like `chokidar` (v5+ is ESM only).
