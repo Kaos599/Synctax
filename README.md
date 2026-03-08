@@ -21,6 +21,9 @@ Universal Sync for the Agentic Developer Stack.
 |---|---|
 | `synctax init [--theme cyber\|rebel]` | Scaffolds the master config, scans the system for installed clients, and prints the branded banner. |
 | `synctax info` | Displays a styled CLI table outlining your AI ecosystem's active capabilities. |
+| `synctax export <file>` | Exports the entire master configuration to a JSON file (includes credentials). |
+| `synctax import <file>` | Imports the entire master configuration from a JSON file. Prompts if clients are missing. |
+| `synctax status` | Displays the current health of MCPs, Agents, Skills, and checks for missing API Keys/Env Vars. |
 | `synctax watch` | Spawns a local `chokidar` daemon that listens to your master config and syncs upon saves. |
 | `synctax sync` | Manually push the master configuration down to all your clients. |
 | `synctax pull --from <client>` | Invert the flow: rip a client's specific JSON configuration back into the master state. |
@@ -88,3 +91,5 @@ The `.cursor/rules` file is my learning journal for each project. It captures im
 - Strict usage of RED-Green Test-Driven Development (TDD).
 - Environment mock safeguards (`process.cwd` vs `SYNCTAX_HOME`).
 - Tool usage patterns and syntax expectations.
+| `synctax export <file>` | Exports the entire master configuration to a JSON file (includes credentials). |
+| `synctax import <file>` | Imports the entire master configuration from a JSON file. Prompts if clients are missing. |

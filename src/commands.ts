@@ -305,36 +305,85 @@ export async function statusCommand() {
   const mcps = config.resources.mcps || {};
   const agents = config.resources.agents || {};
   const skills = config.resources.skills || {};
+  const credentials = config.resources.credentials?.envRefs || {};
 
-  console.log(chalk.blue("Sync Status:"));
+  console.log(chalk.blue("System Configuration Status:"));
 
+  // 1. Overall stats
+  console.log(chalk.cyan("\n  Overview:"));
+  console.log(`    MCPs: ${Object.keys(mcps).length}`);
+  console.log(`    Agents: ${Object.keys(agents).length}`);
+  console.log(`    Skills: ${Object.keys(skills).length}`);
+
+  // 2. Health check (Credentials/Env vars)
+  console.log(chalk.cyan("\n  Health Checks:"));
+  let healthIssues = 0;
+  for (const [key, envRef] of Object.entries(credentials)) {
+    const envName = envRef.replace('$', '');
+    if (!process.env[envName]) {
+      console.log(chalk.yellow(`    ⚠ Missing Environment Variable: ${envName} (referenced by ${key})`));
+      healthIssues++;
+    }
+  }
+
+  for (const [name, server] of Object.entries(mcps)) {
+     if (server.env) {
+       for (const [envKey, envVal] of Object.entries(server.env)) {
+         if (envVal.startsWith('$')) {
+           const envName = envVal.replace('$', '');
+           if (!process.env[envName]) {
+              console.log(chalk.yellow(`    ⚠ MCP "${name}" requires missing env var: ${envName}`));
+              healthIssues++;
+           }
+         }
+       }
+     }
+  }
+
+  if (healthIssues === 0) {
+    console.log(chalk.green("    ✓ All required environment variables and credentials appear to be set."));
+  }
+
+  // 3. Sync status
+  console.log(chalk.cyan("\n  Client Sync Status:"));
+  let clientsChecked = 0;
   for (const [id, clientConf] of Object.entries(config.clients)) {
     if (!clientConf.enabled) continue;
     const adapter = adapters[id];
     if (!adapter) continue;
+    clientsChecked++;
 
     try {
       const data = await adapter.read();
-      console.log(`\nClient: ${chalk.cyan(adapter.name)}`);
-
       let inSync = true;
+      let driftDetails = [];
+
       for (const [name, server] of Object.entries(mcps)) {
-        if (!data.mcps[name]) { console.log(chalk.yellow(`  ⚠ Missing MCP: ${name}`)); inSync = false; }
-        else if (JSON.stringify(server) !== JSON.stringify(data.mcps[name])) { console.log(chalk.yellow(`  ⚠ Drift detected in MCP: ${name}`)); inSync = false; }
+        if (!data.mcps[name]) { driftDetails.push(`Missing MCP: ${name}`); inSync = false; }
+        else if (JSON.stringify(server) !== JSON.stringify(data.mcps[name])) { driftDetails.push(`Drift in MCP: ${name}`); inSync = false; }
       }
       for (const [name, agent] of Object.entries(agents)) {
-        if (!data.agents[name]) { console.log(chalk.yellow(`  ⚠ Missing Agent: ${name}`)); inSync = false; }
-        else if (JSON.stringify(agent) !== JSON.stringify(data.agents[name])) { console.log(chalk.yellow(`  ⚠ Drift detected in Agent: ${name}`)); inSync = false; }
+        if (!data.agents[name]) { driftDetails.push(`Missing Agent: ${name}`); inSync = false; }
+        else if (JSON.stringify(agent) !== JSON.stringify(data.agents[name])) { driftDetails.push(`Drift in Agent: ${name}`); inSync = false; }
       }
       for (const [name, skill] of Object.entries(skills)) {
-        if (!data.skills[name]) { console.log(chalk.yellow(`  ⚠ Missing Skill: ${name}`)); inSync = false; }
-        else if (JSON.stringify(skill) !== JSON.stringify(data.skills[name])) { console.log(chalk.yellow(`  ⚠ Drift detected in Skill: ${name}`)); inSync = false; }
+        if (!data.skills[name]) { driftDetails.push(`Missing Skill: ${name}`); inSync = false; }
+        else if (JSON.stringify(skill) !== JSON.stringify(data.skills[name])) { driftDetails.push(`Drift in Skill: ${name}`); inSync = false; }
       }
 
-      if (inSync) console.log(chalk.green("  ✓ All in sync"));
+      if (inSync) {
+        console.log(chalk.green(`    ✓ ${adapter.name}: In Sync`));
+      } else {
+        console.log(chalk.yellow(`    ⚠ ${adapter.name}: Out of Sync (${driftDetails.length} issues)`));
+        driftDetails.forEach(d => console.log(chalk.gray(`      - ${d}`)));
+      }
     } catch (e: any) {
-      console.log(chalk.red(`  ✗ Error reading config: ${e.message}`));
+      console.log(chalk.red(`    ✗ ${adapter.name}: Error reading config (${e.message})`));
     }
+  }
+
+  if (clientsChecked === 0) {
+    console.log(chalk.gray("    No clients enabled."));
   }
 }
 
@@ -679,4 +728,81 @@ export async function watchCommand(options: any) {
 
   console.log(chalk.green("Daemon is active. Press Ctrl+C to exit.\n"));
   return watcher;
+}
+
+export async function exportCommand(filePath: string) {
+  const configManager = getConfigManager();
+  const config = await configManager.read();
+
+  const resolvedPath = require("path").resolve(process.cwd(), filePath);
+  await (await import("fs/promises")).writeFile(resolvedPath, JSON.stringify(config, null, 2), "utf-8");
+  console.log(chalk.green(`✓ Exported master configuration to ${resolvedPath}`));
+}
+
+export async function importCommand(filePath: string) {
+  const configManager = getConfigManager();
+
+  const resolvedPath = require("path").resolve(process.cwd(), filePath);
+  let rawData: string;
+  try {
+    rawData = await (await import("fs/promises")).readFile(resolvedPath, "utf-8");
+  } catch (e: any) {
+    console.log(chalk.red(`✗ Could not read file ${resolvedPath}: ${e.message}`));
+    return;
+  }
+
+  let importedConfig: any;
+  try {
+    importedConfig = JSON.parse(rawData);
+  } catch (e: any) {
+    console.log(chalk.red(`✗ Invalid JSON in ${resolvedPath}: ${e.message}`));
+    return;
+  }
+
+  // Current existing config
+  const currentConfig = await configManager.read();
+  const currentClients = Object.keys(currentConfig.clients).filter(c => currentConfig.clients[c].enabled);
+
+  // Clients mentioned in imported config
+  const importedClients = Object.keys(importedConfig.clients || {}).filter(c => importedConfig.clients[c].enabled);
+
+  // Find clients that are in imported config but not locally enabled
+  const missingClients = importedClients.filter(c => !currentClients.includes(c));
+
+  if (missingClients.length > 0) {
+    const readline = require("readline");
+    const rl = readline.createInterface({
+      input: process.stdin,
+      output: process.stdout
+    });
+
+    await new Promise<void>((resolve) => {
+      rl.question(chalk.yellow(`The imported config contains clients not currently enabled (${missingClients.join(', ')}). Continue without them? (y/N) `), (answer: string) => {
+        rl.close();
+        if (answer.toLowerCase() === 'y' || answer.toLowerCase() === 'yes') {
+          // Remove missing clients from the imported config
+          for (const c of missingClients) {
+            delete importedConfig.clients[c];
+          }
+          resolve();
+        } else {
+          console.log(chalk.red("Import cancelled."));
+          process.exit(1);
+        }
+      });
+    });
+  }
+
+  try {
+    // Validate schema
+    const { ConfigSchema } = await import("./types.js");
+    const validConfig = ConfigSchema.parse(importedConfig);
+
+    await configManager.backup();
+    await configManager.write(validConfig);
+
+    console.log(chalk.green(`✓ Successfully imported master configuration from ${resolvedPath}`));
+  } catch (e: any) {
+    console.log(chalk.red(`✗ Imported config is invalid: ${e.message}`));
+  }
 }

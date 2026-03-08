@@ -18,3 +18,8 @@
 - Remote Profile Registry (hosted endpoint integration).
 - AI-assisted conflict resolution logic during file merges (LLM calls to resolve clashing instructions).
 - Action Audit Logging tracking historical configuration overrides.
+
+### Implemented Features
+- Added `synctax export <file>` to dump the whole config.
+- Added `synctax import <file>` to restore the whole config, complete with user prompts for missing clients.
+- Enhanced `synctax status` to show health metrics and flag missing environmental variables or API keys.
