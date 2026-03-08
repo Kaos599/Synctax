@@ -630,9 +630,9 @@ export async function infoCommand() {
     table.push([
       isActive ? chalk.whiteBright.bold(adapter.name) : chalk.gray(adapter.name),
       installed ? chalk.green("Yes") : chalk.red("No"),
-      mcpCount.toString(),
-      agentCount.toString(),
-      skillCount.toString()
+      `${mcpCount} MCP${mcpCount !== 1 ? "s" : ""}`,
+      `${agentCount} Agent${agentCount !== 1 ? "s" : ""}`,
+      `${skillCount} Skill${skillCount !== 1 ? "s" : ""}`
     ]);
   }
 
@@ -655,7 +655,7 @@ export async function watchCommand(options: any) {
 
   let syncTimeout: any;
 
-  chokidar.watch(configPath, {
+  const watcher = chokidar.watch(configPath, {
     persistent: true,
     awaitWriteFinish: {
       stabilityThreshold: 500,
@@ -678,4 +678,5 @@ export async function watchCommand(options: any) {
   });
 
   console.log(chalk.green("Daemon is active. Press Ctrl+C to exit.\n"));
+  return watcher;
 }

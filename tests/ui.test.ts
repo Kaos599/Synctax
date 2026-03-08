@@ -42,8 +42,9 @@ describe("Terminal UI Upgrades (Tabular Output)", () => {
     // Check if console.log was called with string containing a table border character
     const logCalls = consoleSpy.mock.calls.map(c => c[0]).join("\n");
     expect(logCalls).toContain("Claude");
-    expect(logCalls).toContain("1"); // the 1 MCP
-    expect(logCalls).toContain("0"); // agents/skills
+    expect(logCalls).toMatch(/1\s+MCPs?/);
+    expect(logCalls).toMatch(/0\s+Agents?/);
+    expect(logCalls).toMatch(/0\s+Skills?/);
 
     consoleSpy.mockRestore();
   });
