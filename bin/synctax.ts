@@ -1,9 +1,7 @@
 #!/usr/bin/env bun
 import { Command } from "commander";
 import { printBanner } from "../src/banner.js";
-import { initCommand, listCommand, statusCommand, syncCommand, memorySyncCommand, pullCommand, moveCommand, profileCreateCommand, profileUseCommand, addCommand, removeCommand, restoreCommand, doctorCommand, profilePullCommand, profilePublishCommand } from "../src/commands.js";
-
-printBanner();
+import { initCommand, listCommand, statusCommand, syncCommand, memorySyncCommand, pullCommand, moveCommand, profileCreateCommand, profileUseCommand, addCommand, removeCommand, restoreCommand, doctorCommand, infoCommand, profilePullCommand, profilePublishCommand } from "../src/commands.js";
 
 const program = new Command();
 
@@ -145,4 +143,18 @@ profileCmd
   .option("--output <path>", "File path to save the export")
   .action((name, options) => {
     profilePublishCommand(name, options);
+  });
+
+program
+  .command("info")
+  .description("Display tabular system intelligence (installed clients and resource counts)")
+  .action(() => {
+    infoCommand();
+  });
+
+program
+  .command("watch")
+  .description("Run a background daemon that auto-syncs when master config changes")
+  .action((options) => {
+    watchCommand(options);
   });

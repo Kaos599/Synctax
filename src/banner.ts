@@ -1,6 +1,6 @@
-import chalk from "chalk";
+import { getTheme, paintLines } from "./theme.js";
 
-const banner = `
+const rebelBanner = `
   █████████                                  █████
  ███░░░░░███                                ░░███
 ░███    ░░░  █████ ████ ████████    ██████  ███████    ██████   █████ █████
@@ -14,6 +14,7 @@ const banner = `
               ░░░░░░
 `;
 
-export function printBanner() {
-  console.log(chalk.hex("#FF0033")(banner));
+export function printBanner(themeName: string = "default") {
+  const palette = getTheme(themeName);
+  console.log(paintLines(rebelBanner, palette));
 }

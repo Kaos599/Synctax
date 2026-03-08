@@ -2,13 +2,15 @@ import chalk from "chalk";
 import { ConfigManager } from "./config.js";
 import { adapters } from "./adapters/index.js";
 import { Config } from "./types.js";
+import { printBanner } from "./banner.js";
 
 // Instantiate per function to avoid caching SYNCTAX_HOME in tests
 function getConfigManager() {
   return new ConfigManager();
 }
 
-export async function initCommand(options: { detect?: boolean; source?: string; force?: boolean }) {
+export async function initCommand(options: { detect?: boolean; source?: string; force?: boolean, theme?: string }) {
+  printBanner(options.theme || "rebel");
   const configManager = getConfigManager();
   console.log(chalk.blue("Initializing synctax..."));
 
@@ -292,7 +294,7 @@ export async function applyProfileFilter(resources: any, profile: any) {
 
   filterGroup(filtered.mcps);
   filterGroup(filtered.agents);
-  filterGroup(filtered.skills);;
+  filterGroup(filtered.skills);
 
   return filtered;
 }
@@ -583,4 +585,98 @@ export async function profilePublishCommand(name: string, options?: any): Promis
   }
 
   return exportPayload;
+}
+
+export async function infoCommand() {
+  const configManager = getConfigManager();
+  console.log(chalk.blue("\nGathering system intelligence...\n"));
+
+  const config = await configManager.read();
+  const Table = (await import("cli-table3")).default;
+
+  const table = new Table({
+    head: [
+      chalk.hex("#E4FF30")("Client"),
+      chalk.hex("#4DFFBE")("Installed"),
+      chalk.hex("#63C8FF")("MCPs"),
+      chalk.hex("#FF2DD1")("Agents"),
+      chalk.hex("#FF0B55")("Skills")
+    ],
+    style: {
+      head: [],
+      border: ["gray"]
+    }
+  });
+
+  for (const [id, adapter] of Object.entries(adapters)) {
+    const installed = await adapter.detect();
+    let mcpCount = 0;
+    let agentCount = 0;
+    let skillCount = 0;
+
+    if (installed) {
+      try {
+        const data = await adapter.read();
+        mcpCount = Object.keys(data.mcps || {}).length;
+        agentCount = Object.keys(data.agents || {}).length;
+        skillCount = Object.keys(data.skills || {}).length;
+      } catch (e) {
+        // If config is broken, we just show 0
+      }
+    }
+
+    const isActive = config.clients[id]?.enabled;
+
+    table.push([
+      isActive ? chalk.whiteBright.bold(adapter.name) : chalk.gray(adapter.name),
+      installed ? chalk.green("Yes") : chalk.red("No"),
+      `${mcpCount} MCP${mcpCount !== 1 ? "s" : ""}`,
+      `${agentCount} Agent${agentCount !== 1 ? "s" : ""}`,
+      `${skillCount} Skill${skillCount !== 1 ? "s" : ""}`
+    ]);
+  }
+
+  console.log(table.toString());
+  console.log("\n");
+}
+
+export async function watchCommand(options: any) {
+  const configManager = getConfigManager();
+  const fs = await import("fs/promises");
+  const path = await import("path");
+  const os = await import("os");
+  const chokidar = await import("chokidar");
+
+  const homeDir = process.env.SYNCTAX_HOME || os.homedir();
+  const configPath = path.join(homeDir, ".synctax", "config.json");
+
+  console.log(chalk.magenta("\n👁️  Initializing synctax Watch Daemon..."));
+  console.log(chalk.gray(`Watching: ${configPath}`));
+
+  let syncTimeout: any;
+
+  const watcher = chokidar.watch(configPath, {
+    persistent: true,
+    awaitWriteFinish: {
+      stabilityThreshold: 500,
+      pollInterval: 100
+    }
+  }).on("change", async () => {
+    console.log(chalk.yellow(`\n[${new Date().toLocaleTimeString()}] Master config modified.`));
+
+    // Debounce the sync so rapidly saving multiple times doesn't spam
+    if (syncTimeout) clearTimeout(syncTimeout);
+
+    syncTimeout = setTimeout(async () => {
+      try {
+        console.log(chalk.blue("Triggering background sync..."));
+        await syncCommand({ dryRun: false });
+      } catch (e: any) {
+        console.log(chalk.red(`Watch sync failed: ${e.message}`));
+      }
+    }, 500);
+  });
+
+  console.log(chalk.green("Daemon is active. Press Ctrl+C to exit.\n"));
+  return watcher;
 }

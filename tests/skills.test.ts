@@ -92,4 +92,23 @@ describe("Skills Domain", () => {
     const data = await adapter.read();
     expect(data.skills["format"].content).toBe("Format my code");
   });
+
+
+  it("ClaudeAdapter captures various skill extensions", async () => {
+    const adapter = new ClaudeAdapter();
+    const skillsDir = path.join(mockHome, ".claude", "skills");
+    await fs.mkdir(skillsDir, { recursive: true });
+
+    const content = `---\nname: SkillName\n---\nDo this.\n`;
+    await fs.writeFile(path.join(skillsDir, "A.md"), content);
+    await fs.writeFile(path.join(skillsDir, "B.agent"), content);
+    await fs.writeFile(path.join(skillsDir, "C.claude"), content);
+    await fs.writeFile(path.join(skillsDir, "D.txt"), content);
+
+    const data = await adapter.read();
+    expect(data.skills["A"]).toBeDefined();
+    expect(data.skills["B"]).toBeDefined();
+    expect(data.skills["C"]).toBeDefined();
+    expect(data.skills["D"]).toBeUndefined();
+  });
 });
