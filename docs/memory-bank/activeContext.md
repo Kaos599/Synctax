@@ -14,3 +14,6 @@ We have successfully completed the core v1.5 milestone features. The project now
 ## Next Steps
 - Maintain 100% test coverage for any new PRs or incoming community issues.
 - Plan technical architecture for v2.0 features: AI-assisted conflict resolution and full JSON audit logging.
+
+## Current Work
+Implemented global `export` and `import` functionality to backup/restore the entire master configuration, including credentials. Improved the `status` command to perform health checks on missing environment variables/credentials referenced by MCPs.

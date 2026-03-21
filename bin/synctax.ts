@@ -42,7 +42,6 @@ program
     syncCommand(options);
   });
 
-program.parse(process.argv);
 
 program
   .command("memory-sync")
@@ -158,3 +157,20 @@ program
   .action((options) => {
     watchCommand(options);
   });
+
+program
+  .command("export <file>")
+  .description("Export the entire master configuration to a JSON file")
+  .action(async (file) => {
+    const { exportCommand } = await import("../src/commands.js");
+    await exportCommand(file);
+  });
+
+program
+  .command("import <file>")
+  .description("Import the entire master configuration from a JSON file")
+  .action(async (file) => {
+    const { importCommand } = await import("../src/commands.js");
+    await importCommand(file);
+  });
+program.parse(process.argv);
