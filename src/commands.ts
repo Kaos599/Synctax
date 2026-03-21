@@ -1,14 +1,133 @@
 import chalk from "chalk";
-import { checkbox, confirm } from "@inquirer/prompts";
+import { checkbox, confirm, select } from "@inquirer/prompts";
 import { ConfigManager } from "./config.js";
 import { adapters } from "./adapters/index.js";
-import { Config } from "./types.js";
+import type { Agent, ClientAdapter, Config, McpServer, Permissions, ResourceScope, Skill } from "./types.js";
 import { printBanner } from "./banner.js";
 import { maybePromptAndInstallPath } from "./install-path.js";
 
 // Instantiate per function to avoid caching SYNCTAX_HOME in tests
 function getConfigManager() {
   return new ConfigManager();
+}
+
+type ClientCapabilities = {
+  mcps: boolean;
+  agents: boolean;
+  skills: boolean;
+};
+
+const DEFAULT_CAPABILITIES: ClientCapabilities = { mcps: true, agents: true, skills: true };
+const CAPABILITIES: Record<string, ClientCapabilities> = {
+  claude: { mcps: true, agents: true, skills: true },
+  cursor: { mcps: true, agents: true, skills: true },
+  opencode: { mcps: true, agents: true, skills: true },
+  antigravity: { mcps: true, agents: true, skills: true },
+  cline: { mcps: true, agents: false, skills: false },
+  zed: { mcps: true, agents: false, skills: false },
+  "github-copilot": { mcps: true, agents: false, skills: false },
+  "github-copilot-cli": { mcps: false, agents: false, skills: true },
+  "gemini-cli": { mcps: false, agents: false, skills: false },
+};
+
+const DEFAULT_PERMISSIONS: Permissions = {
+  allowedPaths: [],
+  deniedPaths: [],
+  allowedCommands: [],
+  deniedCommands: [],
+  networkAllow: false,
+};
+
+type PullProfilePayload = {
+  name?: string;
+  profile?: Config["profiles"][string];
+  resources?: Partial<Config["resources"]>;
+};
+
+function normalizeStringArray(value?: string[]): string[] {
+  return [...(value || [])].sort();
+}
+
+function normalizeEnv(value?: Record<string, string>): Record<string, string> {
+  const out: Record<string, string> = {};
+  const source = value || {};
+  for (const [key, envValue] of Object.entries(source).sort(([a], [b]) => a.localeCompare(b))) {
+    out[key] = envValue;
+  }
+  return out;
+}
+
+function normalizeMcpForStatus(item: McpServer) {
+  return {
+    command: item.command,
+    args: item.args || [],
+    env: normalizeEnv(item.env),
+    transport: item.transport,
+  };
+}
+
+function normalizeAgentForStatus(item: Agent) {
+  return {
+    name: item.name,
+    description: item.description || "",
+    prompt: item.prompt,
+    model: item.model || "",
+    tools: normalizeStringArray(item.tools),
+  };
+}
+
+function normalizeSkillForStatus(item: Skill) {
+  return {
+    name: item.name,
+    description: item.description || "",
+    trigger: item.trigger || "",
+    content: item.content,
+  };
+}
+
+function semanticEqualMcp(expected: McpServer, actual: McpServer): boolean {
+  return JSON.stringify(normalizeMcpForStatus(expected)) === JSON.stringify(normalizeMcpForStatus(actual));
+}
+
+function semanticEqualAgent(expected: Agent, actual: Agent): boolean {
+  return JSON.stringify(normalizeAgentForStatus(expected)) === JSON.stringify(normalizeAgentForStatus(actual));
+}
+
+function semanticEqualSkill(expected: Skill, actual: Skill): boolean {
+  return JSON.stringify(normalizeSkillForStatus(expected)) === JSON.stringify(normalizeSkillForStatus(actual));
+}
+
+function withForcedScope<T extends { scope?: ResourceScope }>(
+  records: Record<string, T> | undefined,
+  scope: "global" | "user" | "project"
+): Record<string, T> {
+  const out: Record<string, T> = {};
+  for (const [name, item] of Object.entries(records || {})) {
+    out[name] = {
+      ...item,
+      scope,
+    };
+  }
+  return out;
+}
+
+function applyScopePolicy(
+  resources: Config["resources"],
+  policy: "preserve" | "global" | "user" | "project"
+): Config["resources"] {
+  if (policy === "preserve") return resources;
+  return {
+    ...resources,
+    mcps: withForcedScope(resources.mcps, policy),
+    agents: withForcedScope(resources.agents, policy),
+    skills: withForcedScope(resources.skills, policy),
+  };
+}
+
+function resolveScopeOption(options: any): "global" | "user" | "project" {
+  if (options?.project || options?.local) return "project";
+  if (options?.user) return "user";
+  return "global";
 }
 
 export async function initCommand(options: {
@@ -42,8 +161,10 @@ export async function initCommand(options: {
     version: 1,
     source: options.source,
     theme: options.theme || "rebel",
+    activeProfile: "default",
+    profiles: { default: {} },
     clients: {},
-    resources: { mcps: {}, agents: {}, skills: {} },
+    resources: { mcps: {}, agents: {}, skills: {}, permissions: DEFAULT_PERMISSIONS },
   };
 
   if (options.detect !== false) {
@@ -62,7 +183,10 @@ export async function initCommand(options: {
     const firstClient = Object.keys(newConfig.clients)[0];
     if (firstClient) {
       newConfig.source = firstClient;
-      console.log(chalk.gray(`Setting ${adapters[firstClient].name} as the default source.`));
+      const selectedSource = adapters[firstClient];
+      if (selectedSource) {
+        console.log(chalk.gray(`Setting ${selectedSource.name} as the default source.`));
+      }
     }
   }
 
@@ -78,8 +202,8 @@ export async function initCommand(options: {
 export async function listCommand() {
   const configManager = getConfigManager();
   const config = await configManager.read();
-  const mcps = config.resources.mcps || {};
-  const agents = config.resources.agents || {};
+  const mcps = config.resources.mcps;
+  const agents = config.resources.agents;
 
   if (Object.keys(mcps).length > 0) {
     console.log(chalk.blue("\nRegistered MCP Servers:"));
@@ -106,7 +230,9 @@ export async function syncCommand(options: { dryRun?: boolean, interactive?: boo
   console.log(chalk.blue("Starting sync..."));
 
   const config = await configManager.read();
-  let resources = await applyProfileFilter(config.resources, config.profiles[config.activeProfile]);
+  let resources: Config["resources"] = await applyProfileFilter(config.resources, config.profiles[config.activeProfile]);
+  let scopePolicy: "preserve" | "global" | "user" | "project" | "per-client" = "preserve";
+  const perClientScope: Record<string, "preserve" | "global" | "user" | "project"> = {};
 
   if (options.interactive) {
     const choices = [
@@ -120,14 +246,72 @@ export async function syncCommand(options: { dryRun?: boolean, interactive?: boo
         message: 'Select resources to sync:',
         choices
       });
-      
-      const filteredResources = { mcps: {}, agents: {}, skills: {}, permissions: resources.permissions, models: resources.models, prompts: resources.prompts };
+
+      const filteredResources: Config["resources"] = {
+        mcps: {},
+        agents: {},
+        skills: {},
+        permissions: resources.permissions,
+        models: resources.models,
+        prompts: resources.prompts,
+        credentials: resources.credentials,
+      };
       for (const item of selected) {
-        if (item.domain === 'mcp') filteredResources.mcps[item.key] = resources.mcps[item.key];
-        if (item.domain === 'agent') filteredResources.agents[item.key] = resources.agents[item.key];
-        if (item.domain === 'skill') filteredResources.skills[item.key] = resources.skills[item.key];
+        if (item.domain === 'mcp') {
+          const entry = resources.mcps[item.key];
+          if (entry) {
+            filteredResources.mcps[item.key] = entry;
+          }
+        }
+        if (item.domain === 'agent') {
+          const entry = resources.agents[item.key];
+          if (entry) {
+            filteredResources.agents[item.key] = entry;
+          }
+        }
+        if (item.domain === 'skill') {
+          const entry = resources.skills[item.key];
+          if (entry) {
+            filteredResources.skills[item.key] = entry;
+          }
+        }
       }
-      resources = filteredResources as any;
+      resources = filteredResources;
+    }
+
+    const enabledClients = Object.entries(config.clients)
+      .filter(([, clientConf]) => clientConf.enabled)
+      .map(([id]) => id)
+      .filter((id) => adapters[id]);
+
+    if (enabledClients.length > 0) {
+      scopePolicy = await select({
+        message: "Scope behavior for this sync:",
+        choices: [
+          { name: "Preserve saved scopes", value: "preserve" },
+          { name: "Force global scope", value: "global" },
+          { name: "Force user scope", value: "user" },
+          { name: "Force project scope", value: "project" },
+          { name: "Per-client scope overrides", value: "per-client" },
+        ],
+      });
+
+      if (scopePolicy === "per-client") {
+        for (const id of enabledClients) {
+          const targetAdapter = adapters[id];
+          if (!targetAdapter) continue;
+
+          perClientScope[id] = await select({
+            message: `Scope for ${targetAdapter.name}:`,
+            choices: [
+              { name: "Preserve saved scopes", value: "preserve" },
+              { name: "Global", value: "global" },
+              { name: "User", value: "user" },
+              { name: "Project", value: "project" },
+            ],
+          });
+        }
+      }
     }
   }
 
@@ -145,7 +329,9 @@ export async function syncCommand(options: { dryRun?: boolean, interactive?: boo
       console.log(chalk.yellow(`[Dry Run] Would write to ${adapter.name}`));
     } else {
       try {
-        await adapter.write(resources);
+        const targetScope = scopePolicy === "per-client" ? (perClientScope[id] || "preserve") : scopePolicy;
+        const scopedResources = applyScopePolicy(resources, targetScope);
+        await adapter.write(scopedResources);
         console.log(chalk.green(`✓ Synced ${adapter.name}`));
       } catch (e: any) {
         console.log(chalk.red(`✗ Failed to sync ${adapter.name}: ${e.message}`));
@@ -164,11 +350,20 @@ export async function memorySyncCommand(options: { source?: string, dryRun?: boo
   const cwd = process.cwd();
 
   let sourceId = options.source || config.source;
-  let sourceAdapter = sourceId ? adapters[sourceId] : undefined;
+  let sourceAdapter: ClientAdapter | undefined = sourceId ? adapters[sourceId] : undefined;
 
   if (!sourceAdapter) {
     sourceAdapter = adapters["claude"];
-    console.log(chalk.yellow(`No valid source of truth found. Defaulting to ${sourceAdapter.name}.`));
+    if (sourceAdapter) {
+      console.log(chalk.yellow(`No valid source of truth found. Defaulting to ${sourceAdapter.name}.`));
+    } else {
+      console.log(chalk.red("No source adapter is available for memory sync."));
+      return;
+    }
+  }
+
+  if (!sourceId) {
+    sourceId = "claude";
   }
 
   const sourceFileName = sourceAdapter.getMemoryFileName();
@@ -213,7 +408,15 @@ export async function pullCommand(options: { from: string, merge?: boolean, over
 
   try {
     const data = await adapter.read();
-    let toMerge = data;
+    let toMerge: Config["resources"] = {
+      mcps: { ...data.mcps },
+      agents: { ...data.agents },
+      skills: { ...data.skills },
+      permissions: data.permissions || DEFAULT_PERMISSIONS,
+      models: data.models,
+      prompts: data.prompts,
+      credentials: data.credentials,
+    };
 
     if (options.interactive) {
       const choices = [
@@ -227,12 +430,35 @@ export async function pullCommand(options: { from: string, merge?: boolean, over
           message: `Select resources to pull from ${adapter.name}:`,
           choices
         });
-        
-        toMerge = { mcps: {}, agents: {}, skills: {}, permissions: data.permissions, models: data.models, prompts: data.prompts };
+
+        toMerge = {
+          mcps: {},
+          agents: {},
+          skills: {},
+          permissions: data.permissions || DEFAULT_PERMISSIONS,
+          models: data.models,
+          prompts: data.prompts,
+          credentials: data.credentials,
+        };
         for (const item of selected) {
-          if (item.domain === 'mcp') toMerge.mcps[item.key] = data.mcps[item.key];
-          if (item.domain === 'agent') toMerge.agents[item.key] = data.agents[item.key];
-          if (item.domain === 'skill') toMerge.skills[item.key] = data.skills[item.key];
+          if (item.domain === 'mcp') {
+            const entry = data.mcps[item.key];
+            if (entry) {
+              toMerge.mcps[item.key] = entry;
+            }
+          }
+          if (item.domain === 'agent') {
+            const entry = data.agents[item.key];
+            if (entry) {
+              toMerge.agents[item.key] = entry;
+            }
+          }
+          if (item.domain === 'skill') {
+            const entry = data.skills[item.key];
+            if (entry) {
+              toMerge.skills[item.key] = entry;
+            }
+          }
         }
       } else {
         console.log(chalk.yellow(`No resources found in ${adapter.name} to pull.`));
@@ -252,8 +478,8 @@ export async function pullCommand(options: { from: string, merge?: boolean, over
       if (!options.domain || options.domain === 'agents') { config.resources.agents = { ...config.resources.agents, ...toMerge.agents }; }
       if (!options.domain || options.domain === 'skills') { config.resources.skills = { ...config.resources.skills, ...toMerge.skills }; }
       if (!options.domain || options.domain === 'permissions') { config.resources.permissions = mergePermissions(config.resources.permissions, toMerge.permissions); }
-      if (!options.domain || options.domain === 'models') { config.resources.models = { ...config.resources.models, ...toMerge.models }; }
-      if (!options.domain || options.domain === 'prompts') { config.resources.prompts = { ...config.resources.prompts, ...toMerge.prompts }; }
+      if (!options.domain || options.domain === 'models') { config.resources.models = { ...(config.resources.models || {}), ...(toMerge.models || {}) }; }
+      if (!options.domain || options.domain === 'prompts') { config.resources.prompts = { ...(config.resources.prompts || {}), ...(toMerge.prompts || {}) }; }
     }
 
     config.source = options.from;
@@ -265,7 +491,7 @@ export async function pullCommand(options: { from: string, merge?: boolean, over
   }
 }
 
-export async function moveCommand(domain: string, name: string, options: { toGlobal?: boolean, toLocal?: boolean, toClient?: string, push?: boolean }) {
+export async function moveCommand(domain: string, name: string, options: { toGlobal?: boolean, toUser?: boolean, toProject?: boolean, toLocal?: boolean, toClient?: string, push?: boolean }) {
   const configManager = getConfigManager();
   console.log(chalk.blue(`Moving ${domain} resource: ${name}...`));
 
@@ -286,7 +512,9 @@ export async function moveCommand(domain: string, name: string, options: { toGlo
   }
 
   if (options.toGlobal) resource.scope = "global";
-  if (options.toLocal) resource.scope = "local";
+  if ((options as any).toUser) resource.scope = "user";
+  if ((options as any).toProject) resource.scope = "project";
+  if (options.toLocal) resource.scope = "project";
 
   await configManager.write(config);
   console.log(chalk.green(`✓ Successfully updated scope for ${name}`));
@@ -342,7 +570,7 @@ export async function profileUseCommand(name: string, options: { dryRun?: boolea
 }
 
 // Update syncCommand to respect the active profile includes/excludes
-export async function applyProfileFilter(resources: any, profile: any) {
+export function applyProfileFilter(resources: Config["resources"], profile: Config["profiles"][string] | undefined): Config["resources"] {
   if (!profile || (!profile.include && !profile.exclude)) return resources;
 
   const filtered = { ...resources, mcps: { ...resources.mcps }, agents: { ...resources.agents }, skills: { ...resources.skills } };
@@ -370,9 +598,10 @@ export async function applyProfileFilter(resources: any, profile: any) {
 export async function statusCommand() {
   const configManager = getConfigManager();
   const config = await configManager.read();
-  const mcps = config.resources.mcps || {};
-  const agents = config.resources.agents || {};
-  const skills = config.resources.skills || {};
+  const resources = await applyProfileFilter(config.resources, config.profiles[config.activeProfile]);
+  const mcps = resources.mcps;
+  const agents = resources.agents;
+  const skills = resources.skills;
   const credentials = config.resources.credentials?.envRefs || {};
 
   console.log(chalk.blue("System Configuration Status:"));
@@ -395,17 +624,17 @@ export async function statusCommand() {
   }
 
   for (const [name, server] of Object.entries(mcps)) {
-     if (server.env) {
-       for (const [envKey, envVal] of Object.entries(server.env)) {
-         if (envVal.startsWith('$')) {
-           const envName = envVal.replace('$', '');
-           if (!process.env[envName]) {
-              console.log(chalk.yellow(`    ⚠ MCP "${name}" requires missing env var: ${envName}`));
-              healthIssues++;
-           }
-         }
-       }
-     }
+    if (server.env) {
+      for (const [, envVal] of Object.entries(server.env)) {
+        if (envVal.startsWith('$')) {
+          const envName = envVal.replace('$', '');
+          if (!process.env[envName]) {
+            console.log(chalk.yellow(`    ⚠ MCP "${name}" requires missing env var: ${envName}`));
+            healthIssues++;
+          }
+        }
+      }
+    }
   }
 
   if (healthIssues === 0) {
@@ -424,19 +653,29 @@ export async function statusCommand() {
     try {
       const data = await adapter.read();
       let inSync = true;
-      let driftDetails = [];
+      const driftDetails: string[] = [];
+      const capabilities = CAPABILITIES[id] || DEFAULT_CAPABILITIES;
 
-      for (const [name, server] of Object.entries(mcps)) {
-        if (!data.mcps[name]) { driftDetails.push(`Missing MCP: ${name}`); inSync = false; }
-        else if (JSON.stringify(server) !== JSON.stringify(data.mcps[name])) { driftDetails.push(`Drift in MCP: ${name}`); inSync = false; }
+      if (capabilities.mcps) {
+        for (const [name, server] of Object.entries(mcps)) {
+          const remote = data.mcps[name];
+          if (!remote) { driftDetails.push(`Missing MCP: ${name}`); inSync = false; }
+          else if (!semanticEqualMcp(server, remote)) { driftDetails.push(`Drift in MCP: ${name}`); inSync = false; }
+        }
       }
-      for (const [name, agent] of Object.entries(agents)) {
-        if (!data.agents[name]) { driftDetails.push(`Missing Agent: ${name}`); inSync = false; }
-        else if (JSON.stringify(agent) !== JSON.stringify(data.agents[name])) { driftDetails.push(`Drift in Agent: ${name}`); inSync = false; }
+      if (capabilities.agents) {
+        for (const [name, agent] of Object.entries(agents)) {
+          const remote = data.agents[name];
+          if (!remote) { driftDetails.push(`Missing Agent: ${name}`); inSync = false; }
+          else if (!semanticEqualAgent(agent, remote)) { driftDetails.push(`Drift in Agent: ${name}`); inSync = false; }
+        }
       }
-      for (const [name, skill] of Object.entries(skills)) {
-        if (!data.skills[name]) { driftDetails.push(`Missing Skill: ${name}`); inSync = false; }
-        else if (JSON.stringify(skill) !== JSON.stringify(data.skills[name])) { driftDetails.push(`Drift in Skill: ${name}`); inSync = false; }
+      if (capabilities.skills) {
+        for (const [name, skill] of Object.entries(skills)) {
+          const remote = data.skills[name];
+          if (!remote) { driftDetails.push(`Missing Skill: ${name}`); inSync = false; }
+          else if (!semanticEqualSkill(skill, remote)) { driftDetails.push(`Drift in Skill: ${name}`); inSync = false; }
+        }
       }
 
       if (inSync) {
@@ -490,13 +729,15 @@ export async function addCommand(domain: string, name: string, options: any) {
 
   const config = await configManager.read();
 
+  const selectedScope = resolveScopeOption(options);
+
   if (domain === "mcp") {
     config.resources.mcps[name] = {
       command: options.command,
       args: options.args,
       env: options.env,
       transport: options.transport,
-      scope: options.global ? "global" : (options.local ? "local" : "global")
+      scope: selectedScope,
     };
   } else if (domain === "agent") {
     config.resources.agents[name] = {
@@ -504,7 +745,7 @@ export async function addCommand(domain: string, name: string, options: any) {
       prompt: options.prompt || "",
       model: options.model,
       tools: options.tools ? options.tools.split(",") : undefined,
-      scope: options.global ? "global" : "local"
+      scope: selectedScope,
     };
   } else if (domain === "skill") {
     config.resources.skills[name] = {
@@ -512,7 +753,7 @@ export async function addCommand(domain: string, name: string, options: any) {
       description: options.description,
       trigger: options.trigger,
       content: options.content || "",
-      scope: options.global ? "global" : "local"
+      scope: selectedScope,
     };
   } else {
     console.log(chalk.red(`Unsupported domain for add: ${domain}`));
@@ -613,9 +854,12 @@ export async function restoreCommand(options: { from?: string }) {
       return;
     }
 
-    let targetBackup = backups[0];
+    const defaultBackup = backups[0];
+    if (!defaultBackup) return;
+    let targetBackup: string = defaultBackup;
     if (options.from) {
-      const match = backups.find(b => b.includes(options.from!));
+      const requestedFrom = options.from;
+      const match = backups.find(b => b.includes(requestedFrom));
       if (match) targetBackup = match;
       else {
         console.log(chalk.red(`Backup matching ${options.from} not found.`));
@@ -632,7 +876,7 @@ export async function restoreCommand(options: { from?: string }) {
 
 export async function doctorCommand(options: any): Promise<boolean> {
   const configManager = getConfigManager();
-  console.log(chalk.blue("Diagnosing agentsync setup..."));
+  console.log(chalk.blue("Diagnosing synctax setup..."));
   let healthy = true;
 
   try {
@@ -676,18 +920,21 @@ export async function profilePullCommand(url: string, options?: any) {
     const response = await fetch(url);
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
 
-    const payload = await response.json();
+    const payload = (await response.json()) as PullProfilePayload;
     const name = options?.name || payload.name || "downloaded-profile";
 
     const config = await configManager.read();
 
-    config.profiles[name] = payload.profile;
+    config.profiles[name] = payload.profile || {};
 
     // Merge resources
     if (payload.resources) {
       if (payload.resources.mcps) config.resources.mcps = { ...config.resources.mcps, ...payload.resources.mcps };
       if (payload.resources.agents) config.resources.agents = { ...config.resources.agents, ...payload.resources.agents };
       if (payload.resources.skills) config.resources.skills = { ...config.resources.skills, ...payload.resources.skills };
+      if (payload.resources.permissions) config.resources.permissions = mergePermissions(config.resources.permissions, payload.resources.permissions);
+      if (payload.resources.models) config.resources.models = { ...(config.resources.models || {}), ...payload.resources.models };
+      if (payload.resources.prompts) config.resources.prompts = { ...(config.resources.prompts || {}), ...payload.resources.prompts };
     }
 
     await configManager.write(config);
@@ -864,7 +1111,9 @@ export async function importCommand(filePath: string) {
 
   // Current existing config
   const currentConfig = await configManager.read();
-  const currentClients = Object.keys(currentConfig.clients).filter(c => currentConfig.clients[c].enabled);
+  const currentClients = Object.entries(currentConfig.clients)
+    .filter(([, conf]) => conf.enabled)
+    .map(([client]) => client);
 
   // Clients mentioned in imported config
   const importedClients = Object.keys(importedConfig.clients || {}).filter(c => importedConfig.clients[c].enabled);

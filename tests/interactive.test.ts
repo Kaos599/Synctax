@@ -16,7 +16,9 @@ describe("Interactive Mode", () => {
   });
 
   it("should call statusCommand when status is selected", async () => {
-    vi.mocked(search).mockResolvedValue("status" as any);
+    (search as any)
+      .mockResolvedValueOnce("status" as any)
+      .mockResolvedValueOnce("exit" as any);
     const statusSpy = vi.spyOn(commands, "statusCommand").mockResolvedValue(undefined as any);
     
     await startInteractiveMode();
@@ -25,7 +27,9 @@ describe("Interactive Mode", () => {
   });
 
   it("should call listCommand when list is selected", async () => {
-    vi.mocked(search).mockResolvedValue("list" as any);
+    (search as any)
+      .mockResolvedValueOnce("list" as any)
+      .mockResolvedValueOnce("exit" as any);
     const listSpy = vi.spyOn(commands, "listCommand").mockResolvedValue(undefined as any);
     
     await startInteractiveMode();
@@ -34,8 +38,10 @@ describe("Interactive Mode", () => {
   });
 
   it("should prompt for --from when pull is selected and call pullCommand", async () => {
-    vi.mocked(search).mockResolvedValue("pull" as any);
-    vi.mocked(select).mockResolvedValue("claude" as any);
+    (search as any)
+      .mockResolvedValueOnce("pull" as any)
+      .mockResolvedValueOnce("exit" as any);
+    (select as any).mockResolvedValue("claude" as any);
     
     const pullSpy = vi.spyOn(commands, "pullCommand").mockResolvedValue(undefined as any);
     
@@ -43,5 +49,21 @@ describe("Interactive Mode", () => {
     
     expect(pullSpy).toHaveBeenCalledWith({ from: "claude", interactive: true });
     expect(select).toHaveBeenCalled();
+  });
+
+  it("should stay in interactive mode until exit", async () => {
+    (search as any)
+      .mockResolvedValueOnce("status" as any)
+      .mockResolvedValueOnce("list" as any)
+      .mockResolvedValueOnce("exit" as any);
+
+    const statusSpy = vi.spyOn(commands, "statusCommand").mockResolvedValue(undefined as any);
+    const listSpy = vi.spyOn(commands, "listCommand").mockResolvedValue(undefined as any);
+
+    await startInteractiveMode();
+
+    expect(statusSpy).toHaveBeenCalledTimes(1);
+    expect(listSpy).toHaveBeenCalledTimes(1);
+    expect(search).toHaveBeenCalledTimes(3);
   });
 });
