@@ -39,4 +39,18 @@ describe("ConfigManager", () => {
     expect(config.source).toBe("claude");
     expect(config.clients["claude"]?.enabled).toBe(true);
   });
+
+  it("getTheme returns the saved theme or defaults to rebel", async () => {
+    const manager = new ConfigManager();
+    expect(await manager.getTheme()).toBe("rebel");
+
+    await manager.write({
+      version: 1,
+      theme: "cyber",
+      clients: {},
+      resources: { mcps: {} },
+    });
+
+    expect(await manager.getTheme()).toBe("cyber");
+  });
 });

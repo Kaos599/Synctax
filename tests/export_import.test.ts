@@ -1,81 +1,55 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { exportCommand, importCommand } from "../src/commands.js";
-
-vi.mock("fs/promises", () => {
-  const mockWriteFile = vi.fn();
-  const mockReadFile = vi.fn();
-  return {
-    writeFile: mockWriteFile,
-    readFile: mockReadFile,
-    default: {
-      writeFile: mockWriteFile,
-      readFile: mockReadFile,
-      access: vi.fn(),
-      mkdir: vi.fn(),
-      copyFile: vi.fn()
-    }
-  };
-});
-
-vi.mock("chalk", () => ({
-  default: {
-    green: vi.fn((m) => m),
-    red: vi.fn((m) => m),
-    yellow: vi.fn((m) => m),
-    blue: vi.fn((m) => m),
-    cyan: vi.fn((m) => m),
-    hex: vi.fn(() => (m: string) => m),
-    gray: vi.fn((m) => m),
-    whiteBright: vi.fn((m) => m),
-    magenta: vi.fn((m) => m),
-  },
-}));
-
-const mockRead = vi.fn();
-const mockWrite = vi.fn();
-const mockBackup = vi.fn();
-
-vi.mock("../src/config.js", () => {
-  return {
-    ConfigManager: class {
-      read = mockRead;
-      write = mockWrite;
-      backup = mockBackup;
-    }
-  };
-});
+import fs from "fs/promises";
+import path from "path";
+import os from "os";
 
 describe("Export/Import Commands", () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
+  let tmpDir: string;
+  let originalCwd: () => string;
+
+  beforeEach(async () => {
+    tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "synctax-exp-"));
+    process.env.SYNCTAX_HOME = tmpDir;
+
+    // We must mock cwd
+    originalCwd = process.cwd;
+    process.cwd = () => tmpDir;
+    
+    await fs.mkdir(path.join(tmpDir, ".synctax"), { recursive: true });
+    
+    // Write a dummy master config
+    const mockConfig = {
+      version: 1,
+      activeProfile: "default",
+      profiles: { default: {} },
+      clients: { cursor: { enabled: true } },
+      resources: {
+        mcps: { test: { command: "test" } },
+        agents: {},
+        skills: {},
+        permissions: { allowedPaths: [], deniedPaths: [], allowedCommands: [], deniedCommands: [], networkAllow: false },
+      },
+    };
+    await fs.writeFile(path.join(tmpDir, ".synctax", "config.json"), JSON.stringify(mockConfig));
+  });
+
+  afterEach(async () => {
+    process.cwd = originalCwd;
+    await fs.rm(tmpDir, { recursive: true, force: true });
+    delete process.env.SYNCTAX_HOME;
+    vi.restoreAllMocks();
   });
 
   describe("exportCommand", () => {
     it("should export the master config to the specified file", async () => {
-      const mockConfig = {
-        version: 1,
-        clients: { cursor: { enabled: true } },
-        resources: {
-          mcps: { test: { command: "test" } },
-          agents: {},
-          skills: {},
-        },
-      };
-
-      mockRead.mockResolvedValue(mockConfig as any);
-
-      const exportPath = "/tmp/export.json";
+      const exportPath = "export.json";
       await exportCommand(exportPath);
 
-      expect(mockRead).toHaveBeenCalled();
-      const resolvedPath = require("path").resolve(process.cwd(), exportPath);
-
-      const fs = await import("fs/promises");
-      expect(fs.writeFile).toHaveBeenCalledWith(
-        resolvedPath,
-        JSON.stringify(mockConfig, null, 2),
-        "utf-8"
-      );
+      const resolvedPath = path.resolve(tmpDir, exportPath);
+      const exportedData = await fs.readFile(resolvedPath, "utf-8");
+      const parsed = JSON.parse(exportedData);
+      expect(parsed.resources.mcps.test.command).toBe("test");
     });
   });
 
@@ -83,23 +57,24 @@ describe("Export/Import Commands", () => {
     it("should import valid config and overwrite existing one", async () => {
       const mockConfig = {
         version: 1,
+        activeProfile: "default",
+        profiles: { default: {} },
         clients: { cursor: { enabled: true } },
         resources: {
-          mcps: { test: { command: "test" } },
+          mcps: { test: { command: "test2" } },
           agents: {},
           skills: {},
+          permissions: { allowedPaths: [], deniedPaths: [], allowedCommands: [], deniedCommands: [], networkAllow: false },
         },
       };
 
-      const fs = await import("fs/promises");
-      (fs.readFile as any).mockResolvedValue(JSON.stringify(mockConfig));
-      mockRead.mockResolvedValue({ clients: { cursor: { enabled: true } } } as any);
+      const importPath = "import.json";
+      await fs.writeFile(path.join(tmpDir, importPath), JSON.stringify(mockConfig));
 
-      const importPath = "/tmp/import.json";
       await importCommand(importPath);
 
-      expect(mockBackup).toHaveBeenCalled();
-      expect(mockWrite).toHaveBeenCalled();
+      const newMaster = JSON.parse(await fs.readFile(path.join(tmpDir, ".synctax", "config.json"), "utf-8"));
+      expect(newMaster.resources.mcps.test.command).toBe("test2");
     });
   });
 });

@@ -1,7 +1,3 @@
 {
-  "mcp.servers": {
-    "copilot-mcp": {
-      "command": "python"
-    }
-  }
+  "mcp.servers": {}
 }

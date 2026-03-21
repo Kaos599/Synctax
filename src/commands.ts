@@ -1,4 +1,5 @@
 import chalk from "chalk";
+import { checkbox, confirm } from "@inquirer/prompts";
 import { ConfigManager } from "./config.js";
 import { adapters } from "./adapters/index.js";
 import { Config } from "./types.js";
@@ -17,8 +18,11 @@ export async function initCommand(options: {
   theme?: string;
   yes?: boolean;
   noPathPrompt?: boolean;
+  skipBanner?: boolean;
 }) {
-  printBanner(options.theme || "pixel");
+  if (!options.skipBanner) {
+    printBanner(options.theme || "rebel");
+  }
   const configManager = getConfigManager();
   console.log(chalk.blue("Initializing synctax..."));
 
@@ -37,6 +41,7 @@ export async function initCommand(options: {
   const newConfig: Config = {
     version: 1,
     source: options.source,
+    theme: options.theme || "rebel",
     clients: {},
     resources: { mcps: {}, agents: {}, skills: {} },
   };
@@ -96,12 +101,35 @@ export async function listCommand() {
 }
 
 
-export async function syncCommand(options: { dryRun?: boolean }) {
+export async function syncCommand(options: { dryRun?: boolean, interactive?: boolean }) {
   const configManager = getConfigManager();
   console.log(chalk.blue("Starting sync..."));
 
   const config = await configManager.read();
-  const resources = await applyProfileFilter(config.resources, config.profiles[config.activeProfile]);
+  let resources = await applyProfileFilter(config.resources, config.profiles[config.activeProfile]);
+
+  if (options.interactive) {
+    const choices = [
+      ...Object.keys(resources.mcps || {}).map(k => ({ name: `[MCP] ${k}`, value: { domain: 'mcp', key: k }, checked: true })),
+      ...Object.keys(resources.agents || {}).map(k => ({ name: `[Agent] ${k}`, value: { domain: 'agent', key: k }, checked: true })),
+      ...Object.keys(resources.skills || {}).map(k => ({ name: `[Skill] ${k}`, value: { domain: 'skill', key: k }, checked: true }))
+    ];
+
+    if (choices.length > 0) {
+      const selected = await checkbox({
+        message: 'Select resources to sync:',
+        choices
+      });
+      
+      const filteredResources = { mcps: {}, agents: {}, skills: {}, permissions: resources.permissions, models: resources.models, prompts: resources.prompts };
+      for (const item of selected) {
+        if (item.domain === 'mcp') filteredResources.mcps[item.key] = resources.mcps[item.key];
+        if (item.domain === 'agent') filteredResources.agents[item.key] = resources.agents[item.key];
+        if (item.domain === 'skill') filteredResources.skills[item.key] = resources.skills[item.key];
+      }
+      resources = filteredResources as any;
+    }
+  }
 
   if (!options.dryRun) {
     await configManager.backup();
@@ -171,7 +199,7 @@ export async function memorySyncCommand(options: { source?: string, dryRun?: boo
   }
 }
 
-export async function pullCommand(options: { from: string, merge?: boolean, overwrite?: boolean, domain?: string }) {
+export async function pullCommand(options: { from: string, merge?: boolean, overwrite?: boolean, domain?: string, interactive?: boolean }) {
   const configManager = getConfigManager();
   console.log(chalk.blue(`Pulling config from ${options.from}...`));
 
@@ -185,21 +213,47 @@ export async function pullCommand(options: { from: string, merge?: boolean, over
 
   try {
     const data = await adapter.read();
+    let toMerge = data;
+
+    if (options.interactive) {
+      const choices = [
+        ...Object.keys(data.mcps || {}).map(k => ({ name: `[MCP] ${k}`, value: { domain: 'mcp', key: k }, checked: true })),
+        ...Object.keys(data.agents || {}).map(k => ({ name: `[Agent] ${k}`, value: { domain: 'agent', key: k }, checked: true })),
+        ...Object.keys(data.skills || {}).map(k => ({ name: `[Skill] ${k}`, value: { domain: 'skill', key: k }, checked: true }))
+      ];
+
+      if (choices.length > 0) {
+        const selected = await checkbox({
+          message: `Select resources to pull from ${adapter.name}:`,
+          choices
+        });
+        
+        toMerge = { mcps: {}, agents: {}, skills: {}, permissions: data.permissions, models: data.models, prompts: data.prompts };
+        for (const item of selected) {
+          if (item.domain === 'mcp') toMerge.mcps[item.key] = data.mcps[item.key];
+          if (item.domain === 'agent') toMerge.agents[item.key] = data.agents[item.key];
+          if (item.domain === 'skill') toMerge.skills[item.key] = data.skills[item.key];
+        }
+      } else {
+        console.log(chalk.yellow(`No resources found in ${adapter.name} to pull.`));
+        return;
+      }
+    }
 
     if (options.overwrite) {
-      if (!options.domain || options.domain === 'mcp') { config.resources.mcps = data.mcps; }
-      if (!options.domain || options.domain === 'agents') { config.resources.agents = data.agents; }
-      if (!options.domain || options.domain === 'skills') { config.resources.skills = data.skills; }
-      if (!options.domain || options.domain === 'permissions') { config.resources.permissions = data.permissions; }
-      if (!options.domain || options.domain === 'models') { config.resources.models = data.models; }
-      if (!options.domain || options.domain === 'prompts') { config.resources.prompts = data.prompts; }
+      if (!options.domain || options.domain === 'mcp') { config.resources.mcps = toMerge.mcps; }
+      if (!options.domain || options.domain === 'agents') { config.resources.agents = toMerge.agents; }
+      if (!options.domain || options.domain === 'skills') { config.resources.skills = toMerge.skills; }
+      if (!options.domain || options.domain === 'permissions') { config.resources.permissions = toMerge.permissions; }
+      if (!options.domain || options.domain === 'models') { config.resources.models = toMerge.models; }
+      if (!options.domain || options.domain === 'prompts') { config.resources.prompts = toMerge.prompts; }
     } else {
-      if (!options.domain || options.domain === 'mcp') { config.resources.mcps = { ...config.resources.mcps, ...data.mcps }; }
-      if (!options.domain || options.domain === 'agents') { config.resources.agents = { ...config.resources.agents, ...data.agents }; }
-      if (!options.domain || options.domain === 'skills') { config.resources.skills = { ...config.resources.skills, ...data.skills }; }
-      if (!options.domain || options.domain === 'permissions') { config.resources.permissions = mergePermissions(config.resources.permissions, data.permissions); }
-      if (!options.domain || options.domain === 'models') { config.resources.models = { ...config.resources.models, ...data.models }; }
-      if (!options.domain || options.domain === 'prompts') { config.resources.prompts = { ...config.resources.prompts, ...data.prompts }; }
+      if (!options.domain || options.domain === 'mcp') { config.resources.mcps = { ...config.resources.mcps, ...toMerge.mcps }; }
+      if (!options.domain || options.domain === 'agents') { config.resources.agents = { ...config.resources.agents, ...toMerge.agents }; }
+      if (!options.domain || options.domain === 'skills') { config.resources.skills = { ...config.resources.skills, ...toMerge.skills }; }
+      if (!options.domain || options.domain === 'permissions') { config.resources.permissions = mergePermissions(config.resources.permissions, toMerge.permissions); }
+      if (!options.domain || options.domain === 'models') { config.resources.models = { ...config.resources.models, ...toMerge.models }; }
+      if (!options.domain || options.domain === 'prompts') { config.resources.prompts = { ...config.resources.prompts, ...toMerge.prompts }; }
     }
 
     config.source = options.from;
@@ -473,29 +527,64 @@ export async function addCommand(domain: string, name: string, options: any) {
   }
 }
 
-export async function removeCommand(domain: string, name: string, options: any) {
+export async function removeCommand(domain: string | undefined, name: string | undefined, options: any) {
   const configManager = getConfigManager();
-  console.log(chalk.blue(`Removing ${domain}: ${name}...`));
-
   const config = await configManager.read();
 
-  let group: any;
-  if (domain === "mcp") group = config.resources.mcps;
-  else if (domain === "agent") group = config.resources.agents;
-  else if (domain === "skill") group = config.resources.skills;
-  else {
-    console.log(chalk.red(`Unsupported domain: ${domain}`));
-    return;
+  if (options.interactive || (!domain && !name)) {
+    const choices = [
+      ...Object.keys(config.resources.mcps || {}).map(k => ({ name: `[MCP] ${k}`, value: { domain: 'mcp', key: k } })),
+      ...Object.keys(config.resources.agents || {}).map(k => ({ name: `[Agent] ${k}`, value: { domain: 'agent', key: k } })),
+      ...Object.keys(config.resources.skills || {}).map(k => ({ name: `[Skill] ${k}`, value: { domain: 'skill', key: k } }))
+    ];
+
+    if (choices.length === 0) {
+      console.log(chalk.yellow("No resources found to remove."));
+      return;
+    }
+
+    const selected = await checkbox({
+      message: 'Select resources to remove:',
+      choices
+    });
+
+    if (selected.length === 0) {
+      console.log(chalk.yellow("No resources selected."));
+      return;
+    }
+
+    for (const item of selected) {
+      if (item.domain === 'mcp') delete config.resources.mcps[item.key];
+      if (item.domain === 'agent') delete config.resources.agents[item.key];
+      if (item.domain === 'skill') delete config.resources.skills[item.key];
+      console.log(chalk.green(`✓ Removed ${item.domain}: ${item.key}`));
+    }
+  } else {
+    if (!domain || !name) {
+      console.log(chalk.red("Must specify domain and name, or use --interactive"));
+      return;
+    }
+    console.log(chalk.blue(`Removing ${domain}: ${name}...`));
+
+    let group: any;
+    if (domain === "mcp") group = config.resources.mcps;
+    else if (domain === "agent") group = config.resources.agents;
+    else if (domain === "skill") group = config.resources.skills;
+    else {
+      console.log(chalk.red(`Unsupported domain: ${domain}`));
+      return;
+    }
+
+    if (options.dryRun) {
+      console.log(chalk.yellow(`[Dry Run] Would remove ${name}`));
+      return;
+    }
+
+    delete group[name];
+    console.log(chalk.green(`✓ Removed ${name}`));
   }
 
-  if (options.dryRun) {
-    console.log(chalk.yellow(`[Dry Run] Would remove ${name}`));
-    return;
-  }
-
-  delete group[name];
   await configManager.write(config);
-  console.log(chalk.green(`✓ Removed ${name}`));
 
   if (options.fromAll) {
     await syncCommand({});

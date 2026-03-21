@@ -49,4 +49,9 @@ export class ConfigManager {
        // Ignore if config file doesn't exist
      }
   }
+
+  async getTheme(): Promise<string> {
+    const config = await this.read();
+    return config.theme || "pixel";
+  }
 }

@@ -25,7 +25,8 @@ const program = new Command();
 program
   .name("synctax")
   .description("Universal Sync for the Agentic Developer Stack")
-  .version("0.1.0");
+  .version("0.1.0")
+  .option("--theme <name>", "Banner: pixel|synctax (wordmark), or rebel|green|cyber|default (FIGlet art)");
 
 program
   .command("init")
@@ -58,6 +59,7 @@ program
   .command("sync")
   .description("Push all resources from master to all enabled clients")
   .option("--dry-run", "Preview all changes without writing any files")
+  .option("-i, --interactive", "Interactively select resources to sync")
   .action((options) => {
     syncCommand(options);
   });
@@ -79,6 +81,7 @@ program
   .option("--merge", "Merge pulled config with existing master (default)")
   .option("--overwrite", "Replace master config entirely")
   .option("--domain <domain>", "Pull only specific domain (mcp, agents)")
+  .option("-i, --interactive", "Interactively select resources to pull")
   .action((options) => {
     pullCommand(options);
   });
@@ -123,10 +126,11 @@ program
   });
 
 program
-  .command("remove <domain> <name>")
+  .command("remove [domain] [name]")
   .description("Remove a resource")
   .option("--dry-run")
   .option("--from-all")
+  .option("-i, --interactive", "Interactively select resources to remove")
   .action((domain, name, options) => {
     removeCommand(domain, name, options);
   });
@@ -193,4 +197,19 @@ program
     const { importCommand } = await import("../src/commands.js");
     await importCommand(file);
   });
-program.parse(process.argv);
+
+if (process.argv.length <= 2 || (process.argv.length === 4 && process.argv[2] === "--theme")) {
+  let themeOverride = undefined;
+  if (process.argv.length === 4 && process.argv[2] === "--theme") {
+    themeOverride = process.argv[3];
+  }
+  import("../src/interactive.js").then(({ startInteractiveMode }) => {
+    startInteractiveMode(themeOverride).catch((err) => {
+      if (err.name !== "ExitPromptError") {
+        console.error(err);
+      }
+    });
+  });
+} else {
+  program.parse(process.argv);
+}

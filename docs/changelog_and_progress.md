@@ -25,18 +25,24 @@ The **v1.5 Milestone** marked the completion of the core operational functionali
 - It continuously monitors `~/.synctax/config.json`. On file save, it triggers a `syncCommand` to automatically push changes to the client files.
 - Uses a robust 500ms debounce mechanism to prevent I/O spam and returns the watcher instance to prevent hanging tests.
 
-### 1.2 Terminal UI ASCII Banner
+### 1.2 Terminal UI ASCII Banner & Theming
 - The CLI now displays a gorgeous `synctax` banner using the exact DOS Rebel font format.
-- The `--theme` flag is implemented and supports "dull-neon" colored output using `chalk.hex()`. Supported themes:
+- The default theme is now permanently set to `rebel` across the entire application config stack. 
+- The `--theme` flag is implemented (both globally and on `init`) and supports "dull-neon" colored output using `chalk.hex()`. Supported themes:
   - `default`: `["#362F4F", "#5B23FF", "#008BFF", "#E4FF30"]`
   - `cyber`: `["#FF2DD1", "#FDFFB8", "#4DFFBE", "#63C8FF"]`
   - `rebel`: `["#000000", "#CF0F47", "#FF0B55", "#FFDEDE"]`
 
-### 1.3 Tabular Matrix Dashboard (`synctax info`)
+### 1.3 Interactive CLI Mode
+- Intercepting empty commands (`synctax`) bypasses standard commander outputs and instead launches a rich interactive command palette using `@inquirer/search`.
+- Features dynamic "hover" descriptions that explain exactly what each command does.
+- Implements cascading conversational prompts for complex commands (e.g. `pull` prompts for which client adapter to pull from, `add` prompts for the resource domain). 
+
+### 1.4 Tabular Matrix Dashboard (`synctax info`)
 - Upgraded the UX drastically. When a user runs `info` (or `init`), the terminal prints a beautiful tabular structure using `cli-table3`.
 - It details the installed clients on the system and dynamically styles the exact counts of their resources (e.g., "Cursor | Yes | 3 MCPs | 2 Agents | 1 Skill" instead of raw numbers).
 
-### 1.4 Advanced File Extension Parsing
+### 1.5 Advanced File Extension Parsing
 - AI clients use varying formats for skills/agents. The regex in our adapters (specifically `ClaudeAdapter`) was updated to comprehensively scrape not just `*.md`, but also `*.agent`, `*.agents`, and `*.claude` files inside their respective directories.
 - Tests are in place to guarantee this scaling parsing logic.
 

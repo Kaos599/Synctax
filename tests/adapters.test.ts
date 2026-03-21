@@ -116,6 +116,9 @@ describe("Adapters", () => {
 
   describe("OpenCodeAdapter", () => {
     it("detects correctly", async () => {
+      const originalCwd = process.cwd;
+      process.cwd = () => mockHome;
+
       const adapter = new OpenCodeAdapter();
       expect(await adapter.detect()).toBe(false);
 
@@ -123,6 +126,8 @@ describe("Adapters", () => {
       await fs.writeFile(path.join(mockHome, ".config", "opencode", "config.json"), "{}");
 
       expect(await adapter.detect()).toBe(true);
+      
+      process.cwd = originalCwd;
     });
 
     it("reads and writes correctly", async () => {

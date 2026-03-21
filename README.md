@@ -24,12 +24,13 @@ Master config lives at `%USERPROFILE%\.synctax\config.json` (or `$env:SYNCTAX_HO
 
 ---
 
-## 🚀 Features (v1.5)
+## 🚀 Features (v1.6)
 
+- **Interactive CLI Palette (`synctax`)**: Running `synctax` with no arguments now launches a beautiful, searchable, interactive command prompt complete with hover descriptions and cascading contextual questions (e.g. asking which client to pull from dynamically) using `@inquirer/prompts`.
 - **Universal Support**: Native adapters for Claude Code, Cursor, OpenCode, Antigravity, Cline, Github Copilot, Github Copilot CLI, Gemini CLI, and Zed.
 - **Watch Daemon (`synctax watch`)**: Run `synctax` silently in the background! Any changes detected in your `~/.synctax/config.json` are instantly pushed to all your installed clients safely.
 - **Intelligence Dashboard (`synctax info`)**: A gorgeous tabular interface displaying exactly which AI clients are installed and what resources (MCPs, Agents, Skills) they currently possess.
-- **Themed Initialization (`synctax init --theme <theme>`)**: Default **SYNCTAX** pixel wordmark (ANSI); legacy palettes: `default`, `cyber`, `rebel`.
+- **Themed Environments**: The global default theme is now the stunning `rebel` DOS font. You can temporarily override it anytime using the `--theme <name>` flag on any run.
 - **Advanced File Parsing**: We don't just stop at `.md` files. Adapters fluidly pick up `.agent` and `.claude` extensions seamlessly.
 - **Merge-Conservative Security**: Automatically ensures your network and file path deny-lists override permissive rules when pulling team configurations.
 

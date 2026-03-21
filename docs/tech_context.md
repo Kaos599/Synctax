@@ -25,8 +25,9 @@ This document outlines the technical foundation, development setup, and critical
   - We use Vitest for its speed, watch mode, and seamless integration with our ESM/TypeScript stack.
 - **Validation:** Zod
   - Zod is the backbone of our `ConfigManager`, ensuring that `~/.synctax/config.json` conforms to our expected domain models (`McpServer`, `Agent`, `Skill`, `Permissions`, etc.) before any adapter attempts to parse it.
-- **CLI UI:** Commander.js, Chalk, cli-table3
+- **CLI UI:** Commander.js, Inquirer.js, Chalk, cli-table3
   - **Commander.js:** Provides robust command routing (`init`, `info`, `watch`, `sync`).
+  - **Inquirer.js (@inquirer/prompts):** Powers the robust interactive command palette that automatically intercepts the default `synctax` execution when no arguments are provided.
   - **Chalk:** Enables custom hex themes (`#362F4F`, `#5B23FF`) bounding DOS Rebel ASCII art.
   - **cli-table3:** Powers the beautiful matrix dashboards seen in `synctax info`.
 - **Automation:** Chokidar

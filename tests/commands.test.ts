@@ -112,6 +112,21 @@ describe("CLI Commands", () => {
     expect(config.resources.mcps["bad"]).toBeUndefined();
   });
 
+  it("initCommand saves the theme properly", async () => {
+    const { initCommand } = await import("../src/commands.js");
+    await initCommand({ theme: "cyber", force: true, detect: false, yes: true });
+    
+    const config = await manager.read();
+    expect(config.theme).toBe("cyber");
+  });
+
+  it("initCommand defaults to rebel theme if not provided", async () => {
+    const { initCommand } = await import("../src/commands.js");
+    await initCommand({ force: true, detect: false, yes: true });
+    
+    const config = await manager.read();
+    expect(config.theme).toBe("rebel");
+  });
 
   it("doctorCommand diagnoses setup issues", async () => {
     const { doctorCommand } = await import("../src/commands.js");
