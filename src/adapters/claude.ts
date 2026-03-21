@@ -1,7 +1,12 @@
 import fs from "fs/promises";
 import path from "path";
 import os from "os";
-import { ClientAdapter, McpServer, Agent, Skill, Permissions } from "../types.js";
+import { ClientAdapter, McpServer, Agent, Skill, Permissions, ResourceScope } from "../types.js";
+
+function stripScope<T extends { scope?: ResourceScope }>(item: T): Omit<T, "scope"> {
+  const { scope: _scope, ...rest } = item;
+  return rest;
+}
 
 export class ClaudeAdapter implements ClientAdapter {
   id = "claude";
@@ -165,7 +170,10 @@ export class ClaudeAdapter implements ClientAdapter {
       existing = JSON.parse(data);
     } catch (e) {}
 
-    existing.mcpServers = resources.mcps || {};
+    existing.mcpServers = {};
+    for (const [key, value] of Object.entries(resources.mcps || {})) {
+      existing.mcpServers[key] = stripScope(value);
+    }
 
     if (resources.models) existing.preferredModel = resources.models.defaultModel;
     if (resources.prompts) existing.customInstructions = resources.prompts.globalSystemPrompt;

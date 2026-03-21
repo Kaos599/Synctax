@@ -40,8 +40,9 @@ The core of Synctax is a central configuration state defined entirely by Zod sch
 
 ### 2.2 The CLI Layer
 - Powered by Commander.js.
+- **`synctax init`** ends with an interactive PATH offer (when stdin is a TTY): install `~/.synctax/bin` and update the user environment so `synctax` is on PATH. Non-interactive runs use `init --yes` or `init --no-path-prompt`; tests and CI skip the prompt automatically.
 - Uses `cli-table3` to print a gorgeous dashboard of installed clients and their specific resource metrics (e.g., "Cursor | Yes | 3 MCPs | 2 Agents | 1 Skill").
-- Supports thematic styling via chalk.hex() matching DOS Rebel ASCII banners (`default`, `cyber`, `rebel`).
+- Startup banner: **SYNCTAX** pixel wordmark (white/grey letterforms, dithered extrusion shadow) via chalk ANSI; CLI themes also include legacy line-art palettes (`default`, `cyber`, `rebel`) and `synctax`/`pixel` for the wordmark.
 
 ### 2.3 The Daemon Layer (`synctax watch`)
 - Uses `chokidar` to run silently in the background.
@@ -61,6 +62,7 @@ This section exhaustively defines how Synctax translates its master configuratio
 - **Directory**: `~/.claude`
 - **Config File**: `~/.claude/settings.json`
 - **Memory File**: `CLAUDE.md` (Project root)
+- **Scope**: Global only
 - **Agents Dir**: `~/.claude/agents/`
 - **Skills Dir**: `~/.claude/skills/`
 - **Handling**:
@@ -75,6 +77,7 @@ This section exhaustively defines how Synctax translates its master configuratio
 - **Modes File**: `~/.cursor/modes.json`
 - **Commands Dir**: `~/.cursor/commands/`
 - **Memory File**: `.cursorrules` (Project root)
+- **Scope**: Global only
 - **Handling**:
   - **MCPs**: Maps to `mcpServers` in `mcp.json`.
   - **Agents**: Cursor calls these "Modes". Synctax reads and writes to `modes.json`, mapping `name`, `description`, `systemPrompt`, and `model`.
@@ -83,22 +86,27 @@ This section exhaustively defines how Synctax translates its master configuratio
 ### 3.3 Zed (`src/adapters/zed.ts`)
 - **Config File**: `~/.config/zed/settings.json`
 - **Memory File**: `.rules` (Project root)
+- **Scope**: Global only
 - **Handling**:
   - **MCPs**: Maps to the unique key `context_servers` in `settings.json`.
   - **Agents/Skills**: Zed currently lacks native isolated agent/skill file storage comparable to Claude/Cursor. Synctax only syncs MCPs and memory files for Zed.
 
 ### 3.4 Cline (`src/adapters/cline.ts`)
 - **Directory**: `~/.cline`
-- **MCP File**: `~/.cline/mcp.json`
-- **Config File**: `~/.cline/settings.json`
+- **MCP Files**: `~/.cline/mcp_settings.json` (legacy), `~/.cline/data/settings/cline_mcp_settings.json` (current)
+- **Config Files**: `~/.cline/config.json` and platform XDG variants
 - **Memory File**: `.clinerules` (Project root)
+- **Scope**: User + Global fallback
 - **Handling**:
-  - **MCPs**: Maps to `mcpServers` in `mcp.json`.
+  - **MCPs**: Maps to `mcpServers` in `mcp_settings.json`/`.config/`-scoped variants.
   - **Permissions**: Maps `networkAllow` to `autoApproveNetwork` (boolean), and `allowedCommands` to `autoApproveCommands` in `settings.json`.
   - **Models**: Maps `model` in `settings.json`.
 
 ### 3.5 OpenCode (`src/adapters/opencode.ts`)
-- **Config File**: `~/.config/opencode/config.json`
+- **Config Files**:
+  - Project: `./opencode.json` or `./.opencode/config.json`
+  - User: `~/.config/opencode/config.json`, `~/.opencode/config.json`
+- **Scope**: Project > User
 - **Memory File**: `AGENTS.md` (Project root)
 - **Handling**:
   - **MCPs**: Maps to `mcp` in `config.json`.
@@ -106,7 +114,10 @@ This section exhaustively defines how Synctax translates its master configuratio
   - **Skills**: Maps to the `skills` object.
 
 ### 3.6 Antigravity (`src/adapters/antigravity.ts`)
-- **Config File**: `~/.config/antigravity/config.json`
+- **Config Files**:
+  - Global fallback: `~/.antigravity/config.json`
+  - User: `~/.antigravity_tools/gui_config.json`, `~/.config/antigravity/config.json`
+- **Scope**: User + Global fallback
 - **Memory File**: `.antigravityrules` (Project root)
 - **Handling**:
   - **MCPs**: Maps to `mcpServers`.
@@ -114,22 +125,48 @@ This section exhaustively defines how Synctax translates its master configuratio
   - **Skills**: Maps to the `skills` object, using `content` and `trigger`.
 
 ### 3.7 Github Copilot (`src/adapters/github-copilot.ts`)
-- **Config File**: `~/.vscode/settings.json` (Note: Often heavily reliant on IDE user settings).
+- **Config files**: VS Code **user** `settings.json` (`mcp.servers`) and/or **user** `mcp.json` (`servers`, Copilot MCP UI) — see `vscodeUserSettingsCandidates` / `vscodeUserMcpJsonCandidates` (e.g. `%APPDATA%\Code\User\` on Windows). Workspace `.vscode/` fallbacks included.
+- **Scope**: Project `.vscode/*` > User `%APPDATA%\Code\User`
 - **Memory File**: `.github/copilot-instructions.md` (Project root)
 - **Handling**:
   - **MCPs**: Maps to the unique key `mcp.servers` in `settings.json`.
   - **Agents/Skills**: Copilot does not have standard local agent/skill configurations managed this way. Focus is on MCPs and standard Copilot instructions.
 
 ### 3.8 Github Copilot CLI (`src/adapters/github-copilot-cli.ts`)
-- **Config File**: `~/.config/github-copilot-cli/config.json`
+- **Config Files**:
+  - Project: `.github/copilot/config.json`
+  - User: `~/.config/github-copilot-cli/config.json`, `~/.config/copilot/config.json`
+- **Scope**: Project > User > Global
 - **Memory File**: `.github/copilot-instructions.md` (Project root, shared with standard Copilot)
 - **Handling**:
   - **Skills**: Synctax maps skills directly to the `aliases` object in `config.json`, leveraging the CLI's native alias system as pseudo-skills.
 
 ### 3.9 Gemini CLI (`src/adapters/gemini-cli.ts`)
-- **Config File**: `~/.config/gemini/config.json`
+- **Config Files**:
+  - Project: `./.gemini/settings.json`
+  - User: `~/.gemini/settings.json`
+  - Legacy fallback: `~/.gemini/config.json`, `~/.config/gemini/config.json`
+- **Scope**: Project > User
 - **Memory File**: `.geminirules` (Project root)
 - **Handling**:
   - **Models**: Maps `defaultModel` to `model` in `config.json`.
   - **Prompts**: Maps `globalSystemPrompt` to `systemInstruction`.
   - **Agents/Skills**: Focuses exclusively on model assignment and base system instructions.
+
+### 3.10 Scope Matrix (read/write precedence)
+
+| Client | MCP scope precedence | Agents scope precedence | Skills scope precedence | Default write target |
+| --- | --- | --- | --- | --- |
+| Claude Code | `global` only | `global` only | `global` only | `~/.claude/settings.json` |
+| Cursor | `global` only | `global` only | `global` only | `~/.cursor/mcp.json` |
+| Zed | `global` only | N/A | N/A | `~/.config/zed/settings.json` |
+| Cline | `user`/`global` | not stored to adapter file | not stored to adapter file | user-scoped Cline config (`~/.cline/*`) |
+| OpenCode | `project` > `user` | `project` > `user` | `project` > `user` | `./opencode.json` (project), else user path |
+| Antigravity | `user` > `global` | `user` > `global` | `user` > `global` | active user path, global fallback |
+| Github Copilot | `project` > `user` | N/A | N/A | `.vscode/*` workspace, else user VS Code paths |
+| Github Copilot CLI | `project` > `user` | `project` > `user` (stored as aliases) | `project` > `user` (stored as aliases) | project config if present, else user config |
+| Gemini CLI | `project` > `user` | N/A | N/A | user settings path |
+
+Notes:
+- `global` scope is the lowest-priority source, `user` overrides global, and `project` overrides user.
+- `scope` is preserved in Synctax resource records during `read` so sync decisions can keep precedence when re-writing.

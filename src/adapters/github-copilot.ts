@@ -1,44 +1,145 @@
 import fs from "fs/promises";
 import path from "path";
-import os from "os";
-import { ClientAdapter, McpServer, Agent, Skill, Permissions, Models, Prompts, Credentials } from "../types.js";
+import type { ClientAdapter, McpServer, Agent, Skill } from "../types.js";
+import {
+  firstExistingPath,
+  firstExistingScopedPath,
+  homeDir,
+  vscodeCopilotDetectCandidates,
+  vscodeUserMcpJsonCandidates,
+  vscodeUserSettingsCandidates,
+} from "../platform-paths.js";
+import { splitByScope } from "../scopes.js";
+
+type CandidateScope = "global" | "user" | "project";
+
+function scopeWeight(scope: CandidateScope): number {
+  if (scope === "global") return 0;
+  if (scope === "user") return 1;
+  return 2;
+}
+
+function mergeMcpsFromSettingsJson(parsed: Record<string, unknown>, into: Record<string, McpServer>, scope: CandidateScope) {
+  const mcpServers = (parsed["mcp.servers"] as Record<string, any>) || {};
+  for (const [key, val] of Object.entries(mcpServers)) {
+    if (!val || typeof val !== "object" || typeof val.command !== "string") continue;
+    into[key] = { command: val.command, args: val.args, env: val.env, scope };
+  }
+}
+
+function mergeMcpsFromMcpJson(parsed: Record<string, unknown>, into: Record<string, McpServer>, scope: CandidateScope) {
+  const servers = (parsed.servers as Record<string, any>) || {};
+  for (const [key, val] of Object.entries(servers)) {
+    if (val && typeof val === "object" && typeof val.command === "string") {
+      into[key] = { command: val.command, args: val.args, env: val.env, scope };
+    }
+  }
+}
+
+function mcpsToVscodeMcpJsonServers(mcps: Record<string, McpServer>): Record<string, unknown> {
+  const servers: Record<string, unknown> = {};
+  for (const [key, m] of Object.entries(mcps || {})) {
+    servers[key] = {
+      type: "stdio",
+      command: m.command,
+      args: m.args || [],
+      ...(m.env && Object.keys(m.env).length > 0 ? { env: m.env } : {}),
+    };
+  }
+  return servers;
+}
 
 export class GithubCopilotAdapter implements ClientAdapter {
   id = "github-copilot";
   name = "Github Copilot";
 
-  // Note: Copilot configs are heavily scattered. Often relies on User settings.json
-  private get configPath() {
-    // A simplified cross-platform path assumption for the test/mock environment
-    return path.join(process.env.SYNCTAX_HOME || os.homedir(), ".vscode", "settings.json");
+  async detect(): Promise<boolean> {
+    return (await firstExistingPath(vscodeCopilotDetectCandidates(homeDir()))) !== null;
   }
 
-  async detect(): Promise<boolean> {
-    try { await fs.access(this.configPath); return true; } catch { return false; }
+  private async resolvedWriteTarget(): Promise<{ file: string; kind: "settings" | "mcpjson" }> {
+    const h = homeDir();
+    const settings = vscodeUserSettingsCandidates(h).map((entry) => entry.path);
+    const mcp = vscodeUserMcpJsonCandidates(h).map((entry) => entry.path);
+    const existingSettings = await firstExistingPath(settings);
+    if (existingSettings) return { file: existingSettings, kind: "settings" };
+    const existingMcp = await firstExistingPath(mcp);
+    if (existingMcp) return { file: existingMcp, kind: "mcpjson" };
+    return { file: settings[0] ?? mcp[0] ?? path.join(process.cwd(), ".vscode", "settings.json"), kind: "settings" };
+  }
+
+  private async projectWriteTarget(): Promise<string> {
+    const h = homeDir();
+    const candidates = vscodeUserMcpJsonCandidates(h).filter((candidate) => candidate.scope === "project");
+    const first = await firstExistingScopedPath(candidates);
+    return first?.path ?? path.join(process.cwd(), ".vscode", "mcp.json");
   }
 
   async read(): Promise<{ mcps: Record<string, McpServer>, agents: Record<string, Agent>, skills: Record<string, Skill> }> {
     const result = { mcps: {} as Record<string, McpServer>, agents: {} as Record<string, Agent>, skills: {} as Record<string, Skill> };
-    try {
-      const data = await fs.readFile(this.configPath, "utf-8");
-      const parsed = JSON.parse(data);
-      const mcpServers = parsed["mcp.servers"] || {};
-      for (const [key, val] of Object.entries<any>(mcpServers)) {
-        result.mcps[key] = { command: val.command, args: val.args, env: val.env };
+    const h = homeDir();
+    const candidates = [
+      ...vscodeUserSettingsCandidates(h),
+      ...vscodeUserMcpJsonCandidates(h),
+    ].sort((a, b) => scopeWeight(a.scope) - scopeWeight(b.scope));
+
+    for (const candidate of candidates) {
+      try {
+        const parsed = JSON.parse(await fs.readFile(candidate.path, "utf-8")) as Record<string, unknown>;
+        if (candidate.path.endsWith("settings.json")) {
+          mergeMcpsFromSettingsJson(parsed, result.mcps, candidate.scope);
+        } else {
+          mergeMcpsFromMcpJson(parsed, result.mcps, candidate.scope);
+        }
+      } catch {
+        /* missing or invalid */
       }
-    } catch (e: any) {}
+    }
+
+    for (const [name, mcp] of Object.entries(result.mcps)) {
+      if (!mcp.scope) {
+        result.mcps[name] = { ...mcp, scope: "global" };
+      }
+    }
+
     return result;
   }
 
   async write(resources: { mcps: Record<string, McpServer>, agents: Record<string, Agent>, skills: Record<string, Skill> }): Promise<void> {
-    const dir = path.dirname(this.configPath);
+    const { project, user, global } = splitByScope(resources.mcps);
+    const nonProject = { ...user, ...global };
+
+    if (Object.keys(project).length > 0) {
+      const configPath = await this.projectWriteTarget();
+      await this.writeMcpCollection(configPath, "mcpjson", project);
+    }
+
+    const { file: userTarget, kind } = await this.resolvedWriteTarget();
+    await this.writeMcpCollection(userTarget, kind, nonProject);
+  }
+
+  private async writeMcpCollection(
+    configPath: string,
+    kind: "settings" | "mcpjson",
+    mcps: Record<string, McpServer>
+  ): Promise<void> {
+    const dir = path.dirname(configPath);
     await fs.mkdir(dir, { recursive: true }).catch(() => {});
 
-    let existing: any = {};
-    try { existing = JSON.parse(await fs.readFile(this.configPath, "utf-8")); } catch (e) {}
+    let existing: Record<string, unknown> = {};
+    try {
+      existing = JSON.parse(await fs.readFile(configPath, "utf-8")) as Record<string, unknown>;
+    } catch {
+      /* new file */
+    }
 
-    existing["mcp.servers"] = resources.mcps || {};
-    await fs.writeFile(this.configPath, JSON.stringify(existing, null, 2), "utf-8");
+    if (kind === "settings") {
+      existing["mcp.servers"] = mcps;
+    } else {
+      existing.servers = mcpsToVscodeMcpJsonServers(mcps);
+    }
+
+    await fs.writeFile(configPath, JSON.stringify(existing, null, 2), "utf-8");
   }
 
   getMemoryFileName(): string { return ".github/copilot-instructions.md"; }

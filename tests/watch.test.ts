@@ -37,7 +37,7 @@ describe("Watch Daemon Mode", () => {
     // Verify it printed the initialization messages
     const logs = consoleSpy.mock.calls.map(c => c[0]).join("\n");
     expect(logs).toContain("Initializing synctax Watch Daemon");
-    expect(logs).toContain(".synctax/config.json");
+    expect(logs).toMatch(/\.synctax[\\/]config\.json/);
 
     consoleSpy.mockRestore();
   });

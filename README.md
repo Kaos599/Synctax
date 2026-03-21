@@ -4,6 +4,24 @@ Universal Sync for the Agentic Developer Stack.
 
 `synctax` is a cross-platform CLI tool that synchronizes the full agentic developer configuration—MCP servers, agents, skills, memory files, permissions, model preferences, and prompts—across every AI-powered IDE and CLI client on your machine.
 
+### Running the CLI
+
+The `synctax` command is **not** on your PATH until you accept the setup step during **`synctax init`** (interactive prompt) or run **`synctax init --yes`** (non-interactive). That writes `~/.synctax/bin` and updates your user PATH (Windows: user `Path` + `synctax.cmd`; macOS/Linux: shell rc and on Linux optionally `~/.config/environment.d/60-synctax.conf`). Open a **new** terminal afterward.
+
+| Method | Example |
+|--------|---------|
+| Bun (direct) | `bun ./bin/synctax.ts init` — answer the PATH prompt, or use `--yes` / `--no-path-prompt` |
+| Bun script | `bun run synctax -- init` |
+| Non-interactive PATH install | `bun ./bin/synctax.ts init --force --yes` |
+| Skip PATH entirely | `bun ./bin/synctax.ts init --no-path-prompt` |
+| Global (Bun) | `bun link --global` in the repo, then `synctax` in a new shell (requires Bun’s global bin on `PATH`) |
+
+Master config lives at `%USERPROFILE%\.synctax\config.json` (or `$env:SYNCTAX_HOME` if set).
+
+**Windows: `synctax` not found?** The command is **`synctax`** (not “syntax”). Cursor/VS Code’s integrated terminal often keeps the PATH from when the app started—use **Developer: Reload Window**, fully restart the editor, or open **Windows Terminal** and run `synctax` there. In any PowerShell you can merge the latest user PATH into the current session:
+
+`$env:Path = [System.Environment]::GetEnvironmentVariable('Path','User') + ';' + [System.Environment]::GetEnvironmentVariable('Path','Machine')`
+
 ---
 
 ## 🚀 Features (v1.5)
@@ -11,15 +29,33 @@ Universal Sync for the Agentic Developer Stack.
 - **Universal Support**: Native adapters for Claude Code, Cursor, OpenCode, Antigravity, Cline, Github Copilot, Github Copilot CLI, Gemini CLI, and Zed.
 - **Watch Daemon (`synctax watch`)**: Run `synctax` silently in the background! Any changes detected in your `~/.synctax/config.json` are instantly pushed to all your installed clients safely.
 - **Intelligence Dashboard (`synctax info`)**: A gorgeous tabular interface displaying exactly which AI clients are installed and what resources (MCPs, Agents, Skills) they currently possess.
-- **Themed Initialization (`synctax init --theme <theme>`)**: Start off right with our DOS Rebel ASCII art. Supports dynamic hex color palettes (`default`, `cyber`, `rebel`).
+- **Themed Initialization (`synctax init --theme <theme>`)**: Default **SYNCTAX** pixel wordmark (ANSI); legacy palettes: `default`, `cyber`, `rebel`.
 - **Advanced File Parsing**: We don't just stop at `.md` files. Adapters fluidly pick up `.agent` and `.claude` extensions seamlessly.
 - **Merge-Conservative Security**: Automatically ensures your network and file path deny-lists override permissive rules when pulling team configurations.
+
+### Scope-aware sync behavior
+
+Synctax now tracks where each read resource came from (`global`, `user`, `project`) and applies strict overwrite order when syncing:
+
+- `global` < `user` < `project`  
+- Resource writes are routed to the matching destination scope for each client
+- Project-specific resources (for clients that support them) are written to workspace paths where available
+
+| Client | MCP precedence | Agent precedence | Skill precedence |
+|---|---|---|---|
+| Claude / Cursor / Zed | global | N/A | N/A |
+| Cline | user > global | N/A | N/A |
+| OpenCode | project > user | project > user | project > user |
+| Antigravity | user > global | user > global | user > global |
+| Github Copilot | project > user | N/A | N/A |
+| Github Copilot CLI | project > user | project > user | project > user |
+| Gemini CLI | project > user | N/A | N/A |
 
 ## 🛠️ CLI Commands
 
 | Command | Description |
 |---|---|
-| `synctax init [--theme cyber\|rebel]` | Scaffolds the master config, scans the system for installed clients, and prints the branded banner. |
+| `synctax init` | Scaffolds config, detects clients, banner; then prompts to add `~/.synctax/bin` to PATH (default **Y**). Flags: `--yes` / `-y` (install without asking), `--no-path-prompt` (skip PATH changes). |
 | `synctax info` | Displays a styled CLI table outlining your AI ecosystem's active capabilities. |
 | `synctax export <file>` | Exports the entire master configuration to a JSON file (includes credentials). |
 | `synctax import <file>` | Imports the entire master configuration from a JSON file. Prompts if clients are missing. |

@@ -3,14 +3,22 @@ import { ConfigManager } from "./config.js";
 import { adapters } from "./adapters/index.js";
 import { Config } from "./types.js";
 import { printBanner } from "./banner.js";
+import { maybePromptAndInstallPath } from "./install-path.js";
 
 // Instantiate per function to avoid caching SYNCTAX_HOME in tests
 function getConfigManager() {
   return new ConfigManager();
 }
 
-export async function initCommand(options: { detect?: boolean; source?: string; force?: boolean, theme?: string }) {
-  printBanner(options.theme || "rebel");
+export async function initCommand(options: {
+  detect?: boolean;
+  source?: string;
+  force?: boolean;
+  theme?: string;
+  yes?: boolean;
+  noPathPrompt?: boolean;
+}) {
+  printBanner(options.theme || "pixel");
   const configManager = getConfigManager();
   console.log(chalk.blue("Initializing synctax..."));
 
@@ -35,6 +43,7 @@ export async function initCommand(options: { detect?: boolean; source?: string; 
 
   if (options.detect !== false) {
     console.log(chalk.gray("Detecting clients..."));
+    console.log(chalk.gray("(Looking for client config files on disk, not running processes.)"));
     for (const [id, adapter] of Object.entries(adapters)) {
       const detected = await adapter.detect();
       if (detected) {
@@ -54,6 +63,11 @@ export async function initCommand(options: { detect?: boolean; source?: string; 
 
   await configManager.write(newConfig);
   console.log(chalk.green("Initialization complete!"));
+
+  await maybePromptAndInstallPath({
+    assumeYes: options.yes,
+    noPathPrompt: options.noPathPrompt,
+  });
 }
 
 export async function listCommand() {

@@ -22,6 +22,7 @@
     "synctax": "./bin/synctax.ts"
   },
   "scripts": {
-    "test": "vitest run"
+    "test": "vitest run",
+    "synctax": "bun ./bin/synctax.ts"
   }
 }

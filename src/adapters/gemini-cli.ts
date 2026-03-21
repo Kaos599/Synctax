@@ -1,42 +1,78 @@
 import fs from "fs/promises";
 import path from "path";
-import os from "os";
 import { ClientAdapter, McpServer, Agent, Skill, Permissions, Models, Prompts, Credentials } from "../types.js";
+import { firstExistingPath, homeDir, firstExistingScopedPath, ConfigScope } from "../platform-paths.js";
+
+function scopeWeight(scope: ConfigScope): number {
+  if (scope === "global") return 0;
+  if (scope === "user") return 1;
+  return 2;
+}
+
+function configCandidates(h = homeDir()) {
+  const projectRoot = process.cwd();
+  return [
+    { path: path.join(projectRoot, ".gemini", "settings.json"), scope: "project" as const, label: "project gemini settings" },
+    { path: path.join(h, ".gemini", "settings.json"), scope: "user" as const, label: "user gemini settings" },
+    { path: path.join(h, ".config", "gemini", "config.json"), scope: "user" as const, label: "legacy gemini config" },
+    { path: path.join(h, ".gemini", "config.json"), scope: "user" as const, label: "legacy gemini config root" },
+  ];
+}
+
+function writeGeminiTo(configPath: string, resources: { models?: Models; prompts?: Prompts }) {
+  return fs.readFile(configPath, "utf-8")
+    .then((data) => JSON.parse(data) as Record<string, any>)
+    .catch(() => ({} as Record<string, any>))
+    .then(async (existing) => {
+      if (resources.models?.defaultModel) existing.model = resources.models.defaultModel;
+      if (resources.prompts?.globalSystemPrompt) existing.systemInstruction = resources.prompts.globalSystemPrompt;
+      const dir = path.dirname(configPath);
+      await fs.mkdir(dir, { recursive: true }).catch(() => {});
+      await fs.writeFile(configPath, JSON.stringify(existing, null, 2), "utf-8");
+    });
+}
 
 export class GeminiCliAdapter implements ClientAdapter {
   id = "gemini-cli";
   name = "Gemini CLI";
 
-  private get configPath() {
-    return path.join(process.env.SYNCTAX_HOME || os.homedir(), ".config", "gemini", "config.json");
+  private candidates() {
+    return configCandidates(homeDir());
+  }
+
+  private async resolvedConfigPath(): Promise<string> {
+    const c = this.candidates();
+    const found = await firstExistingScopedPath(c);
+    return found?.path ?? c[0].path;
   }
 
   async detect(): Promise<boolean> {
-    try { await fs.access(this.configPath); return true; } catch { return false; }
+    const paths = this.candidates().map((entry) => entry.path);
+    return (await firstExistingPath(paths)) !== null;
   }
 
   async read(): Promise<{ mcps: Record<string, McpServer>, agents: Record<string, Agent>, skills: Record<string, Skill>, models?: Models, prompts?: Prompts }> {
     const result = { mcps: {} as Record<string, McpServer>, agents: {} as Record<string, Agent>, skills: {} as Record<string, Skill>, models: {} as Models, prompts: {} as Prompts };
-    try {
-      const data = await fs.readFile(this.configPath, "utf-8");
-      const parsed = JSON.parse(data);
-      if (parsed.model) result.models!.defaultModel = parsed.model;
-      if (parsed.systemInstruction) result.prompts!.globalSystemPrompt = parsed.systemInstruction;
-    } catch (e: any) {}
+    for (const candidate of this.candidates().sort((a, b) => scopeWeight(a.scope) - scopeWeight(b.scope))) {
+      try {
+        const data = await fs.readFile(candidate.path, "utf-8");
+        const parsed = JSON.parse(data);
+        if (parsed.model) {
+          result.models!.defaultModel = parsed.model;
+        }
+        if (parsed.systemInstruction) {
+          result.prompts!.globalSystemPrompt = parsed.systemInstruction;
+        }
+      } catch {
+        /* missing or invalid */
+      }
+    }
     return result;
   }
 
   async write(resources: { mcps: Record<string, McpServer>, agents: Record<string, Agent>, skills: Record<string, Skill>, models?: Models, prompts?: Prompts }): Promise<void> {
-    const dir = path.dirname(this.configPath);
-    await fs.mkdir(dir, { recursive: true }).catch(() => {});
-
-    let existing: any = {};
-    try { existing = JSON.parse(await fs.readFile(this.configPath, "utf-8")); } catch (e) {}
-
-    if (resources.models?.defaultModel) existing.model = resources.models.defaultModel;
-    if (resources.prompts?.globalSystemPrompt) existing.systemInstruction = resources.prompts.globalSystemPrompt;
-
-    await fs.writeFile(this.configPath, JSON.stringify(existing, null, 2), "utf-8");
+    const configPath = await this.resolvedConfigPath();
+    await writeGeminiTo(configPath, resources);
   }
 
   getMemoryFileName(): string { return ".geminirules"; }

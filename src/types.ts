@@ -1,11 +1,14 @@
 import { z } from "zod";
 
+export const ResourceScopeSchema = z.enum(["global", "user", "project", "local"]);
+export type ResourceScope = z.infer<typeof ResourceScopeSchema>;
+
 export const McpServerSchema = z.object({
   command: z.string(),
   args: z.array(z.string()).optional(),
   env: z.record(z.string()).optional(),
   transport: z.enum(["stdio", "sse", "http"]).optional(),
-  scope: z.enum(["global", "local"]).optional(),
+  scope: ResourceScopeSchema.optional(),
 });
 export type McpServer = z.infer<typeof McpServerSchema>;
 
@@ -15,7 +18,7 @@ export const AgentSchema = z.object({
   prompt: z.string(),
   model: z.string().optional(),
   tools: z.array(z.string()).optional(),
-  scope: z.enum(["global", "local"]).optional(),
+  scope: ResourceScopeSchema.optional(),
 });
 export type Agent = z.infer<typeof AgentSchema>;
 
@@ -24,7 +27,7 @@ export const SkillSchema = z.object({
   description: z.string().optional(),
   trigger: z.string().optional(),
   content: z.string(),
-  scope: z.enum(["global", "local"]).optional(),
+  scope: ResourceScopeSchema.optional(),
 });
 export type Skill = z.infer<typeof SkillSchema>;
 

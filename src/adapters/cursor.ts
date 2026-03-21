@@ -1,9 +1,14 @@
 import fs from "fs/promises";
 import path from "path";
 import os from "os";
-import { ClientAdapter, McpServer, Agent, Skill } from "../types.js";
+import { ClientAdapter, McpServer, Agent, Skill, ResourceScope } from "../types.js";
 
 import { Permissions, Models, Prompts, Credentials } from "../types.js";
+
+function stripScope<T extends { scope?: ResourceScope }>(item: T): Omit<T, "scope"> {
+  const { scope: _scope, ...rest } = item;
+  return rest;
+}
 export class CursorAdapter implements ClientAdapter {
   id = "cursor";
   name = "Cursor";
@@ -88,7 +93,10 @@ export class CursorAdapter implements ClientAdapter {
     let existing: any = {};
     try { existing = JSON.parse(await fs.readFile(this.configPath, "utf-8")); } catch (e) {}
 
-    existing.mcpServers = resources.mcps || {};
+    existing.mcpServers = {};
+    for (const [key, value] of Object.entries(resources.mcps || {})) {
+      existing.mcpServers[key] = stripScope(value);
+    }
     await fs.writeFile(this.configPath, JSON.stringify(existing, null, 2), "utf-8");
 
     if (Object.keys(resources.agents || {}).length > 0) {
@@ -96,7 +104,8 @@ export class CursorAdapter implements ClientAdapter {
       try { existingModes = JSON.parse(await fs.readFile(this.modesPath, "utf-8")); } catch (e) {}
 
       for (const [key, agent] of Object.entries(resources.agents || {})) {
-        existingModes.modes[key] = { name: agent.name, description: agent.description, systemPrompt: agent.prompt, model: agent.model };
+        const clean = stripScope(agent);
+        existingModes.modes[key] = { name: clean.name, description: clean.description, systemPrompt: clean.prompt, model: clean.model };
       }
       await fs.writeFile(this.modesPath, JSON.stringify(existingModes, null, 2), "utf-8");
     }

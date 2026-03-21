@@ -1,7 +1,24 @@
 #!/usr/bin/env bun
 import { Command } from "commander";
-import { printBanner } from "../src/banner.js";
-import { initCommand, listCommand, statusCommand, syncCommand, memorySyncCommand, pullCommand, moveCommand, profileCreateCommand, profileUseCommand, addCommand, removeCommand, restoreCommand, doctorCommand, infoCommand, profilePullCommand, profilePublishCommand } from "../src/commands.js";
+import {
+  initCommand,
+  listCommand,
+  statusCommand,
+  syncCommand,
+  memorySyncCommand,
+  pullCommand,
+  moveCommand,
+  profileCreateCommand,
+  profileUseCommand,
+  addCommand,
+  removeCommand,
+  restoreCommand,
+  doctorCommand,
+  infoCommand,
+  profilePullCommand,
+  profilePublishCommand,
+  watchCommand,
+} from "../src/commands.js";
 
 const program = new Command();
 
@@ -16,8 +33,11 @@ program
   .option("--no-detect", "Skip auto-detecting installed clients")
   .option("--source <client>", "Set source of truth without prompting")
   .option("--force", "Overwrite existing config")
-  .action((options) => {
-    initCommand(options);
+  .option("--theme <name>", "Banner: pixel|synctax (wordmark), or rebel|green|cyber|default (FIGlet art)")
+  .option("-y, --yes", "Install PATH launcher without asking (non-interactive)")
+  .option("--no-path-prompt", "Skip the PATH question and do not change PATH")
+  .action(async (options) => {
+    await initCommand(options);
   });
 
 program

@@ -1,18 +1,30 @@
 import fs from "fs/promises";
 import path from "path";
-import os from "os";
-import { ClientAdapter, McpServer, Agent, Skill, Permissions, Models, Prompts, Credentials } from "../types.js";
+import type { ClientAdapter, McpServer, Agent, Skill, Permissions, Models, Prompts, Credentials, ResourceScope } from "../types.js";
+import { firstExistingPath, homeDir, zedSettingsCandidates } from "../platform-paths.js";
+
+function stripScope<T extends { scope?: ResourceScope }>(item: T): Omit<T, "scope"> {
+  const { scope: _scope, ...rest } = item;
+  return rest;
+}
 
 export class ZedAdapter implements ClientAdapter {
   id = "zed";
   name = "Zed";
 
-  private get configPath() {
-    return path.join(process.env.SYNCTAX_HOME || os.homedir(), ".config", "zed", "settings.json");
+  private configCandidates(): string[] {
+    return zedSettingsCandidates(homeDir());
+  }
+
+  private async resolvedConfigPath(): Promise<string> {
+    const c = this.configCandidates();
+    const fallback = c[0];
+    if (fallback === undefined) throw new Error("ZedAdapter: no config path candidates");
+    return (await firstExistingPath(c)) ?? fallback;
   }
 
   async detect(): Promise<boolean> {
-    try { await fs.access(this.configPath); return true; } catch { return false; }
+    return (await firstExistingPath(this.configCandidates())) !== null;
   }
 
   async read(): Promise<{
@@ -26,7 +38,8 @@ export class ZedAdapter implements ClientAdapter {
     };
 
     try {
-      const data = await fs.readFile(this.configPath, "utf-8");
+      const configPath = await this.resolvedConfigPath();
+      const data = await fs.readFile(configPath, "utf-8");
       const parsed = JSON.parse(data);
       const mcpServers = parsed.context_servers || {};
       for (const [key, val] of Object.entries<any>(mcpServers)) {
@@ -38,14 +51,18 @@ export class ZedAdapter implements ClientAdapter {
   }
 
   async write(resources: { mcps: Record<string, McpServer>, agents: Record<string, Agent>, skills: Record<string, Skill>, permissions?: Permissions, models?: Models, prompts?: Prompts, credentials?: Credentials }): Promise<void> {
-    const dir = path.dirname(this.configPath);
+    const configPath = await this.resolvedConfigPath();
+    const dir = path.dirname(configPath);
     await fs.mkdir(dir, { recursive: true }).catch(() => {});
 
     let existing: any = {};
-    try { existing = JSON.parse(await fs.readFile(this.configPath, "utf-8")); } catch (e) {}
+    try { existing = JSON.parse(await fs.readFile(configPath, "utf-8")); } catch (e) {}
 
-    existing.context_servers = resources.mcps || {};
-    await fs.writeFile(this.configPath, JSON.stringify(existing, null, 2), "utf-8");
+    existing.context_servers = {};
+    for (const [key, value] of Object.entries(resources.mcps || {})) {
+      existing.context_servers[key] = stripScope(value);
+    }
+    await fs.writeFile(configPath, JSON.stringify(existing, null, 2), "utf-8");
   }
 
   getMemoryFileName(): string { return ".rules"; }

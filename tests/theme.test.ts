@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { getTheme, paintLines, themes } from "../src/theme.js";
+import { getTheme, paintLines, paintPixelWordmarkLine, themes } from "../src/theme.js";
 
 describe("Theme System", () => {
   it("returns default theme if missing", () => {
@@ -8,6 +8,16 @@ describe("Theme System", () => {
 
   it("returns correct cyber theme", () => {
     expect(getTheme("cyber")).toEqual(themes.cyber);
+  });
+
+  it("returns green theme", () => {
+    expect(getTheme("green")).toEqual(themes.green);
+  });
+
+  it("paintPixelWordmarkLine maps W/H/1/2 to styled output", () => {
+    const out = paintPixelWordmarkLine("W1H2");
+    const stripped = out.replace(/\u001b\[[0-9;]*m/g, "");
+    expect(stripped).toBe("████");
   });
 
   it("paintLines loops through colors correctly", () => {

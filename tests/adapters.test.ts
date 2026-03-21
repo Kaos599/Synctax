@@ -3,6 +3,8 @@ import { ClaudeAdapter } from "../src/adapters/claude.js";
 import { CursorAdapter } from "../src/adapters/cursor.js";
 import { OpenCodeAdapter } from "../src/adapters/opencode.js";
 import { AntigravityAdapter } from "../src/adapters/antigravity.js";
+import { GithubCopilotCliAdapter } from "../src/adapters/github-copilot-cli.js";
+import { GeminiCliAdapter } from "../src/adapters/gemini-cli.js";
 import fs from "fs/promises";
 import path from "path";
 import os from "os";
@@ -141,6 +143,65 @@ describe("Adapters", () => {
       const content = JSON.parse(await fs.readFile(path.join(mockHome, ".config", "opencode", "config.json"), "utf-8"));
       expect(content.mcp["oc-new"].command).toBe("node");
     });
+
+    it("respects project precedence when multiple scope candidates exist", async () => {
+      const adapter = new OpenCodeAdapter();
+      const cwd = process.cwd();
+      process.chdir(mockHome);
+      try {
+        await fs.writeFile(path.join(mockHome, "opencode.json"), JSON.stringify({
+          mcp: {
+            shared: { command: "project-mcp" },
+          }
+        }));
+        await fs.mkdir(path.join(mockHome, ".config", "opencode"), { recursive: true });
+        await fs.writeFile(path.join(mockHome, ".config", "opencode", "config.json"), JSON.stringify({
+          mcp: {
+            shared: { command: "global-mcp" },
+          }
+        }));
+
+        const { mcps } = await adapter.read();
+        expect(mcps["shared"].command).toBe("project-mcp");
+        expect(mcps["shared"].scope).toBe("project");
+
+        await adapter.write({
+          mcps: {
+            shared: { command: "updated-project", scope: "project" } as any,
+            stable: { command: "stable-global", scope: "global" } as any,
+          },
+          agents: {},
+          skills: {},
+        });
+
+        const projectContent = JSON.parse(await fs.readFile(path.join(mockHome, "opencode.json"), "utf-8"));
+        const userContent = JSON.parse(await fs.readFile(path.join(mockHome, ".config", "opencode", "config.json"), "utf-8"));
+        expect(projectContent.mcp["shared"].command).toBe("updated-project");
+        expect(userContent.mcp["stable"].command).toBe("stable-global");
+      } finally {
+        process.chdir(cwd);
+      }
+    });
+
+    it("detects Windows AppData-backed Opencode config", async () => {
+      if (process.platform !== "win32") return;
+      const adapter = new OpenCodeAdapter();
+      const previousLocalAppData = process.env.LOCALAPPDATA;
+      const previousAppData = process.env.APPDATA;
+      const localAppData = path.join(mockHome, "AppData", "Local");
+      process.env.LOCALAPPDATA = localAppData;
+      process.env.APPDATA = path.join(mockHome, "AppData", "Roaming");
+      await fs.mkdir(path.join(localAppData, "opencode"), { recursive: true });
+      await fs.writeFile(path.join(localAppData, "opencode", "config.json"), "{}");
+      try {
+        expect(await adapter.detect()).toBe(true);
+      } finally {
+        if (previousLocalAppData === undefined) delete process.env.LOCALAPPDATA;
+        else process.env.LOCALAPPDATA = previousLocalAppData;
+        if (previousAppData === undefined) delete process.env.APPDATA;
+        else process.env.APPDATA = previousAppData;
+      }
+    });
   });
 
   describe("AntigravityAdapter", () => {
@@ -151,6 +212,12 @@ describe("Adapters", () => {
       await fs.mkdir(path.join(mockHome, ".config", "antigravity"), { recursive: true });
       await fs.writeFile(path.join(mockHome, ".config", "antigravity", "config.json"), "{}");
 
+      expect(await adapter.detect()).toBe(true);
+    });
+
+    it("detects Antigravity install dir without synctax-shaped config.json", async () => {
+      const adapter = new AntigravityAdapter();
+      await fs.mkdir(path.join(mockHome, ".antigravity_tools"), { recursive: true });
       expect(await adapter.detect()).toBe(true);
     });
 
@@ -171,6 +238,89 @@ describe("Adapters", () => {
 
       const content = JSON.parse(await fs.readFile(path.join(mockHome, ".config", "antigravity", "config.json"), "utf-8"));
       expect(content.mcpServers["ag-new"].command).toBe("go");
+    });
+
+    it("respects user-over-global MCP precedence", async () => {
+      const adapter = new AntigravityAdapter();
+      await fs.mkdir(path.join(mockHome, ".antigravity"), { recursive: true });
+      await fs.mkdir(path.join(mockHome, ".config", "antigravity"), { recursive: true });
+      await fs.writeFile(path.join(mockHome, ".antigravity", "config.json"), JSON.stringify({
+        mcpServers: {
+          "shared": { command: "global-cmd" }
+        }
+      }));
+      await fs.writeFile(path.join(mockHome, ".config", "antigravity", "config.json"), JSON.stringify({
+        mcpServers: {
+          "shared": { command: "user-cmd" }
+        }
+      }));
+
+      const { mcps } = await adapter.read();
+      expect(mcps["shared"].command).toBe("user-cmd");
+      expect(mcps["shared"].scope).toBe("user");
+    });
+  });
+
+  describe("GeminiCliAdapter", () => {
+    it("reads project config above user config", async () => {
+      const adapter = new GeminiCliAdapter();
+      const projectDir = path.join(mockHome, "repo");
+      const cwd = process.cwd();
+      await fs.mkdir(path.join(projectDir, ".gemini"), { recursive: true });
+      await fs.mkdir(path.join(mockHome, ".gemini"), { recursive: true });
+      const projectPath = path.join(projectDir, ".gemini", "settings.json");
+      const userPath = path.join(mockHome, ".gemini", "settings.json");
+      await fs.writeFile(projectPath, JSON.stringify({ model: "project-model", systemInstruction: "project prompt" }));
+      await fs.writeFile(userPath, JSON.stringify({ model: "user-model", systemInstruction: "user prompt" }));
+
+      process.chdir(projectDir);
+      try {
+        const readData = await adapter.read();
+        expect(readData.models?.defaultModel).toBe("project-model");
+        expect(readData.prompts?.globalSystemPrompt).toBe("project prompt");
+      } finally {
+        process.chdir(cwd);
+      }
+    });
+  });
+
+  describe("GithubCopilotCliAdapter", () => {
+    it("reads scoped aliases and writes project/user files separately", async () => {
+      const adapter = new GithubCopilotCliAdapter();
+      const cwd = process.cwd();
+      process.chdir(mockHome);
+      try {
+        const projectPath = path.join(mockHome, ".github", "copilot", "config.json");
+        const userPath = path.join(mockHome, ".config", "github-copilot-cli", "config.json");
+        await fs.mkdir(path.dirname(projectPath), { recursive: true });
+        await fs.mkdir(path.dirname(userPath), { recursive: true });
+
+        await fs.writeFile(projectPath, JSON.stringify({ aliases: { shared: "project-initial", onlyProject: "only-project" } }));
+        await fs.writeFile(userPath, JSON.stringify({ aliases: { shared: "user-initial", onlyUser: "only-user" } }));
+
+        const readResources = await adapter.read();
+        expect(readResources.skills["shared"].content).toBe("project-initial");
+        expect(readResources.skills["onlyProject"].content).toBe("only-project");
+        expect(readResources.skills["onlyUser"].content).toBe("only-user");
+
+        await adapter.write({
+          mcps: {},
+          agents: {},
+          skills: {
+            shared: { name: "shared", content: "project-write", scope: "project" } as any,
+            userOnly: { name: "userOnly", content: "user-write", scope: "user" } as any,
+          },
+        });
+
+        const updatedProject = JSON.parse(await fs.readFile(projectPath, "utf-8"));
+        const updatedUser = JSON.parse(await fs.readFile(userPath, "utf-8"));
+        expect(updatedProject.aliases["shared"]).toBe("project-write");
+        expect(updatedProject.aliases["onlyProject"]).toBe("only-project");
+        expect(updatedUser.aliases["userOnly"]).toBe("user-write");
+        expect(updatedUser.aliases["onlyUser"]).toBe("only-user");
+      } finally {
+        process.chdir(cwd);
+      }
     });
   });
 });

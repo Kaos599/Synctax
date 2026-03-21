@@ -1,24 +1,65 @@
 import fs from "fs/promises";
 import path from "path";
-import os from "os";
-import { ClientAdapter, McpServer, Agent, Skill, Permissions, Models, Prompts, Credentials } from "../types.js";
+import { ClientAdapter, McpServer, Agent, Skill, Permissions, Models, Prompts, Credentials, ResourceScope } from "../types.js";
+import { ConfigScope, homeDir, xdgStyleConfigCandidates, firstExistingScopedPath, firstExistingPath } from "../platform-paths.js";
+import { splitByScope } from "../scopes.js";
+
+function scopeWeight(scope: ConfigScope): number {
+  if (scope === "global") return 0;
+  if (scope === "user") return 1;
+  return 2;
+}
+
+function stripScope<T extends { scope?: ResourceScope }>(item: T): Omit<T, "scope"> {
+  const { scope: _scope, ...rest } = item;
+  return rest;
+}
+
+function mergeMcpServers(parsed: Record<string, any>, into: Record<string, McpServer>, scope: ConfigScope) {
+  const mcpServers = parsed.mcpServers || {};
+  for (const [key, val] of Object.entries<any>(mcpServers)) {
+    if (val && typeof val === "object" && typeof val.command === "string") {
+      into[key] = { command: val.command, args: val.args, env: val.env, scope };
+    }
+  }
+}
+
+function mergeConfig(parsed: any, permissions: Permissions, models: Models) {
+  if (!parsed || typeof parsed !== "object") return;
+  if (parsed.autoApproveNetwork === true) permissions.networkAllow = true;
+  if (Array.isArray(parsed.autoApproveCommands)) {
+    permissions.allowedCommands = parsed.autoApproveCommands;
+  }
+  if (typeof parsed.model === "string") models.defaultModel = parsed.model;
+}
 
 export class ClineAdapter implements ClientAdapter {
   id = "cline";
   name = "Cline";
 
   private get baseDir() {
-    return path.join(process.env.SYNCTAX_HOME || os.homedir(), ".cline");
+    return path.join(homeDir(), ".cline");
   }
 
-  private get mcpPath() { return path.join(this.baseDir, "mcp_settings.json"); }
-  private get configPath() { return path.join(this.baseDir, "config.json"); }
-  private get agentsDir() { return path.join(this.baseDir, "agents"); }
+  private mcpPathCandidates() {
+    return [
+      { path: path.join(this.baseDir, "mcp_settings.json"), scope: "global" as const, label: "legacy cline mcp config" },
+      { path: path.join(this.baseDir, "data", "settings", "cline_mcp_settings.json"), scope: "user" as const, label: "cline package mcp settings" },
+      ...xdgStyleConfigCandidates("cline", "cline_mcp_settings.json", homeDir()),
+    ];
+  }
+
+  private configCandidates() {
+    return [
+      { path: path.join(this.baseDir, "config.json"), scope: "global" as const, label: "legacy cline config" },
+      ...xdgStyleConfigCandidates("cline", "config.json", homeDir()),
+    ];
+  }
 
   async detect(): Promise<boolean> {
-    try { await fs.access(this.configPath); return true; } catch {
-      try { await fs.access(this.mcpPath); return true; } catch { return false; }
-    }
+    const candidates = [...this.configCandidates(), ...this.mcpPathCandidates()];
+    const paths = [...new Set(candidates.map((candidate) => candidate.path))];
+    return (await firstExistingPath(paths)) !== null;
   }
 
   async read(): Promise<{
@@ -34,54 +75,103 @@ export class ClineAdapter implements ClientAdapter {
       prompts: {} as Prompts
     };
 
-    try {
-      const data = await fs.readFile(this.mcpPath, "utf-8");
-      const parsed = JSON.parse(data);
-      const mcpServers = parsed.mcpServers || {};
-      for (const [key, val] of Object.entries<any>(mcpServers)) {
-        result.mcps[key] = { command: val.command, args: val.args, env: val.env };
+    for (const candidate of this.mcpPathCandidates().sort((a, b) => scopeWeight(a.scope) - scopeWeight(b.scope))) {
+      try {
+        const data = await fs.readFile(candidate.path, "utf-8");
+        const parsed = JSON.parse(data);
+        mergeMcpServers(parsed, result.mcps, candidate.scope);
+      } catch {
+        /* missing or invalid */
       }
-    } catch (e: any) {}
+    }
 
-    try {
-      const data = await fs.readFile(this.configPath, "utf-8");
-      const parsed = JSON.parse(data);
-      result.permissions!.networkAllow = parsed.autoApproveNetwork === true;
-      if (parsed.autoApproveCommands) result.permissions!.allowedCommands = parsed.autoApproveCommands;
-      result.models!.defaultModel = parsed.model;
-    } catch (e: any) {}
+    for (const candidate of this.configCandidates().sort((a, b) => scopeWeight(a.scope) - scopeWeight(b.scope))) {
+      try {
+        const data = await fs.readFile(candidate.path, "utf-8");
+        const parsed = JSON.parse(data);
+        mergeConfig(parsed, result.permissions, result.models);
+      } catch {
+        /* missing or invalid */
+      }
+    }
 
-    // In a real scenario we'd parse .cline/agents/
     return result;
   }
 
   async write(resources: { mcps: Record<string, McpServer>, agents: Record<string, Agent>, skills: Record<string, Skill>, permissions?: Permissions, models?: Models, prompts?: Prompts, credentials?: Credentials }): Promise<void> {
-    await fs.mkdir(this.baseDir, { recursive: true }).catch(() => {});
+    const { project: projectMcps, user: userMcps, global: globalMcps } = splitByScope(resources.mcps);
+    const mergedMcps = { ...globalMcps, ...userMcps, ...projectMcps };
 
-    // Write MCPs
-    let mcpExisting: any = {};
-    try { mcpExisting = JSON.parse(await fs.readFile(this.mcpPath, "utf-8")); } catch (e) {}
-    mcpExisting.mcpServers = resources.mcps || {};
-    await fs.writeFile(this.mcpPath, JSON.stringify(mcpExisting, null, 2), "utf-8");
+    const mcpPath = await this.resolveWritePath(this.mcpPathCandidates(), "user");
+    if (Object.keys(mergedMcps).length > 0) {
+      await this.writeMcpSettings(mcpPath, mergedMcps);
+    }
 
-    // Write Config
-    let confExisting: any = {};
-    try { confExisting = JSON.parse(await fs.readFile(this.configPath, "utf-8")); } catch (e) {}
-    if (resources.permissions) {
-      confExisting.autoApproveNetwork = resources.permissions.networkAllow;
-      if (resources.permissions.allowedCommands && resources.permissions.allowedCommands.length > 0) {
-        confExisting.autoApproveCommands = resources.permissions.allowedCommands;
+    if (resources.permissions || resources.models) {
+      const configPath = await this.resolveWritePath(this.configCandidates(), "user");
+      await this.writeConfig(configPath, resources.permissions, resources.models);
+    }
+  }
+
+  private async resolveWritePath(candidates: { path: string; scope: ConfigScope; label: string }[], scope: ConfigScope): Promise<string> {
+    const prioritized = [
+      ...candidates.filter((entry) => entry.scope === scope),
+      ...candidates.filter((entry) => entry.scope !== scope),
+    ];
+    const found = await firstExistingScopedPath(prioritized);
+    return found?.path ?? candidates[0]?.path;
+  }
+
+  private async writeMcpSettings(configPath: string, mcps: Record<string, McpServer>): Promise<void> {
+    const dir = path.dirname(configPath);
+    await fs.mkdir(dir, { recursive: true }).catch(() => {});
+
+    let existing: any = {};
+    try {
+      existing = JSON.parse(await fs.readFile(configPath, "utf-8"));
+    } catch {
+      /* no existing */
+    }
+
+    existing.mcpServers = {};
+    for (const [key, value] of Object.entries(mcps)) {
+      existing.mcpServers[key] = stripScope(value);
+    }
+
+    await fs.writeFile(configPath, JSON.stringify(existing, null, 2), "utf-8");
+  }
+
+  private async writeConfig(configPath: string, permissions?: Permissions, models?: Models): Promise<void> {
+    const dir = path.dirname(configPath);
+    await fs.mkdir(dir, { recursive: true }).catch(() => {});
+
+    let existing: any = {};
+    try {
+      existing = JSON.parse(await fs.readFile(configPath, "utf-8"));
+    } catch {
+      /* no existing */
+    }
+
+    if (permissions) {
+      existing.autoApproveNetwork = permissions.networkAllow;
+      if (permissions.allowedCommands && permissions.allowedCommands.length > 0) {
+        existing.autoApproveCommands = permissions.allowedCommands;
       }
     }
-    if (resources.models?.defaultModel) {
-      confExisting.model = resources.models.defaultModel;
+    if (models?.defaultModel) {
+      existing.model = models.defaultModel;
     }
-    await fs.writeFile(this.configPath, JSON.stringify(confExisting, null, 2), "utf-8");
+
+    await fs.writeFile(configPath, JSON.stringify(existing, null, 2), "utf-8");
   }
 
   getMemoryFileName(): string { return ".clinerules"; }
   async readMemory(projectDir: string): Promise<string | null> {
-    try { return await fs.readFile(path.join(projectDir, this.getMemoryFileName()), "utf-8"); } catch { return null; }
+    try {
+      return await fs.readFile(path.join(projectDir, this.getMemoryFileName()), "utf-8");
+    } catch {
+      return null;
+    }
   }
   async writeMemory(projectDir: string, content: string): Promise<void> {
     await fs.writeFile(path.join(projectDir, this.getMemoryFileName()), content, "utf-8");
