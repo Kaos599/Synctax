@@ -90,6 +90,8 @@ program
   .command("move <domain> <name>")
   .description("Change scope of a resource")
   .option("--to-global", "Change scope to global")
+  .option("--to-user", "Change scope to user")
+  .option("--to-project", "Change scope to project")
   .option("--to-local", "Change scope to local")
   .option("--push", "Sync immediately after moving")
   .action((domain, name, options) => {
@@ -120,6 +122,10 @@ program
   .command("add <domain> <name>")
   .description("Add a resource")
   .option("--command <cmd>")
+  .option("--global", "Store with global scope (default)")
+  .option("--user", "Store with user scope")
+  .option("--project", "Store with project scope")
+  .option("--local", "Alias for --project")
   .option("--push")
   .action((domain, name, options) => {
     addCommand(domain, name, options);

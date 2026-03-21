@@ -6,15 +6,24 @@ import os from "os";
 
 describe("Export/Import Commands", () => {
   let tmpDir: string;
-  let originalCwd: () => string;
+  let originalCwd: string;
+  let originalSynctaxHome: string | undefined;
+  let originalHome: string | undefined;
+  let originalUserProfile: string | undefined;
 
   beforeEach(async () => {
     tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "synctax-exp-"));
-    process.env.SYNCTAX_HOME = tmpDir;
+    originalSynctaxHome = process.env.SYNCTAX_HOME;
+    originalHome = process.env.HOME;
+    originalUserProfile = process.env.USERPROFILE;
 
-    // We must mock cwd
-    originalCwd = process.cwd;
-    process.cwd = () => tmpDir;
+    process.env.SYNCTAX_HOME = tmpDir;
+    process.env.HOME = tmpDir;
+    process.env.USERPROFILE = tmpDir;
+
+    // Use real cwd change to avoid leaking mocked process.cwd across suites
+    originalCwd = process.cwd();
+    process.chdir(tmpDir);
     
     await fs.mkdir(path.join(tmpDir, ".synctax"), { recursive: true });
     
@@ -35,9 +44,14 @@ describe("Export/Import Commands", () => {
   });
 
   afterEach(async () => {
-    process.cwd = originalCwd;
+    process.chdir(originalCwd);
     await fs.rm(tmpDir, { recursive: true, force: true });
-    delete process.env.SYNCTAX_HOME;
+    if (originalSynctaxHome === undefined) delete process.env.SYNCTAX_HOME;
+    else process.env.SYNCTAX_HOME = originalSynctaxHome;
+    if (originalHome === undefined) delete process.env.HOME;
+    else process.env.HOME = originalHome;
+    if (originalUserProfile === undefined) delete process.env.USERPROFILE;
+    else process.env.USERPROFILE = originalUserProfile;
     vi.restoreAllMocks();
   });
 
