@@ -52,50 +52,77 @@ bunx tsc --noEmit
 bin/
   synctax.ts                    # CLI entrypoint (#!/usr/bin/env bun, Commander.js program)
 src/
-  commands.ts                   # All command implementations (init, sync, pull, watch, add, remove, etc.)
+  commands.ts                   # 1-line shim: export * from "./commands/index.js"
+  commands/
+    index.ts                    # Barrel re-exports all command functions
+    _shared.ts                  # getConfigManager(), mergePermissions(), applyProfileFilter()
+    init.ts                     # initCommand
+    sync.ts                     # syncCommand, memorySyncCommand, watchCommand
+    pull.ts                     # pullCommand
+    manage.ts                   # addCommand, removeCommand, moveCommand
+    profile.ts                  # profileCreateCommand, profileUseCommand, profilePullCommand, profilePublishCommand
+    info.ts                     # listCommand, statusCommand, doctorCommand, infoCommand
+    io.ts                       # restoreCommand, exportCommand, importCommand
+  ui/
+    index.ts                    # Public API re-exports
+    colors.ts                   # Semantic palette (success/error/warning/info), symbols (✓/✗/⚠/○), brand colors
+    output.ts                   # format.* (return string) + print functions (success/error/warn/info/header/dim/dryRun/gap)
+    timer.ts                    # startTimer() → { elapsed(), elapsedMs() }
+    table.ts                    # createTable() — pre-styled cli-table3 wrapper with brand colors
+    spinner.ts                  # Minimal TTY-aware spinner for async operations
   interactive.ts                # Zero-arg interactive command palette (@inquirer/prompts search)
-  config.ts                     # ConfigManager class: reads/writes ~/.synctax/config.json
-  types.ts                      # Zod schemas (ConfigSchema, McpServerSchema, AgentSchema, etc.)
-                                # TypeScript types (Config, McpServer, Agent, Skill, etc.)
-                                # ClientAdapter interface definition
-  scopes.ts                     # splitByScope(), toConfigScope() — partition resources by scope
-  platform-paths.ts             # Cross-platform path resolution, ScopedCandidate type,
-                                # homeDir(), firstExistingPath(), xdgStyleConfigCandidates(),
-                                # opencodeConfigCandidates(), vscodeUserSettingsCandidates(), etc.
+  config.ts                     # ConfigManager class: reads/writes/backup/pruneBackups ~/.synctax/config.json
+  types.ts                      # Zod schemas + TypeScript types + ClientAdapter interface
+  scopes.ts                     # splitByScope(), toConfigScope()
+  platform-paths.ts             # Cross-platform path resolution, ScopedCandidate
   banner.ts                     # ASCII art banner rendering (rebel FIGlet + pixel wordmark)
-  theme.ts                      # Theme palette definitions (default, cyber, rebel, green) + paint utils
-  install-path.ts               # PATH setup logic for `synctax init` (Win/macOS/Linux shell rc files)
+  theme.ts                      # Theme palette definitions + paint utils
+  install-path.ts               # PATH setup logic for `synctax init`
   adapters/
-    index.ts                    # Adapter registry: Record<string, ClientAdapter> + getAdapter()
+    index.ts                    # Adapter registry + getAdapter()
     claude.ts                   # ClaudeAdapter — ~/.claude/settings.json
     cursor.ts                   # CursorAdapter — ~/.cursor/mcp.json, modes.json, commands/
     opencode.ts                 # OpenCodeAdapter — opencode.json / .opencode/config.json (scoped)
-    cline.ts                    # ClineAdapter — ~/.cline/mcp_settings.json + config.json (scoped)
+    cline.ts                    # ClineAdapter — ~/.cline/mcp_settings.json (scoped)
     antigravity.ts              # AntigravityAdapter — ~/.antigravity/config.json (scoped)
     zed.ts                      # ZedAdapter — ~/.config/zed/settings.json
     github-copilot.ts           # GithubCopilotAdapter — VS Code settings.json / mcp.json (scoped)
     github-copilot-cli.ts       # GithubCopilotCliAdapter — aliases in config.json (scoped)
     gemini-cli.ts               # GeminiCliAdapter — .gemini/settings.json (scoped)
 tests/
-  adapters.test.ts              # Adapter detect/read/write + scope precedence tests
+  ui/
+    colors.test.ts              # Semantic palette, symbols, brand color tests
+    output.test.ts              # Format functions + print function tests
+    timer.test.ts               # Timing format tests
+    table.test.ts               # createTable structure tests
+  adapters.test.ts              # Adapter detect/read/write + scope precedence
   agents.test.ts                # Agent read/write across Claude, Cursor, OpenCode
-  skills.test.ts                # Skill read/write across Claude (.md/.agent/.claude), Cursor (commands/), OpenCode
+  skills.test.ts                # Skill read/write across adapters
   commands.test.ts              # pull, move, add, remove, restore, init, doctor, profilePull/Publish
-  config.test.ts                # ConfigManager read/write/getTheme
+  config.test.ts                # ConfigManager read/write/getTheme/pruneBackups
   permissions.test.ts           # Merge-conservative logic, deny-wins behavior
   profiles.test.ts              # Profile create/use/filter
-  memory.test.ts                # Memory file mapping per adapter (CLAUDE.md, .cursorrules, etc.)
+  memory.test.ts                # Memory file mapping per adapter
   new_adapters.test.ts          # Cline, Zed, GithubCopilot adapter tests
-  sanity_checks.test.ts         # Sanity checks for init, move, memorySync, doctor
+  sanity_checks.test.ts         # Sanity checks + memorySyncCommand exit code tests
   export_import.test.ts         # Export/import command tests
   watch.test.ts                 # Watch daemon initialization
   theme.test.ts                 # Theme palette and paint function tests
-  interactive.test.ts           # Interactive mode command dispatch (mocked @inquirer/prompts)
+  interactive.test.ts           # Interactive mode + prompt cancellation tests
   ui.test.ts                    # infoCommand table output verification
   misc_domains.test.ts          # Models, Prompts, Credentials domain tests
   integration/
     e2e.test.ts                 # End-to-end: pull from Cursor → sync to OpenCode
 docs/
+  roadmap/                      # Detailed per-phase documentation
+    README.md                   # Phase status overview
+    phase-0-bug-fixes.md        # DONE: escape handling, silent failures, backup pruning
+    phase-1-refactor.md         # DONE: commands split, UI utilities
+    phase-2-premium-cli.md      # Planned: polished output, banner, spinners
+    phase-3-core-features.md    # Planned: diff, validate, rollback, link, health, add-from-url
+    phase-4-env-vault.md        # Planned: per-profile env management
+    phase-5-team-sharing.md     # Planned: portable export, team overlay
+    phase-6-deferred.md         # Backlog: Codex, Windsurf, TUI, web dashboard
   architecture.md               # Detailed PRD & architecture document
   changelog_and_progress.md     # Changelog and progress tracker
   instructions.md               # Project instructions

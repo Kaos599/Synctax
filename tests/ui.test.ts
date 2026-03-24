@@ -8,15 +8,19 @@ import os from "os";
 describe("Terminal UI Upgrades (Tabular Output)", () => {
   let mockHome: string;
   let manager: ConfigManager;
+  let originalCwd: string;
 
   beforeEach(async () => {
     mockHome = await fs.mkdtemp(path.join(os.tmpdir(), "synctax-ui-test-"));
     process.env.SYNCTAX_HOME = mockHome;
+    originalCwd = process.cwd();
+    process.chdir(mockHome);
     await fs.mkdir(path.join(mockHome, ".synctax"), { recursive: true });
     manager = new ConfigManager();
   });
 
   afterEach(async () => {
+    process.chdir(originalCwd);
     await fs.rm(mockHome, { recursive: true, force: true });
     delete process.env.SYNCTAX_HOME;
     vi.clearAllMocks();
@@ -32,8 +36,10 @@ describe("Terminal UI Upgrades (Tabular Output)", () => {
     } as any);
 
     // Mock claude having files so it detects
-    await fs.mkdir(path.join(mockHome, ".claude"));
-    await fs.writeFile(path.join(mockHome, ".claude", "settings.json"), JSON.stringify({
+    await fs.mkdir(path.join(mockHome, ".claude"), { recursive: true });
+    await fs.writeFile(path.join(mockHome, ".claude", "settings.json"), "{}");
+    // MCPs are in ~/.claude.json (user scope), not settings.json
+    await fs.writeFile(path.join(mockHome, ".claude.json"), JSON.stringify({
       mcpServers: { test: { command: "test" } }
     }));
 

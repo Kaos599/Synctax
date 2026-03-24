@@ -25,12 +25,39 @@ export function mergePermissions(p1: any, p2: any) {
     allowedCommands.delete(cmd);
   }
 
+  // v2: Merge Claude-style unified permissions (deny wins over allow)
+  const allow = new Set([...(p1.allow || []), ...(p2.allow || [])]);
+  const deny = new Set([...(p1.deny || []), ...(p2.deny || [])]);
+  const ask = new Set([...(p1.ask || []), ...(p2.ask || [])]);
+  for (const rule of deny) {
+    allow.delete(rule);
+    ask.delete(rule);
+  }
+
+  // v2: Merge URL permissions (deny wins)
+  const allowedUrls = new Set([...(p1.allowedUrls || []), ...(p2.allowedUrls || [])]);
+  const deniedUrls = new Set([...(p1.deniedUrls || []), ...(p2.deniedUrls || [])]);
+  for (const url of deniedUrls) {
+    allowedUrls.delete(url);
+  }
+
   return {
     allowedPaths: Array.from(allowedPaths),
     deniedPaths: Array.from(deniedPaths),
     allowedCommands: Array.from(allowedCommands),
     deniedCommands: Array.from(deniedCommands),
-    networkAllow: (p1.networkAllow && p2.networkAllow) || false
+    networkAllow: (p1.networkAllow && p2.networkAllow) || false,
+    allow: Array.from(allow),
+    deny: Array.from(deny),
+    ask: Array.from(ask),
+    allowedUrls: Array.from(allowedUrls),
+    deniedUrls: Array.from(deniedUrls),
+    // trustedFolders is additive (union) — not deny-wins, because there is no
+    // "denied folders" counterpart. Conservative behavior: folders must be trusted
+    // by BOTH sides to survive merge (intersection).
+    trustedFolders: (p1.trustedFolders || []).filter(
+      (f: string) => !(p2.trustedFolders?.length) || (p2.trustedFolders || []).includes(f)
+    ),
   };
 }
 

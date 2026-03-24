@@ -97,21 +97,29 @@ describe("TDD Sanity Checks for Copilot Flags", () => {
     expect(adapter.name).toBe("Github Copilot CLI");
   });
 
-  it("sanity: ClaudeAdapter read parses advanced config blocks", async () => {
-    const adapter = new ClaudeAdapter();
-    const settingsPath = path.join(mockHome, ".claude", "settings.json");
-    await fs.mkdir(path.dirname(settingsPath), { recursive: true });
+  it("sanity: ClaudeAdapter read parses v2 config format", async () => {
+    const originalCwd = process.cwd();
+    process.chdir(mockHome);
+    try {
+      const adapter = new ClaudeAdapter();
+      const settingsPath = path.join(mockHome, ".claude", "settings.json");
+      await fs.mkdir(path.dirname(settingsPath), { recursive: true });
 
-    await fs.writeFile(settingsPath, JSON.stringify({
-      preferredModel: "claude-3-opus",
-      customInstructions: "Sanity Prompts",
-      allow_paths: ["/safe/path"]
-    }));
+      await fs.writeFile(settingsPath, JSON.stringify({
+        model: "claude-opus-4-20250514",
+        permissions: {
+          allow: ["Read(/safe/path)"],
+          deny: [],
+          ask: [],
+        }
+      }));
 
-    const data = await adapter.read();
-    expect(data.models?.defaultModel).toBe("claude-3-opus");
-    expect(data.prompts?.globalSystemPrompt).toBe("Sanity Prompts");
-    expect(data.permissions?.allowedPaths).toContain("/safe/path");
+      const data = await adapter.read();
+      expect(data.models?.defaultModel).toBe("claude-opus-4-20250514");
+      expect(data.permissions?.allow).toContain("Read(/safe/path)");
+    } finally {
+      process.chdir(originalCwd);
+    }
   });
 
   it("memorySyncCommand sets exitCode when source file is missing", async () => {

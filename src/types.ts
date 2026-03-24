@@ -9,6 +9,13 @@ export const McpServerSchema = z.object({
   env: z.record(z.string(), z.string()).optional(),
   transport: z.enum(["stdio", "sse", "http"]).optional(),
   scope: ResourceScopeSchema.optional(),
+  // v2: Remote MCP support
+  url: z.string().optional(),
+  headers: z.record(z.string(), z.string()).optional(),
+  // v2: Operational fields
+  cwd: z.string().optional(),
+  timeout: z.number().optional(),
+  disabled: z.boolean().optional(),
 });
 export type McpServer = z.infer<typeof McpServerSchema>;
 
@@ -19,6 +26,17 @@ export const AgentSchema = z.object({
   model: z.string().optional(),
   tools: z.array(z.string()).optional(),
   scope: ResourceScopeSchema.optional(),
+  // v2: Extended agent capabilities
+  disallowedTools: z.array(z.string()).optional(),
+  permissionMode: z.string().optional(),
+  maxTurns: z.number().optional(),
+  mcpServers: z.union([z.array(z.string()), z.record(z.string(), z.unknown())]).optional(),
+  hooks: z.record(z.string(), z.unknown()).optional(),
+  memory: z.array(z.string()).optional(),
+  background: z.boolean().optional(),
+  effort: z.string().optional(),
+  isolation: z.boolean().optional(),
+  userInvocable: z.boolean().optional(),
 });
 export type Agent = z.infer<typeof AgentSchema>;
 
@@ -28,15 +46,34 @@ export const SkillSchema = z.object({
   trigger: z.string().optional(),
   content: z.string(),
   scope: ResourceScopeSchema.optional(),
+  // v2: Extended skill capabilities
+  argumentHint: z.string().optional(),
+  disableModelInvocation: z.boolean().optional(),
+  userInvocable: z.boolean().optional(),
+  allowedTools: z.array(z.string()).optional(),
+  model: z.string().optional(),
+  effort: z.string().optional(),
+  context: z.array(z.string()).optional(),
+  agent: z.string().optional(),
+  hooks: z.record(z.string(), z.unknown()).optional(),
 });
 export type Skill = z.infer<typeof SkillSchema>;
 
 export const PermissionsSchema = z.object({
+  // Legacy fields (backward compat with existing configs)
   allowedPaths: z.array(z.string()).default([]),
   deniedPaths: z.array(z.string()).default([]),
   allowedCommands: z.array(z.string()).default([]),
   deniedCommands: z.array(z.string()).default([]),
   networkAllow: z.boolean().default(false),
+  // v2: Claude-style unified permissions — Tool(specifier) syntax
+  allow: z.array(z.string()).default([]),
+  deny: z.array(z.string()).default([]),
+  ask: z.array(z.string()).default([]),
+  // v2: Copilot CLI-style URL permissions
+  allowedUrls: z.array(z.string()).default([]),
+  deniedUrls: z.array(z.string()).default([]),
+  trustedFolders: z.array(z.string()).default([]),
 });
 export type Permissions = z.infer<typeof PermissionsSchema>;
 

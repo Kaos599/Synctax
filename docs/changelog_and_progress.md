@@ -1,82 +1,160 @@
 ---
 title: Synctax Changelog & Progress
 description: Historical tracking of the Synctax project, detailing completed milestones and future roadmaps.
-contents:
-  - Completed Milestones: v1.5 features (Watch Daemon, Matrix UI, Advanced Parsing).
-  - Current Active Context: 9/9 Client Adapters natively supported.
-  - V2.0 Roadmap: Future intelligent features (Conflict Resolution, Audit Logging).
-glossary:
-  - v1.5: The recent milestone that solidified the core sync engine and UI.
-  - v2.0: The planned future milestone focusing on AI-assisted capabilities and remote profiling.
-  - Matrix Dashboard: The 'synctax info' command displaying tabular client data.
-  - Watch Daemon: The 'synctax watch' background process.
 ---
 
 # Synctax Changelog & Progress
 
-This document tracks the historical development of Synctax, highlighting major milestones achieved and outlining the roadmap for future versions.
+## Phase Status
+
+| Phase | Name | Status | Tests | Doc |
+|-------|------|--------|-------|-----|
+| 0 | Bug Fixes | **DONE** | +6 tests | [phase-0-bug-fixes.md](roadmap/phase-0-bug-fixes.md) |
+| 1 | Refactor + UI | **DONE** | +23 tests (105 total) | [phase-1-refactor.md](roadmap/phase-1-refactor.md) |
+| 1.5a | Schema Expansion | **DONE** | +33 tests (138 total) | [research/clients.md](research/clients.md) |
+| 1.5b | Claude Adapter Rewrite | Planned | — | [research/clients.md](research/clients.md) |
+| 1.5c-g | Remaining Adapter Fixes | Planned | — | [research/clients.md](research/clients.md) |
+| 1.5h | Conformance Tests | Planned | — | — |
+| 2 | Premium CLI | Planned | — | [phase-2-premium-cli.md](roadmap/phase-2-premium-cli.md) |
+| 3 | Core Features | Planned | — | [phase-3-core-features.md](roadmap/phase-3-core-features.md) |
+| 4 | Env Vault | Planned | — | [phase-4-env-vault.md](roadmap/phase-4-env-vault.md) |
+| 5 | Team & Sharing | Planned | — | [phase-5-team-sharing.md](roadmap/phase-5-team-sharing.md) |
+| 6 | Deferred / Future | Backlog | — | [phase-6-deferred.md](roadmap/phase-6-deferred.md) |
+
+---
 
 ## 1. Completed Milestones (v1.5)
 
-The **v1.5 Milestone** marked the completion of the core operational functionality of Synctax. The following key features were fully implemented, verified via strict Red-Green TDD, and merged into the main codebase:
-
 ### 1.1 Watch Daemon Mode (`synctax watch`)
-- A background daemon was successfully implemented using `chokidar`.
-- It continuously monitors `~/.synctax/config.json`. On file save, it triggers a `syncCommand` to automatically push changes to the client files.
-- Uses a robust 500ms debounce mechanism to prevent I/O spam and returns the watcher instance to prevent hanging tests.
+- Background daemon using `chokidar` with 500ms debounce
+- Auto-triggers `syncCommand` on master config changes
 
 ### 1.2 Terminal UI ASCII Banner & Theming
-- The CLI now displays a gorgeous `synctax` banner using the exact DOS Rebel font format.
-- The default theme is now permanently set to `rebel` across the entire application config stack. 
-- The `--theme` flag is implemented (both globally and on `init`) and supports "dull-neon" colored output using `chalk.hex()`. Supported themes:
-  - `default`: `["#362F4F", "#5B23FF", "#008BFF", "#E4FF30"]`
-  - `cyber`: `["#FF2DD1", "#FDFFB8", "#4DFFBE", "#63C8FF"]`
-  - `rebel`: `["#000000", "#CF0F47", "#FF0B55", "#FFDEDE"]`
+- FIGlet `rebel` theme (default), `pixel`/`synctax` wordmark, `default`, `cyber`, `green`
+- `--theme` flag on any command
 
 ### 1.3 Interactive CLI Mode
-- Intercepting empty commands (`synctax`) bypasses standard commander outputs and instead launches a rich interactive command palette using `@inquirer/search`.
-- Features dynamic "hover" descriptions that explain exactly what each command does.
-- Implements cascading conversational prompts for complex commands (e.g. `pull` prompts for which client adapter to pull from, `add` prompts for the resource domain). 
+- `@inquirer/search` palette when no args provided
+- Dynamic hover descriptions, cascading prompts for complex commands
 
 ### 1.4 Tabular Matrix Dashboard (`synctax info`)
-- Upgraded the UX drastically. When a user runs `info` (or `init`), the terminal prints a beautiful tabular structure using `cli-table3`.
-- It details the installed clients on the system and dynamically styles the exact counts of their resources (e.g., "Cursor | Yes | 3 MCPs | 2 Agents | 1 Skill" instead of raw numbers).
+- `cli-table3` dashboard showing installed clients and resource counts
 
 ### 1.5 Advanced File Extension Parsing
-- AI clients use varying formats for skills/agents. The regex in our adapters (specifically `ClaudeAdapter`) was updated to comprehensively scrape not just `*.md`, but also `*.agent`, `*.agents`, and `*.claude` files inside their respective directories.
-- Tests are in place to guarantee this scaling parsing logic.
+- Claude adapter scrapes `*.md`, `*.agent`, `*.agents`, `*.claude` files
 
 ---
 
-## 2. Current Active Context (What Works)
+## 2. Completed: Phase 0 — Bug Fixes
 
-As of the latest release, Synctax is 100% functional for core operations:
-- **Master Config Engine:** Built with Zod schemas and Node `fs` operations.
-- **Client Adapters (9/9 Natively Supported):** Claude Code, Cursor, Zed, OpenCode, Cline, Github Copilot, Github Copilot CLI, Gemini CLI, Antigravity.
-- **CLI Utilities:**
-  - Lifecycle: `init`, `doctor`, `restore`
-  - Management: `add`, `remove`, `move`, `pull`
-  - Syncing: `sync`, `memory-sync`
-  - Visibility: `info`, `list`, `status`
-- **Automation:** `watch` daemon running silently in the background detecting master config drift.
-- **Testing:** An air-tight 49-suite Vitest architecture safely leveraging `SYNCTAX_HOME` over `process.cwd()`.
+### 2.1 Interactive Escape/Exit Handling (Bug 1)
+- Added `isPromptCancellation()` helper to `src/interactive.ts`
+- Two try/catch blocks: one for search palette, one for command execution
+- Broadened catch in `bin/synctax.ts` to handle `ExitPromptError`, `CancelPromptError`, `AbortPromptError`
+- **Files**: `src/interactive.ts`, `bin/synctax.ts`
+
+### 2.2 Memory-Sync Silent Failure (Bug 2)
+- `memorySyncCommand` now sets `process.exitCode = 1` on failure
+- Tracks succeeded/failed counts, prints summary
+- **Files**: `src/commands/sync.ts`
+
+### 2.3 Backup File Accumulation (Bug 3)
+- Added `pruneBackups(maxBackups = 10)` to `ConfigManager`
+- Called automatically after every `backup()`
+- **Files**: `src/config.ts`
 
 ---
 
-## 3. The v2.0 Roadmap (What's Next)
+## 3. Completed: Phase 1 — Refactor
 
-The next major iteration of Synctax (v2.0) will shift focus from raw configuration synchronization to intelligent, AI-assisted operations and remote team collaboration.
+### 3.1 Split commands.ts into 9 Modules
+- `src/commands.ts` → 1-line shim: `export * from "./commands/index.js"`
+- 9 focused modules: `_shared.ts`, `init.ts`, `sync.ts`, `pull.ts`, `manage.ts`, `profile.ts`, `info.ts`, `io.ts`, `index.ts`
+- Zero import changes in any consumer (barrel + shim pattern)
+- **Test impact**: Only `watch.test.ts` needed path update
 
-### 3.1 AI-Assisted Conflict Resolution
-- Currently, Synctax relies on a merge-conservative approach (deny-lists win).
-- v2.0 will introduce LLM calls to intelligently resolve clashing instructions during file merges (e.g., if one config says "Use Python 3.9" and another says "Use Python 3.11").
+### 3.2 UI Utility Layer
+- `src/ui/colors.ts` — Semantic palette, symbols, brand colors, table header colors
+- `src/ui/output.ts` — Dual API: `format.*` (returns string) + print functions (console.log)
+- `src/ui/timer.ts` — `startTimer()` → `{ elapsed(), elapsedMs() }`
+- `src/ui/table.ts` — `createTable()` wrapper for cli-table3
+- `src/ui/spinner.ts` — Minimal TTY-aware spinner (no ora dependency)
+- All 7 command modules migrated to `ui.*` (only `sync.ts` retains chalk for 1 call)
 
-### 3.2 Action Audit Logging
-- Implementing a full JSON audit log tracking historical configuration overrides. This will allow developers to see exactly *when* and *why* a specific `.cursorrules` line was modified by Synctax.
+---
 
-### 3.3 Remote Profile Registry
-- A hosted endpoint integration for `profile publish` and `profile pull` commands.
-- This will allow entire development teams to securely share their Synctax configurations, ensuring everyone on the team has the identical AI context, MCPs, and skills installed.
+## 4. Completed: Phase 1.5a — Schema Expansion + Frontmatter + Scope
 
-### 3.4 Shared UI Terminal Companion
-- Moving beyond basic CLI outputs, v2.0 aims to build a comprehensive Terminal User Interface (TUI) built on Ink/Blessed.
+### 4.1 Deep Client Research
+- Researched 80+ sources across Claude Code, OpenCode, Antigravity, GitHub Copilot (VS Code + CLI), Cursor
+- **Major finding**: 5 of 9 adapters have broken config format assumptions
+- Full research documented in `docs/research/clients.md`
+
+### 4.2 Schema Expansion (`src/types.ts`)
+All new fields are `.optional()` — zero breaking changes to existing configs.
+
+- **McpServerSchema**: +5 fields (`url`, `headers`, `cwd`, `timeout`, `disabled`)
+- **AgentSchema**: +10 fields (`disallowedTools`, `permissionMode`, `maxTurns`, `mcpServers`, `hooks`, `memory`, `background`, `effort`, `isolation`, `userInvocable`)
+- **SkillSchema**: +9 fields (`argumentHint`, `disableModelInvocation`, `userInvocable`, `allowedTools`, `model`, `effort`, `context`, `agent`, `hooks`)
+- **PermissionsSchema**: +6 fields (`allow`, `deny`, `ask`, `allowedUrls`, `deniedUrls`, `trustedFolders`)
+
+### 4.3 Frontmatter Utility (`src/frontmatter.ts`)
+- Shared `parseFrontmatter()` / `serializeFrontmatter()` using `js-yaml`
+- Replaces fragile manual `split("---")` parsers
+- Handles arrays, nested objects, booleans, multiline strings, Windows line endings
+- Round-trip verified (serialize → parse → equal)
+
+### 4.4 Scope System Update
+- `ConfigScope` expanded from 3 to 4 levels: `global | user | project | local`
+- `splitByScope()` now returns 4 buckets instead of 3
+- `normalizeScope()` updated to preserve `local` (no longer folded into `project`)
+- `mergePermissions()` updated to handle v2 fields (allow/deny/ask, URLs, trusted folders)
+
+### 4.5 New Dependency
+- `js-yaml@4.1.1` + `@types/js-yaml@4.0.9` for robust YAML frontmatter parsing
+
+### 4.6 Tests Added
+- `tests/frontmatter.test.ts` — 16 tests (parse, serialize, round-trip, edge cases)
+- `tests/scopes.test.ts` — 9 tests (4-bucket split, scope mapping, null handling)
+- `tests/schema-expansion.test.ts` — 8 tests (backward compat, v2 fields, full config)
+- **Test total**: 138 tests across 24 files, all passing
+
+### 4.7 Decisions Locked In
+| Decision | Choice |
+|----------|--------|
+| Adapter fix priority | Fix adapters first (Phase 1.5 before Phase 3) |
+| YAML parser | Add `js-yaml` dependency |
+| Command consolidation | Consolidate `list`+`info`+`status` → single `synctax status` |
+| Scope flag | `--scope <name>` replacing `--to-global`/`--to-local` |
+
+---
+
+## 5. Next Up
+
+### Phase 1.5b: Claude Adapter Rewrite (CRITICAL)
+- Fix MCP location (.mcp.json + ~/.claude.json)
+- Fix permissions (Tool(specifier) syntax)
+- Fix model field, remove customInstructions
+- Expand frontmatter parser (14 agent fields, 11 skill fields)
+- Add scope support (user + project + local)
+
+### Phase 1.5c-g: Remaining Adapters
+- OpenCode: MCP array format, agent singular key, file-based skills
+- Antigravity: config path, file-based agents/skills, memory file
+- Copilot CLI: complete rewrite (paths, MCPs, agents, skills)
+- Cursor: SKILL.md support, fix commands format
+- Copilot VS Code: remote MCPs, agents, skills
+
+### Phase 2: Premium CLI (Parallel Track)
+- Brand header + timing on every command
+- Spinners for async operations
+- Per-command output redesign (tabular format)
+- Command consolidation (list+info → status)
+
+### Phase 3: Core Features (After 1.5)
+- `synctax diff [client]` — preview changes
+- `synctax validate` — config integrity check
+- Backup + rollback on sync failure
+- `synctax link` / `synctax unlink` — symlink instruction files
+- `synctax doctor --deep` — MCP health checking
+- `synctax add mcp --from <url>` — import from URL

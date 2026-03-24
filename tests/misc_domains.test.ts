@@ -8,42 +8,45 @@ import os from "os";
 describe("Models, Prompts, & Credentials Domains", () => {
   let mockHome: string;
   let manager: ConfigManager;
+  let originalCwd: string;
 
   beforeEach(async () => {
     mockHome = await fs.mkdtemp(path.join(os.tmpdir(), "synctax-misc-test-"));
     process.env.SYNCTAX_HOME = mockHome;
+    originalCwd = process.cwd();
+    process.chdir(mockHome);
     await fs.mkdir(path.join(mockHome, ".synctax"), { recursive: true });
     manager = new ConfigManager();
   });
 
   afterEach(async () => {
+    process.chdir(originalCwd);
     await fs.rm(mockHome, { recursive: true, force: true });
     delete process.env.SYNCTAX_HOME;
   });
 
-  it("ClaudeAdapter maps defaultModel and custom_instructions", async () => {
+  it("ClaudeAdapter maps model field (v2 format)", async () => {
     const adapter = new ClaudeAdapter();
     const settingsPath = path.join(mockHome, ".claude", "settings.json");
     await fs.mkdir(path.dirname(settingsPath), { recursive: true });
 
     await fs.writeFile(settingsPath, JSON.stringify({
-      preferredModel: "claude-3-opus",
-      customInstructions: "Global instructions."
+      model: "claude-opus-4-20250514",
     }));
 
     const data = await adapter.read();
-    expect(data.models?.defaultModel).toBe("claude-3-opus");
-    expect(data.prompts?.globalSystemPrompt).toBe("Global instructions.");
+    expect(data.models?.defaultModel).toBe("claude-opus-4-20250514");
 
     await adapter.write({
       mcps: {}, agents: {}, skills: {},
-      models: { defaultModel: "claude-3-5-sonnet" },
-      prompts: { globalSystemPrompt: "New instructions" }
+      models: { defaultModel: "claude-sonnet-4-20250514" },
     });
 
     const newData = JSON.parse(await fs.readFile(settingsPath, "utf-8"));
-    expect(newData.preferredModel).toBe("claude-3-5-sonnet");
-    expect(newData.customInstructions).toBe("New instructions");
+    expect(newData.model).toBe("claude-sonnet-4-20250514");
+    // Old fields should NOT be present
+    expect(newData.preferredModel).toBeUndefined();
+    expect(newData.customInstructions).toBeUndefined();
   });
 
   it("ConfigManager supports credentials without exposing secrets", async () => {

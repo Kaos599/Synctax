@@ -9,13 +9,17 @@ import os from "os";
 
 describe("Agents Domain", () => {
   let mockHome: string;
+  let originalCwd: string;
 
   beforeEach(async () => {
     mockHome = await fs.mkdtemp(path.join(os.tmpdir(), "synctax-agents-test-"));
     process.env.SYNCTAX_HOME = mockHome;
+    originalCwd = process.cwd();
+    process.chdir(mockHome);
   });
 
   afterEach(async () => {
+    process.chdir(originalCwd);
     await fs.rm(mockHome, { recursive: true, force: true });
     delete process.env.SYNCTAX_HOME;
   });

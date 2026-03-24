@@ -154,20 +154,37 @@ This section exhaustively defines how Synctax translates its master configuratio
   - **Prompts**: Maps `globalSystemPrompt` to `systemInstruction`.
   - **Agents/Skills**: Focuses exclusively on model assignment and base system instructions.
 
-### 3.10 Scope Matrix (read/write precedence)
+### 3.10 Scope Matrix (v2 — Updated March 2026)
 
-| Client | MCP scope precedence | Agents scope precedence | Skills scope precedence | Default write target |
-| --- | --- | --- | --- | --- |
-| Claude Code | `global` only | `global` only | `global` only | `~/.claude/settings.json` |
-| Cursor | `global` only | `global` only | `global` only | `~/.cursor/mcp.json` |
-| Zed | `global` only | N/A | N/A | `~/.config/zed/settings.json` |
-| Cline | `user`/`global` | not stored to adapter file | not stored to adapter file | user-scoped Cline config (`~/.cline/*`) |
-| OpenCode | `project` > `user` | `project` > `user` | `project` > `user` | `./opencode.json` (project), else user path |
-| Antigravity | `user` > `global` | `user` > `global` | `user` > `global` | active user path, global fallback |
-| Github Copilot | `project` > `user` | N/A | N/A | `.vscode/*` workspace, else user VS Code paths |
-| Github Copilot CLI | `project` > `user` | `project` > `user` (stored as aliases) | `project` > `user` (stored as aliases) | project config if present, else user config |
-| Gemini CLI | `project` > `user` | N/A | N/A | user settings path |
+> **NOTE**: The scope information below reflects deep research conducted in March 2026. Several adapters had incorrect assumptions previously. See `docs/research/clients.md` for full details.
+
+| Client | MCP location | Agents location | Skills location | Memory file | Scopes supported |
+| --- | --- | --- | --- | --- | --- |
+| Claude Code | `.mcp.json` (project), `~/.claude.json` (user) | `agents/*.md` (frontmatter, 14 fields) | `skills/<name>/SKILL.md` (11 fields) | `CLAUDE.md` | local, project, user |
+| Cursor | `.cursor/mcp.json` (project), `~/.cursor/mcp.json` (user) | Modes (cloud-managed?) | `commands/*.md` + `skills/<name>/SKILL.md` | `.cursorrules` | project, user |
+| OpenCode | `opencode.json` → `mcp` (array command!) | `agent` (singular) → `prompt` | `skills/<name>/SKILL.md` | `AGENTS.md` | project, user, global |
+| Antigravity | `~/.gemini/antigravity/mcp_config.json` | `GEMINI.md` + `.agent/rules/*.md` | `.agents/skills/<name>/SKILL.md` | `GEMINI.md` | project, user |
+| Copilot VS Code | `.vscode/mcp.json` → `servers` / `settings.json` → `mcp.servers` | `.github/agents/*.md` | `.github/skills/<name>/SKILL.md` | `.github/copilot-instructions.md` | project, user |
+| Copilot CLI | `~/.copilot/mcp-config.json` → `mcpServers` | `~/.copilot/agents/*.md` / `.github/agents/*.md` | `skills/<name>/SKILL.md` | `.github/copilot-instructions.md` | local, project, user |
+| Cline | `mcp_settings.json` → `mcpServers` | N/A | N/A | `.clinerules` | user |
+| Zed | `settings.json` → `context_servers` | N/A | N/A | `.rules` | user |
+| Gemini CLI | N/A | N/A | N/A | `.geminirules` | project, user |
+
+### 3.11 Permissions Mapping
+
+| Synctax Field | Claude Code | Copilot CLI | Cline |
+|--------------|------------|-------------|-------|
+| `allow` | `permissions.allow` | — | — |
+| `deny` | `permissions.deny` | — | — |
+| `ask` | `permissions.ask` | — | — |
+| `allowedCommands` | via `permissions.allow` | — | `autoApproveCommands` |
+| `networkAllow` | — | — | `autoApproveNetwork` |
+| `allowedUrls` | — | `allowed_urls` | — |
+| `deniedUrls` | — | `denied_urls` | — |
+| `trustedFolders` | — | `trusted_folders` | — |
 
 Notes:
-- `global` scope is the lowest-priority source, `user` overrides global, and `project` overrides user.
-- `scope` is preserved in Synctax resource records during `read` so sync decisions can keep precedence when re-writing.
+- Synctax scope system: `local > project > user > global`
+- `local` = personal project overrides (gitignored), `project` = committed to git
+- Adapters that don't support `local` fold it into `project`
+- Full research and translation guides: `docs/research/clients.md`

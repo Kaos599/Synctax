@@ -2,7 +2,7 @@ import fs from "fs/promises";
 import os from "os";
 import path from "path";
 
-export type ConfigScope = "global" | "user" | "project";
+export type ConfigScope = "global" | "user" | "project" | "local";
 export type ScopeLabel = string;
 export interface ScopedCandidate {
   path: string;
@@ -11,7 +11,8 @@ export interface ScopedCandidate {
 }
 
 export function normalizeScope(scope: string | undefined): ConfigScope {
-  if (scope === "project" || scope === "local") return "project";
+  if (scope === "local") return "local";
+  if (scope === "project") return "project";
   if (scope === "user") return "user";
   return "global";
 }
