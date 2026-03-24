@@ -46,16 +46,16 @@ describe("Adapters", () => {
       const { agents, skills } = await adapter.read();
 
       expect(Object.keys(agents).length).toBe(4);
-      expect(agents["agent1"]?.prompt).toBe("Prompt 1");
-      expect(agents["agent2"]?.prompt).toBe("Prompt 2");
-      expect(agents["agent3"]?.prompt).toBe("Prompt 3");
-      expect(agents["agent4"]?.prompt).toBe("Prompt 4");
+      expect(agents["agent1"].prompt).toBe("Prompt 1");
+      expect(agents["agent2"].prompt).toBe("Prompt 2");
+      expect(agents["agent3"].prompt).toBe("Prompt 3");
+      expect(agents["agent4"].prompt).toBe("Prompt 4");
 
       expect(Object.keys(skills).length).toBe(4);
-      expect(skills["skill1"]?.content).toBe("Content 1");
-      expect(skills["skill2"]?.content).toBe("Content 2");
-      expect(skills["skill3"]?.content).toBe("Content 3");
-      expect(skills["skill4"]?.content).toBe("Content 4");
+      expect(skills["skill1"].content).toBe("Content 1");
+      expect(skills["skill2"].content).toBe("Content 2");
+      expect(skills["skill3"].content).toBe("Content 3");
+      expect(skills["skill4"].content).toBe("Content 4");
     });
 
     it("detects correctly", async () => {
@@ -81,17 +81,17 @@ describe("Adapters", () => {
       }));
 
       let {mcps} = await adapter.read();
-      expect(mcps["existing-mcp"]?.command).toBe("test");
+      expect(mcps["existing-mcp"].command).toBe("test");
 
       mcps["new-mcp"] = {
           command: "bun",
           args: ["run", "index.ts"]
       };
 
-      await adapter.write({ mcps, agents: {}, skills: {} });
+      await adapter.write({ mcps, agents: {} });
 
       ({mcps} = await adapter.read());
-      expect(mcps["new-mcp"]?.command).toBe("bun");
+      expect(mcps["new-mcp"].command).toBe("bun");
     });
   });
 
@@ -106,8 +106,6 @@ describe("Adapters", () => {
           }
         },
         agents: {}
-        ,
-        skills: {}
       });
 
       const configContent = await fs.readFile(path.join(mockHome, ".cursor", "mcp.json"), "utf-8");
@@ -118,19 +116,18 @@ describe("Adapters", () => {
 
   describe("OpenCodeAdapter", () => {
     it("detects correctly", async () => {
-      const originalCwd = process.cwd();
-      process.chdir(mockHome);
-      try {
-        const adapter = new OpenCodeAdapter();
-        expect(await adapter.detect()).toBe(false);
+      const originalCwd = process.cwd;
+      process.cwd = () => mockHome;
 
-        await fs.mkdir(path.join(mockHome, ".config", "opencode"), { recursive: true });
-        await fs.writeFile(path.join(mockHome, ".config", "opencode", "config.json"), "{}");
+      const adapter = new OpenCodeAdapter();
+      expect(await adapter.detect()).toBe(false);
 
-        expect(await adapter.detect()).toBe(true);
-      } finally {
-        process.chdir(originalCwd);
-      }
+      await fs.mkdir(path.join(mockHome, ".config", "opencode"), { recursive: true });
+      await fs.writeFile(path.join(mockHome, ".config", "opencode", "config.json"), "{}");
+
+      expect(await adapter.detect()).toBe(true);
+      
+      process.cwd = originalCwd;
     });
 
     it("reads and writes correctly", async () => {
@@ -143,10 +140,10 @@ describe("Adapters", () => {
       }));
 
       let {mcps} = await adapter.read();
-      expect(mcps["oc-mcp"]?.command).toBe("python");
+      expect(mcps["oc-mcp"].command).toBe("python");
 
       mcps["oc-new"] = { command: "node", args: ["index.js"] };
-      await adapter.write({ mcps, agents: {}, skills: {} });
+      await adapter.write({ mcps, agents: {} });
 
       const content = JSON.parse(await fs.readFile(path.join(mockHome, ".config", "opencode", "config.json"), "utf-8"));
       expect(content.mcp["oc-new"].command).toBe("node");
@@ -170,8 +167,8 @@ describe("Adapters", () => {
         }));
 
         const { mcps } = await adapter.read();
-        expect(mcps["shared"]?.command).toBe("project-mcp");
-        expect(mcps["shared"]?.scope).toBe("project");
+        expect(mcps["shared"].command).toBe("project-mcp");
+        expect(mcps["shared"].scope).toBe("project");
 
         await adapter.write({
           mcps: {
@@ -239,10 +236,10 @@ describe("Adapters", () => {
       }));
 
       let {mcps} = await adapter.read();
-      expect(mcps["ag-mcp"]?.command).toBe("ruby");
+      expect(mcps["ag-mcp"].command).toBe("ruby");
 
       mcps["ag-new"] = { command: "go", args: ["run", "main.go"] };
-      await adapter.write({ mcps, agents: {}, skills: {} });
+      await adapter.write({ mcps, agents: {} });
 
       const content = JSON.parse(await fs.readFile(path.join(mockHome, ".config", "antigravity", "config.json"), "utf-8"));
       expect(content.mcpServers["ag-new"].command).toBe("go");
@@ -264,8 +261,8 @@ describe("Adapters", () => {
       }));
 
       const { mcps } = await adapter.read();
-      expect(mcps["shared"]?.command).toBe("user-cmd");
-      expect(mcps["shared"]?.scope).toBe("user");
+      expect(mcps["shared"].command).toBe("user-cmd");
+      expect(mcps["shared"].scope).toBe("user");
     });
   });
 
@@ -307,9 +304,9 @@ describe("Adapters", () => {
         await fs.writeFile(userPath, JSON.stringify({ aliases: { shared: "user-initial", onlyUser: "only-user" } }));
 
         const readResources = await adapter.read();
-        expect(readResources.skills["shared"]?.content).toBe("project-initial");
-        expect(readResources.skills["onlyProject"]?.content).toBe("only-project");
-        expect(readResources.skills["onlyUser"]?.content).toBe("only-user");
+        expect(readResources.skills["shared"].content).toBe("project-initial");
+        expect(readResources.skills["onlyProject"].content).toBe("only-project");
+        expect(readResources.skills["onlyUser"].content).toBe("only-user");
 
         await adapter.write({
           mcps: {},

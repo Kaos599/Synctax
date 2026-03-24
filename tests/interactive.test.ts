@@ -16,9 +16,7 @@ describe("Interactive Mode", () => {
   });
 
   it("should call statusCommand when status is selected", async () => {
-    (search as any)
-      .mockResolvedValueOnce("status" as any)
-      .mockResolvedValueOnce("exit" as any);
+    vi.mocked(search).mockResolvedValue("status" as any);
     const statusSpy = vi.spyOn(commands, "statusCommand").mockResolvedValue(undefined as any);
     
     await startInteractiveMode();
@@ -27,9 +25,7 @@ describe("Interactive Mode", () => {
   });
 
   it("should call listCommand when list is selected", async () => {
-    (search as any)
-      .mockResolvedValueOnce("list" as any)
-      .mockResolvedValueOnce("exit" as any);
+    vi.mocked(search).mockResolvedValue("list" as any);
     const listSpy = vi.spyOn(commands, "listCommand").mockResolvedValue(undefined as any);
     
     await startInteractiveMode();
@@ -38,10 +34,8 @@ describe("Interactive Mode", () => {
   });
 
   it("should prompt for --from when pull is selected and call pullCommand", async () => {
-    (search as any)
-      .mockResolvedValueOnce("pull" as any)
-      .mockResolvedValueOnce("exit" as any);
-    (select as any).mockResolvedValue("claude" as any);
+    vi.mocked(search).mockResolvedValue("pull" as any);
+    vi.mocked(select).mockResolvedValue("claude" as any);
     
     const pullSpy = vi.spyOn(commands, "pullCommand").mockResolvedValue(undefined as any);
     
@@ -51,19 +45,33 @@ describe("Interactive Mode", () => {
     expect(select).toHaveBeenCalled();
   });
 
-  it("should stay in interactive mode until exit", async () => {
-    (search as any)
-      .mockResolvedValueOnce("status" as any)
-      .mockResolvedValueOnce("list" as any)
-      .mockResolvedValueOnce("exit" as any);
+  it("should handle ExitPromptError from initial search gracefully", async () => {
+    const exitError = new Error("User force closed the prompt");
+    exitError.name = "ExitPromptError";
+    vi.mocked(search).mockRejectedValue(exitError);
+    const consoleSpy = vi.spyOn(console, "log").mockImplementation(() => {});
 
-    const statusSpy = vi.spyOn(commands, "statusCommand").mockResolvedValue(undefined as any);
-    const listSpy = vi.spyOn(commands, "listCommand").mockResolvedValue(undefined as any);
+    await expect(startInteractiveMode()).resolves.toBeUndefined();
+    expect(consoleSpy.mock.calls.some(c => String(c[0]).includes("Cancelled"))).toBe(true);
+    consoleSpy.mockRestore();
+  });
 
-    await startInteractiveMode();
+  it("should handle CancelPromptError from sub-prompt gracefully", async () => {
+    vi.mocked(search).mockResolvedValue("pull" as any);
+    const cancelError = new Error("Prompt was cancelled");
+    cancelError.name = "CancelPromptError";
+    vi.mocked(select).mockRejectedValue(cancelError);
+    const consoleSpy = vi.spyOn(console, "log").mockImplementation(() => {});
 
-    expect(statusSpy).toHaveBeenCalledTimes(1);
-    expect(listSpy).toHaveBeenCalledTimes(1);
-    expect(search).toHaveBeenCalledTimes(3);
+    await expect(startInteractiveMode()).resolves.toBeUndefined();
+    expect(consoleSpy.mock.calls.some(c => String(c[0]).includes("Cancelled"))).toBe(true);
+    consoleSpy.mockRestore();
+  });
+
+  it("should propagate non-cancellation errors", async () => {
+    const genericError = new Error("Something broke");
+    vi.mocked(search).mockRejectedValue(genericError);
+
+    await expect(startInteractiveMode()).rejects.toThrow("Something broke");
   });
 });

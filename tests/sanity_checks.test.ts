@@ -114,6 +114,56 @@ describe("TDD Sanity Checks for Copilot Flags", () => {
     expect(data.permissions?.allowedPaths).toContain("/safe/path");
   });
 
+  it("memorySyncCommand sets exitCode when source file is missing", async () => {
+    const consoleSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    const cwdSpy = vi.spyOn(process, "cwd").mockReturnValue(mockHome);
+    const originalExitCode = process.exitCode;
+
+    await manager.write({
+      version: 1, source: "claude",
+      clients: { "cursor": { enabled: true } },
+      resources: { mcps: {}, agents: {}, skills: {}, permissions: { allowedPaths: [], deniedPaths: [], allowedCommands: [], deniedCommands: [], networkAllow: false } }
+    } as any);
+
+    // Do NOT create CLAUDE.md — source is missing
+    await memorySyncCommand({ source: "claude" });
+
+    expect(process.exitCode).toBe(1);
+    const logs = consoleSpy.mock.calls.map(c => String(c[0])).join("\n");
+    expect(logs).toContain("not found");
+
+    process.exitCode = originalExitCode;
+    consoleSpy.mockRestore();
+    cwdSpy.mockRestore();
+  });
+
+  it("memorySyncCommand prints summary on success", async () => {
+    const consoleSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    const cwdSpy = vi.spyOn(process, "cwd").mockReturnValue(mockHome);
+
+    await manager.write({
+      version: 1, source: "claude",
+      clients: { "cursor": { enabled: true } },
+      resources: { mcps: {}, agents: {}, skills: {}, permissions: { allowedPaths: [], deniedPaths: [], allowedCommands: [], deniedCommands: [], networkAllow: false } }
+    } as any);
+
+    // Create source file
+    const fs = await import("fs/promises");
+    const path = await import("path");
+    await fs.writeFile(path.join(mockHome, "CLAUDE.md"), "Test content");
+
+    await memorySyncCommand({ source: "claude" });
+
+    const logs = consoleSpy.mock.calls.map(c => String(c[0])).join("\n");
+    expect(logs).toContain("Memory sync complete");
+
+    // Clean up files created during sync
+    try { await fs.rm(path.join(mockHome, "CLAUDE.md")); } catch {}
+    try { await fs.rm(path.join(mockHome, ".cursorrules")); } catch {}
+    consoleSpy.mockRestore();
+    cwdSpy.mockRestore();
+  });
+
   it("sanity: doctorCommand executes full cycle without crashing", async () => {
     const consoleSpy = vi.spyOn(console, "log").mockImplementation(() => {});
 

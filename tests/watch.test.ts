@@ -48,7 +48,7 @@ describe("Watch Daemon Mode", () => {
     // We cannot easily mock ESM chokidar methods without throwing namespace errors,
     // so we will test that our watchCommand doesn't fail when invoked,
     // and that the chokidar setup includes standard debouncing options.
-    const watchCode = (await fs.readFile("src/commands.ts", "utf8")).split("watchCommand")[1];
+    const watchCode = (await fs.readFile("src/commands/sync.ts", "utf8")).split("watchCommand")[1];
     expect(watchCode).toContain("stabilityThreshold");
     expect(watchCode).toContain("clearTimeout");
     expect(watchCode).toContain("setTimeout");

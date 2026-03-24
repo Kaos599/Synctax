@@ -45,9 +45,41 @@ export class ConfigManager {
        const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
        const backupPath = `${this.configPath}.${timestamp}.bak`;
        await fs.copyFile(this.configPath, backupPath);
+      await this.pruneBackups();
      } catch(e) {
        // Ignore if config file doesn't exist
      }
+  }
+
+  async pruneBackups(maxBackups: number = 10): Promise<string[]> {
+    const dir = path.dirname(this.configPath);
+    const baseName = path.basename(this.configPath);
+
+    let files: string[];
+    try {
+      files = await fs.readdir(dir);
+    } catch {
+      return [];
+    }
+
+    const backups = files
+      .filter(f => f.startsWith(`${baseName}.`) && f.endsWith(".bak"))
+      .sort()
+      .reverse();
+
+    const toDelete = backups.slice(maxBackups);
+    const deleted: string[] = [];
+
+    for (const file of toDelete) {
+      try {
+        await fs.unlink(path.join(dir, file));
+        deleted.push(file);
+      } catch {
+        // Ignore individual delete failures
+      }
+    }
+
+    return deleted;
   }
 
   async getTheme(): Promise<string> {
