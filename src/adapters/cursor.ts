@@ -113,11 +113,12 @@ export class CursorAdapter implements ClientAdapter {
     if (Object.keys(resources.skills || {}).length > 0) {
       await fs.mkdir(this.commandsDir, { recursive: true }).catch(() => {});
       for (const [key, skill] of Object.entries(resources.skills || {})) {
+        const safeKey = path.basename(key);
         let content = `---\nname: ${skill.name}\n`;
         if (skill.description) content += `description: ${skill.description}\n`;
         if (skill.trigger) content += `trigger: ${skill.trigger}\n`;
         content += `---\n${skill.content}\n`;
-        await fs.writeFile(path.join(this.commandsDir, `${key}.md`), content, "utf-8");
+        await fs.writeFile(path.join(this.commandsDir, `${safeKey}.md`), content, "utf-8");
       }
     }
   }
