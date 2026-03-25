@@ -1,6 +1,24 @@
 import { describe, it, expect } from "vitest";
 import { semantic, symbols, brand, tableHeader } from "../../src/ui/colors.js";
 
+function withEnv(name: string, value: string | undefined, fn: () => void) {
+  const previous = process.env[name];
+  if (value === undefined) {
+    delete process.env[name];
+  } else {
+    process.env[name] = value;
+  }
+  try {
+    fn();
+  } finally {
+    if (previous === undefined) {
+      delete process.env[name];
+    } else {
+      process.env[name] = previous;
+    }
+  }
+}
+
 describe("UI Colors", () => {
   it("semantic colors are functions", () => {
     expect(typeof semantic.success).toBe("function");
@@ -17,6 +35,16 @@ describe("UI Colors", () => {
     expect(symbols.warning).toBe("⚠");
     expect(symbols.info).toBe("○");
     expect(symbols.arrow).toBe("→");
+  });
+
+  it("symbols fall back to ASCII when SYNCTAX_ASCII is set", () => {
+    withEnv("SYNCTAX_ASCII", "1", () => {
+      expect(symbols.success).toBe("+");
+      expect(symbols.error).toBe("x");
+      expect(symbols.warning).toBe("!");
+      expect(symbols.info).toBe("o");
+      expect(symbols.arrow).toBe("->");
+    });
   });
 
   it("brand colors produce output", () => {

@@ -1,7 +1,8 @@
 import fs from "fs/promises";
 import path from "path";
-import { ClientAdapter, McpServer, Agent, Skill, Permissions, Models, Prompts, Credentials } from "../types.js";
-import { firstExistingPath, homeDir, firstExistingScopedPath, ConfigScope } from "../platform-paths.js";
+import type { ClientAdapter, McpServer, Agent, Skill, Permissions, Models, Prompts, Credentials } from "../types.js";
+import { firstExistingPath, homeDir, firstExistingScopedPath } from "../platform-paths.js";
+import type { ConfigScope } from "../platform-paths.js";
 
 function scopeWeight(scope: ConfigScope): number {
   if (scope === "global") return 0;
@@ -43,7 +44,7 @@ export class GeminiCliAdapter implements ClientAdapter {
   private async resolvedConfigPath(): Promise<string> {
     const c = this.candidates();
     const found = await firstExistingScopedPath(c);
-    return found?.path ?? c[0].path;
+    return found?.path ?? c[0]?.path ?? path.join(process.cwd(), ".gemini", "settings.json");
   }
 
   async detect(): Promise<boolean> {

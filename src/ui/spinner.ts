@@ -1,6 +1,7 @@
-/** Minimal spinner for async operations. Uses a simple interval-based approach to avoid adding ora as a dependency until Phase 2. */
+/** Minimal spinner for async operations. Uses semantic colors from the UI palette. */
 
-import chalk from "chalk";
+import { semantic, symbols } from "./colors.js";
+import { getCapabilities } from "./capabilities.js";
 
 export interface SpinnerInstance {
   text(msg: string): void;
@@ -10,53 +11,84 @@ export interface SpinnerInstance {
   stop(): void;
 }
 
-const frames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+const unicodeFrames = ["\u28CB", "\u28D9", "\u28F9", "\u28F8", "\u28FC", "\u28F4", "\u28E6", "\u28E7", "\u28C7", "\u28CF"];
+const asciiFrames = ["-", "\\", "|", "/"];
 
 export function spinner(text: string): SpinnerInstance {
+  const capabilities = getCapabilities();
+  const stream = process.stderr;
+  const frames = capabilities.unicode ? unicodeFrames : asciiFrames;
+  const ellipsis = capabilities.unicode ? "…" : "...";
+  const canAnimate = capabilities.animate;
+
   let frameIndex = 0;
   let currentText = text;
-  const isTTY = Boolean(process.stdout.isTTY);
+  let stopped = false;
 
-  const interval = isTTY
+  const interval = canAnimate
     ? setInterval(() => {
-        const frame = frames[frameIndex % frames.length]!;
-        process.stdout.write(`\r  ${chalk.cyan(frame)} ${currentText}`);
+        const frame = frames[frameIndex % frames.length] ?? "*";
+        stream.write(`\r  ${semantic.info(frame)} ${currentText}`);
         frameIndex++;
       }, 80)
     : null;
 
-  if (!isTTY) {
-    console.log(`  … ${text}`);
+  if (!canAnimate) {
+    console.log(`  ${semantic.info(ellipsis)} ${text}`);
   }
 
-  function clear() {
+  function clearTransientLine() {
     if (interval) clearInterval(interval);
-    if (isTTY) process.stdout.write("\r\x1b[K");
+    if (canAnimate) {
+      stream.write("\r\x1b[K");
+    }
+  }
+
+  function finish(type: "success" | "error" | "warning", msg: string) {
+    if (stopped) {
+      return;
+    }
+    stopped = true;
+    clearTransientLine();
+
+    if (type === "success") {
+      console.log(`  ${semantic.success(symbols.success)} ${msg}`);
+      return;
+    }
+    if (type === "error") {
+      console.log(`  ${semantic.error(symbols.error)} ${msg}`);
+      return;
+    }
+    console.log(`  ${semantic.warning(symbols.warning)} ${msg}`);
   }
 
   return {
     text(msg: string) {
+      if (stopped) {
+        return;
+      }
       currentText = msg;
-      if (!isTTY) console.log(`  … ${msg}`);
     },
     succeed(msg: string) {
-      clear();
-      console.log(`  ${chalk.green("✓")} ${msg}`);
+      finish("success", msg);
     },
     fail(msg: string) {
-      clear();
-      console.log(`  ${chalk.red("✗")} ${msg}`);
+      finish("error", msg);
     },
     warn(msg: string) {
-      clear();
-      console.log(`  ${chalk.yellow("⚠")} ${msg}`);
+      finish("warning", msg);
     },
     stop() {
-      clear();
+      if (stopped) {
+        return;
+      }
+      stopped = true;
+      clearTransientLine();
     },
   };
 }
 
 export function isInteractive(): boolean {
-  return Boolean(process.stdout.isTTY);
+  const capabilities = getCapabilities();
+  return capabilities.stdoutIsTTY || capabilities.stderrIsTTY;
 }

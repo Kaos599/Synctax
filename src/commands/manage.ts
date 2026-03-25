@@ -2,19 +2,96 @@ import * as ui from "../ui/index.js";
 import { checkbox } from "@inquirer/prompts";
 import { getConfigManager } from "./_shared.js";
 import { syncCommand } from "./sync.js";
+import { getVersion } from "../version.js";
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+type ImportedMcpResolution = {
+  mcp: Record<string, unknown> | null;
+  reason?: "invalid_payload" | "missing_named_key";
+};
+
+function resolveImportedMcp(payload: unknown, name: string): ImportedMcpResolution {
+  if (isRecord(payload) && typeof payload.command === "string") {
+    return { mcp: payload };
+  }
+
+  if (!isRecord(payload) || !isRecord(payload.mcps)) {
+    return { mcp: null, reason: "invalid_payload" };
+  }
+
+  const mcps = payload.mcps as Record<string, unknown>;
+  const named = mcps[name];
+  if (isRecord(named) && typeof named.command === "string") {
+    return { mcp: named };
+  }
+
+  const validCandidates: Record<string, unknown>[] = [];
+  for (const candidate of Object.values(mcps)) {
+    if (isRecord(candidate) && typeof candidate.command === "string") {
+      validCandidates.push(candidate);
+    }
+  }
+
+  if (validCandidates.length === 1) {
+    const [singleCandidate] = validCandidates;
+    return { mcp: singleCandidate ?? null, reason: singleCandidate ? undefined : "invalid_payload" };
+  }
+
+  if (validCandidates.length > 1) {
+    return { mcp: null, reason: "missing_named_key" };
+  }
+
+  return { mcp: null, reason: "invalid_payload" };
+}
 
 export async function addCommand(domain: string, name: string, options: any) {
+  const timer = ui.startTimer();
   const configManager = getConfigManager();
-  ui.header(`Adding ${domain}: ${name}...`);
-
   const config = await configManager.read();
 
+  console.log(ui.format.brandHeader(getVersion(), config.activeProfile));
+  ui.header(`Adding ${domain}: ${name}...`);
+
   if (domain === "mcp") {
+    let importedMcp: Record<string, unknown> | null = null;
+    let importedMcpReason: ImportedMcpResolution["reason"];
+
+    if (options.from) {
+      try {
+        const response = await fetch(options.from);
+        if (!response.ok) {
+          ui.error(`Failed to fetch MCP from URL (${response.status} ${response.statusText}).`);
+          return;
+        }
+
+        const payload = await response.json();
+        const resolved = resolveImportedMcp(payload, name);
+        importedMcp = resolved.mcp;
+        importedMcpReason = resolved.reason;
+      } catch {
+        ui.error(`Failed to import MCP from ${options.from}. Expected valid JSON payload.`);
+        return;
+      }
+
+      if (!importedMcp) {
+        if (importedMcpReason === "missing_named_key") {
+          ui.error(`MCP key "${name}" not found in wrapper payload containing multiple MCP entries.`);
+          return;
+        }
+        ui.error("Invalid MCP payload. Expected an MCP object or a payload with a mcps map containing a valid MCP.");
+        return;
+      }
+    }
+
     config.resources.mcps[name] = {
-      command: options.command,
-      args: options.args,
-      env: options.env,
-      transport: options.transport,
+      ...importedMcp,
+      command: options.command ?? importedMcp?.command,
+      args: options.args ?? importedMcp?.args,
+      env: options.env ?? importedMcp?.env,
+      transport: options.transport ?? importedMcp?.transport,
       scope: options.global ? "global" : (options.local ? "local" : "global")
     };
   } else if (domain === "agent") {
@@ -41,14 +118,19 @@ export async function addCommand(domain: string, name: string, options: any) {
   await configManager.write(config);
   ui.success(`Added ${domain} ${name}`);
 
+  console.log(ui.format.summary(timer.elapsed(), `added ${domain} "${name}"`));
+
   if (options.push) {
     await syncCommand({});
   }
 }
 
 export async function removeCommand(domain: string | undefined, name: string | undefined, options: any) {
+  const timer = ui.startTimer();
   const configManager = getConfigManager();
   const config = await configManager.read();
+
+  console.log(ui.format.brandHeader(getVersion(), config.activeProfile));
 
   if (options.interactive || (!domain && !name)) {
     const choices = [
@@ -105,16 +187,20 @@ export async function removeCommand(domain: string | undefined, name: string | u
 
   await configManager.write(config);
 
+  console.log(ui.format.summary(timer.elapsed(), "resource(s) removed"));
+
   if (options.fromAll) {
     await syncCommand({});
   }
 }
 
 export async function moveCommand(domain: string, name: string, options: { toGlobal?: boolean, toLocal?: boolean, toClient?: string, push?: boolean }) {
+  const timer = ui.startTimer();
   const configManager = getConfigManager();
-  ui.header(`Moving ${domain} resource: ${name}...`);
-
   const config = await configManager.read();
+
+  console.log(ui.format.brandHeader(getVersion(), config.activeProfile));
+  ui.header(`Moving ${domain} resource: ${name}...`);
 
   let resourceGroup: any;
   if (domain === "mcp") resourceGroup = config.resources.mcps;
@@ -135,6 +221,8 @@ export async function moveCommand(domain: string, name: string, options: { toGlo
 
   await configManager.write(config);
   ui.success(`Successfully updated scope for ${name}`);
+
+  console.log(ui.format.summary(timer.elapsed(), `scope changed for "${name}"`));
 
   if (options.push) {
     await syncCommand({});

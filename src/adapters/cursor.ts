@@ -1,26 +1,38 @@
 import fs from "fs/promises";
 import path from "path";
 import os from "os";
-import { ClientAdapter, McpServer, Agent, Skill, ResourceScope } from "../types.js";
+import type { ClientAdapter, McpServer, Agent, Skill, ResourceScope } from "../types.js";
+import { parseFrontmatter } from "../frontmatter.js";
 
-import { Permissions, Models, Prompts, Credentials } from "../types.js";
+import type { Permissions, Models, Prompts, Credentials } from "../types.js";
 
 function stripScope<T extends { scope?: ResourceScope }>(item: T): Omit<T, "scope"> {
   const { scope: _scope, ...rest } = item;
   return rest;
 }
+
+async function fileExists(p: string): Promise<boolean> {
+  try { await fs.access(p); return true; } catch { return false; }
+}
+
 export class CursorAdapter implements ClientAdapter {
   id = "cursor";
   name = "Cursor";
 
+  private get homeDir() {
+    return process.env.SYNCTAX_HOME || os.homedir();
+  }
+
   private get baseDir() {
-    const homeDir = process.env.SYNCTAX_HOME || os.homedir();
-    return path.join(homeDir, ".cursor");
+    return path.join(this.homeDir, ".cursor");
   }
 
   private get configPath() { return path.join(this.baseDir, "mcp.json"); }
+  private get projectConfigPath() { return path.join(process.cwd(), ".cursor", "mcp.json"); }
   private get modesPath() { return path.join(this.baseDir, "modes.json"); }
   private get commandsDir() { return path.join(this.baseDir, "commands"); }
+  private get globalSkillsDir() { return path.join(this.homeDir, ".cursor", "skills"); }
+  private get projectSkillsDir() { return path.join(process.cwd(), ".cursor", "skills"); }
 
   async detect(): Promise<boolean> {
     try { await fs.access(this.configPath); return true; } catch { return false; }
@@ -33,15 +45,12 @@ export class CursorAdapter implements ClientAdapter {
       skills: {} as Record<string, Skill>
     };
 
-    try {
-      const data = await fs.readFile(this.configPath, "utf-8");
-      const parsed = JSON.parse(data);
-      const mcpServers = parsed.mcpServers || {};
-      for (const [key, val] of Object.entries<any>(mcpServers)) {
-        result.mcps[key] = { command: val.command, args: val.args, env: val.env };
-      }
-    } catch (e: any) {}
+    // Read MCPs from global ~/.cursor/mcp.json
+    await this.readMcpsFromFile(this.configPath, "global", result.mcps);
+    // Read MCPs from project .cursor/mcp.json (project overrides global)
+    await this.readMcpsFromFile(this.projectConfigPath, "project", result.mcps);
 
+    // Read agents (modes)
     try {
       const data = await fs.readFile(this.modesPath, "utf-8");
       const parsed = JSON.parse(data);
@@ -51,37 +60,12 @@ export class CursorAdapter implements ClientAdapter {
       }
     } catch (e: any) {}
 
-    try {
-      const files = await fs.readdir(this.commandsDir);
-      for (const file of files) {
-        if (!file.endsWith(".md")) continue;
-        const name = file.replace(".md", "");
-        const rawContent = await fs.readFile(path.join(this.commandsDir, file), "utf-8");
+    // Read skills from commands/ (plain markdown, no frontmatter)
+    await this.readCommandsAsSkills(this.commandsDir, result.skills);
 
-        let content = rawContent;
-        let description = undefined;
-        let trigger = `/${name}`;
-
-        // Very basic parsing since cursor commands don't usually have frontmatter, they are just markdown.
-        // But let's assume if it does, we strip it.
-        if (rawContent.startsWith("---")) {
-          const parts = rawContent.split("---");
-          if (parts.length >= 3) {
-            content = parts.slice(2).join("---").trim();
-            const lines = parts[1].split("\n");
-            for (const line of lines) {
-              const [k, ...rest] = line.split(":");
-              if (!k) continue;
-              const v = rest.join(":").trim();
-              if (k.trim() === "description") description = v;
-              if (k.trim() === "trigger") trigger = v;
-            }
-          }
-        }
-
-        result.skills[name] = { name, description, content, trigger };
-      }
-    } catch (e: any) {}
+    // Read skills from SKILL.md directories (global then project overrides)
+    await this.readSkillMdFromDir(this.globalSkillsDir, "global", result.skills);
+    await this.readSkillMdFromDir(this.projectSkillsDir, "project", result.skills);
 
     return result;
   }
@@ -110,14 +94,11 @@ export class CursorAdapter implements ClientAdapter {
       await fs.writeFile(this.modesPath, JSON.stringify(existingModes, null, 2), "utf-8");
     }
 
+    // Write skills as plain markdown commands (no frontmatter)
     if (Object.keys(resources.skills || {}).length > 0) {
       await fs.mkdir(this.commandsDir, { recursive: true }).catch(() => {});
       for (const [key, skill] of Object.entries(resources.skills || {})) {
-        let content = `---\nname: ${skill.name}\n`;
-        if (skill.description) content += `description: ${skill.description}\n`;
-        if (skill.trigger) content += `trigger: ${skill.trigger}\n`;
-        content += `---\n${skill.content}\n`;
-        await fs.writeFile(path.join(this.commandsDir, `${key}.md`), content, "utf-8");
+        await fs.writeFile(path.join(this.commandsDir, `${key}.md`), skill.content + "\n", "utf-8");
       }
     }
   }
@@ -128,6 +109,78 @@ export class CursorAdapter implements ClientAdapter {
   }
   async writeMemory(projectDir: string, content: string): Promise<void> {
     await fs.writeFile(path.join(projectDir, this.getMemoryFileName()), content, "utf-8");
+  }
+
+  // --- Private helpers ---
+
+  private async readMcpsFromFile(
+    filePath: string,
+    scope: "global" | "project",
+    target: Record<string, McpServer>
+  ): Promise<void> {
+    try {
+      const data = await fs.readFile(filePath, "utf-8");
+      const parsed = JSON.parse(data);
+      const mcpServers = parsed.mcpServers || {};
+      for (const [key, val] of Object.entries<any>(mcpServers)) {
+        target[key] = { command: val.command, args: val.args, env: val.env, scope };
+      }
+    } catch (e: any) {}
+  }
+
+  private async readCommandsAsSkills(
+    dir: string,
+    target: Record<string, Skill>
+  ): Promise<void> {
+    try {
+      const files = await fs.readdir(dir);
+      for (const file of files) {
+        if (!file.endsWith(".md")) continue;
+        const name = file.replace(".md", "");
+        const content = await fs.readFile(path.join(dir, file), "utf-8");
+        const trigger = `/${name}`;
+        target[name] = { name, content: content.trim(), trigger };
+      }
+    } catch (e: any) {}
+  }
+
+  private async readSkillMdFromDir(
+    dir: string,
+    scope: ResourceScope,
+    target: Record<string, Skill>
+  ): Promise<void> {
+    let entries: string[];
+    try { entries = await fs.readdir(dir); } catch { return; }
+
+    for (const entry of entries) {
+      const entryPath = path.join(dir, entry);
+      let stat;
+      try { stat = await fs.stat(entryPath); } catch { continue; }
+
+      if (stat.isDirectory()) {
+        const skillMdPath = path.join(entryPath, "SKILL.md");
+        if (await fileExists(skillMdPath)) {
+          const raw = await fs.readFile(skillMdPath, "utf-8");
+          const { data, content } = parseFrontmatter<Record<string, any>>(raw);
+          target[entry] = {
+            name: data.name || entry,
+            description: data.description,
+            content,
+            trigger: data.trigger,
+            argumentHint: data["argument-hint"],
+            disableModelInvocation: data["disable-model-invocation"],
+            userInvocable: data["user-invocable"],
+            allowedTools: data["allowed-tools"],
+            model: data.model,
+            effort: data.effort,
+            context: data.context,
+            agent: data.agent,
+            hooks: data.hooks,
+            scope,
+          };
+        }
+      }
+    }
   }
 }
 // Add permissions logic to other adapters to not break typescript tests

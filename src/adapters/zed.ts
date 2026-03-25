@@ -58,7 +58,7 @@ export class ZedAdapter implements ClientAdapter {
     let existing: any = {};
     try { existing = JSON.parse(await fs.readFile(configPath, "utf-8")); } catch (e) {}
 
-    existing.context_servers = {};
+    existing.context_servers = existing.context_servers || {};
     for (const [key, value] of Object.entries(resources.mcps || {})) {
       existing.context_servers[key] = stripScope(value);
     }

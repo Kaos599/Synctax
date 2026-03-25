@@ -46,6 +46,19 @@ bunx vitest
 bunx tsc --noEmit
 ```
 
+## Quality Gates
+
+Use the following gates for day-to-day verification:
+
+- Default gates: `bun run typecheck`, `bun run lint`, `bun run test`
+- Strict readiness gates: `bun run lint:strict`, `bun run check:strict`
+- Enforcement rule: default gates are required for all regular changes; strict gates are required when evaluating hard-gate readiness and before enabling strict CI/default gating.
+
+Quality policy references:
+
+- `docs/conventions/code-quality-baseline.md`
+- `docs/qa/2026-03-26-quality-baseline-checklist.md`
+
 ## Directory Structure
 
 ```

@@ -1,7 +1,8 @@
 import fs from "fs/promises";
 import path from "path";
 import os from "os";
-import { Config, ConfigSchema } from "./types.js";
+import { ConfigSchema } from "./types.js";
+import type { Config } from "./types.js";
 
 export class ConfigManager {
   private configPath: string;
@@ -84,6 +85,6 @@ export class ConfigManager {
 
   async getTheme(): Promise<string> {
     const config = await this.read();
-    return config.theme || "pixel";
+    return config.theme || "rebel";
   }
 }

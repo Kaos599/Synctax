@@ -7,7 +7,7 @@ import { ZedAdapter } from "./zed.js";
 import { GithubCopilotAdapter } from "./github-copilot.js";
 import { GithubCopilotCliAdapter } from "./github-copilot-cli.js";
 import { GeminiCliAdapter } from "./gemini-cli.js";
-import { ClientAdapter } from "../types.js";
+import type { ClientAdapter } from "../types.js";
 
 export const adapters: Record<string, ClientAdapter> = {
   claude: new ClaudeAdapter(),

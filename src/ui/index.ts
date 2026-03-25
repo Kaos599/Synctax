@@ -2,6 +2,8 @@ export { success, error, warn, info, header, dim, dryRun, gap, format } from "./
 export type { OutputOptions } from "./output.js";
 
 export { brand, semantic, symbols, tableHeader } from "./colors.js";
+export { detectCapabilities, getCapabilities, resetCapabilitiesForTests } from "./capabilities.js";
+export type { UiCapabilities, UiMode } from "./capabilities.js";
 
 export { startTimer } from "./timer.js";
 export type { Timer } from "./timer.js";

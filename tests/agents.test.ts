@@ -6,6 +6,7 @@ import { AntigravityAdapter } from "../src/adapters/antigravity.js";
 import fs from "fs/promises";
 import path from "path";
 import os from "os";
+import { createAdapterWriteResources, expectDefined } from "./test-helpers.js";
 
 describe("Agents Domain", () => {
   let mockHome: string;
@@ -35,20 +36,21 @@ describe("Agents Domain", () => {
 
     const data = await adapter.read();
     expect(data.agents["Coder"]).toBeDefined();
-    expect(data.agents["Coder"].prompt).toBe("You are a coding expert.");
-    expect(data.agents["Coder"].model).toBe("claude-3-opus-20240229");
+    const coder = expectDefined(data.agents["Coder"], "Expected Coder agent");
+    expect(coder.prompt).toBe("You are a coding expert.");
+    expect(coder.model).toBe("claude-3-opus-20240229");
 
     // Write a new agent
-    await adapter.write({
+    await adapter.write(createAdapterWriteResources({
       mcps: {},
       agents: {
-        "Tester": {
+        Tester: {
           name: "Tester",
           prompt: "You write tests.",
           model: "claude-3-5-sonnet-20241022",
-        }
-      }
-    });
+        },
+      },
+    }));
 
     const newAgentContent = await fs.readFile(path.join(agentsDir, "Tester.md"), "utf-8");
     expect(newAgentContent).toContain("name: Tester");
@@ -60,39 +62,40 @@ describe("Agents Domain", () => {
     const adapter = new CursorAdapter();
     await fs.mkdir(path.join(mockHome, ".cursor"), { recursive: true });
 
-    await adapter.write({
+    await adapter.write(createAdapterWriteResources({
       mcps: {},
       agents: {
-        "Reviewer": {
+        Reviewer: {
           name: "Reviewer",
           prompt: "Review this code",
-        }
-      }
-    });
+        },
+      },
+    }));
 
     const modesFile = await fs.readFile(path.join(mockHome, ".cursor", "modes.json"), "utf-8");
     const json = JSON.parse(modesFile);
     expect(json.modes["Reviewer"].systemPrompt).toBe("Review this code");
 
     const data = await adapter.read();
-    expect(data.agents["Reviewer"].prompt).toBe("Review this code");
+    expect(expectDefined(data.agents["Reviewer"], "Expected Reviewer agent").prompt).toBe("Review this code");
   });
 
-  it("OpenCodeAdapter reads and writes inline agents in config.json", async () => {
+  it("OpenCodeAdapter reads and writes agents with singular key and prompt field (v2)", async () => {
     const adapter = new OpenCodeAdapter();
-    await adapter.write({
+    await adapter.write(createAdapterWriteResources({
       mcps: {},
       agents: {
-        "Planner": { name: "Planner", prompt: "Plan my tasks" }
-      }
-    });
+        Planner: { name: "Planner", prompt: "Plan my tasks" },
+      },
+    }));
 
     const configStr = await fs.readFile(path.join(mockHome, ".config", "opencode", "config.json"), "utf-8");
     const config = JSON.parse(configStr);
-    expect(config.agents["Planner"].system_message).toBe("Plan my tasks");
+    // v2: key is "agent" (singular), field is "prompt" (not "system_message")
+    expect(config.agent["Planner"].prompt).toBe("Plan my tasks");
 
     const data = await adapter.read();
-    expect(data.agents["Planner"].prompt).toBe("Plan my tasks");
+    expect(expectDefined(data.agents["Planner"], "Expected Planner agent").prompt).toBe("Plan my tasks");
   });
 
 

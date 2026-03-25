@@ -2,14 +2,60 @@ import chalk from "chalk";
 import * as ui from "../ui/index.js";
 import { checkbox } from "@inquirer/prompts";
 import { adapters } from "../adapters/index.js";
-import { getConfigManager, applyProfileFilter } from "./_shared.js";
+import { getConfigManager, applyProfileFilter, resolveProfile } from "./_shared.js";
+import { getVersion } from "../version.js";
+import { EnvVault } from "../env-vault.js";
 
 export async function syncCommand(options: { dryRun?: boolean, interactive?: boolean }) {
+  const timer = ui.startTimer();
   const configManager = getConfigManager();
-  ui.header("Starting sync...");
 
   const config = await configManager.read();
-  let resources = await applyProfileFilter(config.resources, config.profiles[config.activeProfile]);
+  console.log(ui.format.brandHeader(getVersion(), config.activeProfile));
+  ui.header("Starting sync...");
+
+  let resources: any;
+  try {
+    const resolvedProfile = resolveProfile(config.profiles, config.activeProfile);
+    resources = await applyProfileFilter(config.resources, resolvedProfile);
+  } catch (e: any) {
+    ui.error(`Profile resolution failed: ${e.message}`);
+    process.exitCode = 1;
+    return;
+  }
+
+  const envVault = new EnvVault();
+  const loadedProfileEnv = await envVault.loadProfileEnv(config.activeProfile, { ensure: !options.dryRun });
+  if (loadedProfileEnv.created) {
+    ui.warn(`Env Vault (${config.activeProfile}): created missing profile env file at ${loadedProfileEnv.path}`);
+  }
+  for (const warning of loadedProfileEnv.warnings) {
+    ui.warn(`Env Vault (${config.activeProfile}): ${warning}`);
+  }
+
+  const resolvedMcps: Record<string, any> = {};
+  for (const [mcpName, mcp] of Object.entries(resources.mcps || {})) {
+    const mcpServer = mcp as Record<string, unknown>;
+
+    if (!mcpServer.env) {
+      resolvedMcps[mcpName] = mcpServer;
+      continue;
+    }
+
+    const resolvedEnv = envVault.resolveMcpEnv(mcpServer.env as Record<string, string>, loadedProfileEnv.vars);
+    for (const warning of resolvedEnv.warnings) {
+      ui.warn(`Env Vault (${mcpName}): ${warning}`);
+    }
+
+    resolvedMcps[mcpName] = {
+      ...mcpServer,
+      env: resolvedEnv.env,
+    };
+  }
+  resources = {
+    ...resources,
+    mcps: resolvedMcps,
+  };
 
   if (options.interactive) {
     const choices = [
@@ -24,7 +70,7 @@ export async function syncCommand(options: { dryRun?: boolean, interactive?: boo
         choices
       });
 
-      const filteredResources = { mcps: {}, agents: {}, skills: {}, permissions: resources.permissions, models: resources.models, prompts: resources.prompts };
+      const filteredResources: any = { mcps: {}, agents: {}, skills: {}, permissions: resources.permissions, models: resources.models, prompts: resources.prompts };
       for (const item of selected) {
         if (item.domain === 'mcp') filteredResources.mcps[item.key] = resources.mcps[item.key];
         if (item.domain === 'agent') filteredResources.agents[item.key] = resources.agents[item.key];
@@ -38,32 +84,123 @@ export async function syncCommand(options: { dryRun?: boolean, interactive?: boo
     await configManager.backup();
   }
 
+  // Collect results for aligned output
+  const results: Array<{ name: string; ok: boolean; detail: string }> = [];
+  const mcpCount = Object.keys(resources.mcps || {}).length;
+  const agentCount = Object.keys(resources.agents || {}).length;
+  const skillCount = Object.keys(resources.skills || {}).length;
+
+  const enabledClients: Array<{ id: string; adapter: any }> = [];
   for (const [id, clientConf] of Object.entries(config.clients)) {
     if (!clientConf.enabled) continue;
 
     const adapter = adapters[id];
     if (!adapter) continue;
+    enabledClients.push({ id, adapter });
+  }
 
-    if (options.dryRun) {
-      ui.dryRun(`Would write to ${adapter.name}`);
-    } else {
+  const snapshots = new Map<string, any>();
+  if (!options.dryRun) {
+    for (const { id, adapter } of enabledClients) {
       try {
-        await adapter.write(resources);
-        ui.success(`Synced ${adapter.name}`);
-      } catch (e: any) {
-        ui.error(`Failed to sync ${adapter.name}: ${e.message}`);
+        const snapshot = await adapter.read();
+        snapshots.set(id, {
+          mcps: snapshot?.mcps || {},
+          agents: snapshot?.agents || {},
+          skills: snapshot?.skills || {},
+          permissions: snapshot?.permissions,
+          models: snapshot?.models,
+          prompts: snapshot?.prompts,
+          credentials: snapshot?.credentials,
+        });
+      } catch {
+        // Best-effort snapshot; rollback skips clients without a readable snapshot.
       }
     }
   }
 
-  ui.header("Sync complete!");
+  const syncedClients: Array<{ id: string; name: string; adapter: any }> = [];
+  let writeFailed = false;
+
+  for (const { id, adapter } of enabledClients) {
+
+    if (options.dryRun) {
+      ui.dryRun(`Would write to ${adapter.name}`);
+      results.push({ name: adapter.name, ok: true, detail: "dry run" });
+    } else {
+      const spin = ui.spinner(`Syncing to ${adapter.name}...`);
+      try {
+        await adapter.write(resources);
+        syncedClients.push({ id, name: adapter.name, adapter });
+        const parts: string[] = [];
+        if (mcpCount > 0) parts.push(`${mcpCount} MCP${mcpCount !== 1 ? "s" : ""}`);
+        if (agentCount > 0) parts.push(`${agentCount} agent${agentCount !== 1 ? "s" : ""}`);
+        if (skillCount > 0) parts.push(`${skillCount} skill${skillCount !== 1 ? "s" : ""}`);
+        const detail = parts.length > 0 ? parts.join("  ") + "  synced" : "synced";
+        spin.succeed(`${adapter.name.padEnd(20)} ${detail}`);
+        results.push({ name: adapter.name, ok: true, detail });
+      } catch (e: any) {
+        spin.fail(`${adapter.name.padEnd(20)} failed: ${e.message}`);
+        results.push({ name: adapter.name, ok: false, detail: e.message });
+        writeFailed = true;
+
+        if (syncedClients.length > 0) {
+          ui.warn(`Write failed on ${adapter.name}. Starting rollback for ${syncedClients.length} client${syncedClients.length !== 1 ? "s" : ""}...`);
+        }
+
+        let rollbackSucceeded = 0;
+        let rollbackFailed = 0;
+
+        for (const client of [...syncedClients].reverse()) {
+          const snapshot = snapshots.get(client.id);
+          if (!snapshot) {
+            rollbackFailed++;
+            ui.error(`Rollback failed for ${client.name}: snapshot unavailable`);
+            continue;
+          }
+
+          try {
+            await client.adapter.write(snapshot);
+            rollbackSucceeded++;
+          } catch (rollbackError: any) {
+            rollbackFailed++;
+            ui.error(`Rollback failed for ${client.name}: ${rollbackError.message}`);
+          }
+        }
+
+        if (syncedClients.length > 0) {
+          ui.warn(`Rollback complete: ${rollbackSucceeded} succeeded, ${rollbackFailed} failed`);
+        }
+        break;
+      }
+    }
+  }
+
+  if (writeFailed) {
+    process.exitCode = 1;
+  }
+
+  const successCount = results.filter(r => r.ok).length;
+  const failCount = results.filter(r => !r.ok).length;
+  const summaryParts: string[] = [`${successCount} client${successCount !== 1 ? "s" : ""} synced`];
+  if (failCount > 0) summaryParts.push(`${failCount} failed`);
+
+  if (writeFailed) {
+    ui.header("Sync failed");
+  } else {
+    ui.header("Sync complete!");
+  }
+  console.log(ui.format.summary(timer.elapsed(), summaryParts.join(", ")));
 }
 
 export async function memorySyncCommand(options: { source?: string, dryRun?: boolean }) {
+  const timer = ui.startTimer();
   const configManager = getConfigManager();
-  ui.header("Starting memory files sync...");
 
   const config = await configManager.read();
+  console.log(ui.format.brandHeader(getVersion(), config.activeProfile));
+  ui.header("Starting memory files sync...");
+
   const cwd = process.cwd();
 
   let sourceId = options.source || config.source;
@@ -71,6 +208,11 @@ export async function memorySyncCommand(options: { source?: string, dryRun?: boo
 
   if (!sourceAdapter) {
     sourceAdapter = adapters["claude"];
+    if (!sourceAdapter) {
+      ui.error("No valid source of truth adapter found.");
+      process.exitCode = 1;
+      return;
+    }
     console.log(ui.format.warn(`No valid source of truth found. Defaulting to ${sourceAdapter.name}.`, { prefix: "" }));
   }
 
@@ -116,6 +258,8 @@ export async function memorySyncCommand(options: { source?: string, dryRun?: boo
   } else {
     ui.warn("No enabled target clients to sync to");
   }
+
+  console.log(ui.format.summary(timer.elapsed(), `${succeeded} target${succeeded !== 1 ? "s" : ""} updated`));
 }
 
 export async function watchCommand(options: any) {
@@ -128,7 +272,7 @@ export async function watchCommand(options: any) {
   const homeDir = process.env.SYNCTAX_HOME || os.homedir();
   const configPath = path.join(homeDir, ".synctax", "config.json");
 
-  console.log(chalk.magenta("\n👁️  Initializing synctax Watch Daemon..."));
+  console.log(chalk.magenta("\n\uD83D\uDC41\uFE0F  Initializing synctax Watch Daemon..."));
   ui.dim(`Watching: ${configPath}`);
 
   let syncTimeout: any;

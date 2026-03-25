@@ -1,10 +1,12 @@
 import fs from "fs/promises";
 import path from "path";
-import type { ClientAdapter, McpServer, Agent, Skill } from "../types.js";
+import type { ClientAdapter, McpServer, Agent, Skill, ResourceScope } from "../types.js";
+import { parseFrontmatter } from "../frontmatter.js";
 import {
   firstExistingPath,
   firstExistingScopedPath,
   homeDir,
+  scopeOf,
   vscodeCopilotDetectCandidates,
   vscodeUserMcpJsonCandidates,
   vscodeUserSettingsCandidates,
@@ -13,38 +15,89 @@ import { splitByScope } from "../scopes.js";
 
 type CandidateScope = "global" | "user" | "project";
 
+function toCandidateScope(scope: string): CandidateScope {
+  if (scope === "project") return "project";
+  if (scope === "user") return "user";
+  return "global";
+}
+
 function scopeWeight(scope: CandidateScope): number {
   if (scope === "global") return 0;
   if (scope === "user") return 1;
   return 2;
 }
 
+async function fileExists(p: string): Promise<boolean> {
+  try { await fs.access(p); return true; } catch { return false; }
+}
+
 function mergeMcpsFromSettingsJson(parsed: Record<string, unknown>, into: Record<string, McpServer>, scope: CandidateScope) {
   const mcpServers = (parsed["mcp.servers"] as Record<string, any>) || {};
   for (const [key, val] of Object.entries(mcpServers)) {
-    if (!val || typeof val !== "object" || typeof val.command !== "string") continue;
-    into[key] = { command: val.command, args: val.args, env: val.env, scope };
+    if (!val || typeof val !== "object") continue;
+    // Support remote MCPs (url-based) alongside stdio MCPs
+    if (val.url) {
+      into[key] = {
+        command: val.command || "",
+        args: val.args,
+        env: val.env,
+        url: val.url,
+        transport: val.type || "http",
+        headers: val.requestInit?.headers || val.headers,
+        scope,
+      };
+    } else if (typeof val.command === "string") {
+      into[key] = { command: val.command, args: val.args, env: val.env, scope };
+    }
   }
 }
 
 function mergeMcpsFromMcpJson(parsed: Record<string, unknown>, into: Record<string, McpServer>, scope: CandidateScope) {
   const servers = (parsed.servers as Record<string, any>) || {};
   for (const [key, val] of Object.entries(servers)) {
-    if (val && typeof val === "object" && typeof val.command === "string") {
+    if (!val || typeof val !== "object") continue;
+    // Support remote MCPs (url-based) alongside stdio MCPs
+    if (val.url) {
+      into[key] = {
+        command: val.command || "",
+        args: val.args,
+        env: val.env,
+        url: val.url,
+        transport: val.type || "http",
+        headers: val.requestInit?.headers || val.headers,
+        scope,
+      };
+    } else if (typeof val.command === "string") {
       into[key] = { command: val.command, args: val.args, env: val.env, scope };
     }
   }
 }
 
-function mcpsToVscodeMcpJsonServers(mcps: Record<string, McpServer>): Record<string, unknown> {
+function mcpToVscodeFormat(m: McpServer): Record<string, unknown> {
+  if (m.url) {
+    // Remote MCP server
+    const entry: Record<string, unknown> = {
+      url: m.url,
+      type: m.transport || "http",
+    };
+    if (m.headers && Object.keys(m.headers).length > 0) {
+      entry.requestInit = { headers: m.headers };
+    }
+    return entry;
+  }
+  // Stdio MCP server
+  return {
+    type: "stdio",
+    command: m.command,
+    args: m.args || [],
+    ...(m.env && Object.keys(m.env).length > 0 ? { env: m.env } : {}),
+  };
+}
+
+function mcpsToVscodeFormat(mcps: Record<string, McpServer>): Record<string, unknown> {
   const servers: Record<string, unknown> = {};
   for (const [key, m] of Object.entries(mcps || {})) {
-    servers[key] = {
-      type: "stdio",
-      command: m.command,
-      args: m.args || [],
-      ...(m.env && Object.keys(m.env).length > 0 ? { env: m.env } : {}),
-    };
+    servers[key] = mcpToVscodeFormat(m);
   }
   return servers;
 }
@@ -52,6 +105,10 @@ function mcpsToVscodeMcpJsonServers(mcps: Record<string, McpServer>): Record<str
 export class GithubCopilotAdapter implements ClientAdapter {
   id = "github-copilot";
   name = "Github Copilot";
+
+  // Agent/Skill directories (project-scoped)
+  private get projectAgentsDir() { return path.join(process.cwd(), ".github", "agents"); }
+  private get projectSkillsDir() { return path.join(process.cwd(), ".github", "skills"); }
 
   async detect(): Promise<boolean> {
     return (await firstExistingPath(vscodeCopilotDetectCandidates(homeDir()))) !== null;
@@ -81,15 +138,16 @@ export class GithubCopilotAdapter implements ClientAdapter {
     const candidates = [
       ...vscodeUserSettingsCandidates(h),
       ...vscodeUserMcpJsonCandidates(h),
-    ].sort((a, b) => scopeWeight(a.scope) - scopeWeight(b.scope));
+    ].sort((a, b) => scopeWeight(toCandidateScope(scopeOf(a))) - scopeWeight(toCandidateScope(scopeOf(b))));
 
     for (const candidate of candidates) {
       try {
         const parsed = JSON.parse(await fs.readFile(candidate.path, "utf-8")) as Record<string, unknown>;
+        const scope = toCandidateScope(scopeOf(candidate));
         if (candidate.path.endsWith("settings.json")) {
-          mergeMcpsFromSettingsJson(parsed, result.mcps, candidate.scope);
+          mergeMcpsFromSettingsJson(parsed, result.mcps, scope);
         } else {
-          mergeMcpsFromMcpJson(parsed, result.mcps, candidate.scope);
+          mergeMcpsFromMcpJson(parsed, result.mcps, scope);
         }
       } catch {
         /* missing or invalid */
@@ -101,6 +159,12 @@ export class GithubCopilotAdapter implements ClientAdapter {
         result.mcps[name] = { ...mcp, scope: "global" };
       }
     }
+
+    // Read agents from .github/agents/*.md
+    await this.readAgentsFromDir(this.projectAgentsDir, "project", result.agents);
+
+    // Read skills from .github/skills/<name>/SKILL.md
+    await this.readSkillsFromDir(this.projectSkillsDir, "project", result.skills);
 
     return result;
   }
@@ -133,10 +197,11 @@ export class GithubCopilotAdapter implements ClientAdapter {
       /* new file */
     }
 
+    const formatted = mcpsToVscodeFormat(mcps);
     if (kind === "settings") {
-      existing["mcp.servers"] = mcps;
+      existing["mcp.servers"] = formatted;
     } else {
-      existing.servers = mcpsToVscodeMcpJsonServers(mcps);
+      existing.servers = formatted;
     }
 
     await fs.writeFile(configPath, JSON.stringify(existing, null, 2), "utf-8");
@@ -150,5 +215,73 @@ export class GithubCopilotAdapter implements ClientAdapter {
     const filePath = path.join(projectDir, this.getMemoryFileName());
     await fs.mkdir(path.dirname(filePath), { recursive: true }).catch(() => {});
     await fs.writeFile(filePath, content, "utf-8");
+  }
+
+  // --- Private helpers ---
+
+  private async readAgentsFromDir(
+    dir: string,
+    scope: ResourceScope,
+    target: Record<string, Agent>
+  ): Promise<void> {
+    let files: string[];
+    try { files = await fs.readdir(dir); } catch { return; }
+
+    for (const file of files) {
+      if (!file.endsWith(".md")) continue;
+      const key = file.replace(/\.md$/, "");
+      const raw = await fs.readFile(path.join(dir, file), "utf-8");
+      const { data, content } = parseFrontmatter<Record<string, any>>(raw);
+
+      target[key] = {
+        name: data.name || key,
+        description: data.description,
+        prompt: content,
+        model: data.model,
+        tools: data.tools,
+        mcpServers: data["mcp-servers"],
+        userInvocable: data["user-invocable"],
+        scope,
+      };
+    }
+  }
+
+  private async readSkillsFromDir(
+    dir: string,
+    scope: ResourceScope,
+    target: Record<string, Skill>
+  ): Promise<void> {
+    let entries: string[];
+    try { entries = await fs.readdir(dir); } catch { return; }
+
+    for (const entry of entries) {
+      const entryPath = path.join(dir, entry);
+      let stat;
+      try { stat = await fs.stat(entryPath); } catch { continue; }
+
+      if (stat.isDirectory()) {
+        const skillMdPath = path.join(entryPath, "SKILL.md");
+        if (await fileExists(skillMdPath)) {
+          const raw = await fs.readFile(skillMdPath, "utf-8");
+          const { data, content } = parseFrontmatter<Record<string, any>>(raw);
+          target[entry] = {
+            name: data.name || entry,
+            description: data.description,
+            content,
+            trigger: data.trigger,
+            argumentHint: data["argument-hint"],
+            disableModelInvocation: data["disable-model-invocation"],
+            userInvocable: data["user-invocable"],
+            allowedTools: data["allowed-tools"],
+            model: data.model,
+            effort: data.effort,
+            context: data.context,
+            agent: data.agent,
+            hooks: data.hooks,
+            scope,
+          };
+        }
+      }
+    }
   }
 }

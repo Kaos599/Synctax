@@ -8,6 +8,7 @@ import { GeminiCliAdapter } from "../src/adapters/gemini-cli.js";
 import fs from "fs/promises";
 import path from "path";
 import os from "os";
+import { createAdapterWriteResources, expectHas } from "./test-helpers.js";
 
 describe("Adapters", () => {
   let mockHome: string;
@@ -58,6 +59,7 @@ describe("Adapters", () => {
       }));
 
       const { mcps } = await adapter.read();
+      expectHas(mcps, "postgres");
       expect(mcps.postgres).toBeDefined();
       expect(mcps.postgres.command).toBe("npx");
       expect(mcps.postgres.args).toEqual(["-y", "@modelcontextprotocol/server-postgres"]);
@@ -77,6 +79,9 @@ describe("Adapters", () => {
       }));
 
       const { mcps } = await adapter.read();
+      expectHas(mcps, "shared");
+      expectHas(mcps, "userOnly");
+      expectHas(mcps, "projOnly");
       expect(mcps.shared.command).toBe("project-cmd"); // project wins
       expect(mcps.shared.scope).toBe("project");
       expect(mcps.userOnly.command).toBe("user-only");
@@ -193,6 +198,10 @@ describe("Adapters", () => {
       await fs.writeFile(path.join(mockHome, ".claude", "agents", "agent4.claude"), "---\nname: Agent 4\n---\nPrompt 4");
 
       const { agents } = await adapter.read();
+      expectHas(agents, "agent1");
+      expectHas(agents, "agent2");
+      expectHas(agents, "agent3");
+      expectHas(agents, "agent4");
       expect(Object.keys(agents).length).toBe(4);
       expect(agents["agent1"].prompt).toBe("Prompt 1");
       expect(agents["agent2"].prompt).toBe("Prompt 2");
@@ -226,6 +235,7 @@ You are a powerful coding agent.`;
 
       await fs.writeFile(path.join(mockHome, ".claude", "agents", "power.md"), agentContent);
       const { agents } = await adapter.read();
+      expectHas(agents, "power");
 
       expect(agents.power.name).toBe("Power Agent");
       expect(agents.power.model).toBe("claude-opus-4-20250514");
@@ -257,6 +267,7 @@ allowed-tools:
 Do the thing.`);
 
       const { skills } = await adapter.read();
+      expectHas(skills, "my-skill");
       expect(skills["my-skill"]).toBeDefined();
       expect(skills["my-skill"].name).toBe("My Skill");
       expect(skills["my-skill"].description).toBe("A test skill");
@@ -296,6 +307,7 @@ Do the thing.`);
       await fs.writeFile(path.join(skillsDir, "legacy.md"), "---\nname: Legacy\n---\nLegacy content.");
 
       const { skills } = await adapter.read();
+      expectHas(skills, "legacy");
       expect(skills.legacy).toBeDefined();
       expect(skills.legacy.content).toBe("Legacy content.");
     });
@@ -308,6 +320,7 @@ Do the thing.`);
 
       await adapter.write({ mcps, agents: {}, skills: {} });
       const result = await adapter.read();
+      expectHas(result.mcps, "postgres");
       expect(result.mcps.postgres.command).toBe("npx");
       expect(result.mcps.postgres.args).toEqual(["-y", "pg-server"]);
       expect(result.mcps.postgres.env?.DB).toBe("test");
@@ -331,7 +344,7 @@ Do the thing.`);
   describe("CursorAdapter", () => {
     it("writes correctly", async () => {
       const adapter = new CursorAdapter();
-      await adapter.write({
+      await adapter.write(createAdapterWriteResources({
         mcps: {
           "test-mcp": {
             command: "npx",
@@ -339,7 +352,7 @@ Do the thing.`);
           }
         },
         agents: {}
-      });
+      }));
 
       const configContent = await fs.readFile(path.join(mockHome, ".cursor", "mcp.json"), "utf-8");
       const json = JSON.parse(configContent);
@@ -358,52 +371,56 @@ Do the thing.`);
       expect(await adapter.detect()).toBe(true);
     });
 
-    it("reads and writes correctly", async () => {
+    it("reads and writes correctly (v2 array command format)", async () => {
       const adapter = new OpenCodeAdapter();
       await fs.mkdir(path.join(mockHome, ".config", "opencode"), { recursive: true });
       await fs.writeFile(path.join(mockHome, ".config", "opencode", "config.json"), JSON.stringify({
         mcp: {
-          "oc-mcp": { command: "python", args: ["-m", "server"] }
+          "oc-mcp": { type: "local", command: ["python", "-m", "server"], environment: {} }
         }
       }));
 
       let {mcps} = await adapter.read();
+      expectHas(mcps, "oc-mcp");
       expect(mcps["oc-mcp"].command).toBe("python");
+      expect(mcps["oc-mcp"].args).toEqual(["-m", "server"]);
 
       mcps["oc-new"] = { command: "node", args: ["index.js"] };
-      await adapter.write({ mcps, agents: {} });
+      await adapter.write(createAdapterWriteResources({ mcps, agents: {} }));
 
       const content = JSON.parse(await fs.readFile(path.join(mockHome, ".config", "opencode", "config.json"), "utf-8"));
-      expect(content.mcp["oc-new"].command).toBe("node");
+      expect(content.mcp["oc-new"].command).toEqual(["node", "index.js"]);
+      expect(content.mcp["oc-new"].type).toBe("local");
     });
 
     it("respects project precedence when multiple scope candidates exist", async () => {
       const adapter = new OpenCodeAdapter();
       await fs.writeFile(path.join(mockHome, "opencode.json"), JSON.stringify({
-        mcp: { shared: { command: "project-mcp" } }
+        mcp: { shared: { type: "local", command: ["project-mcp"], environment: {} } }
       }));
       await fs.mkdir(path.join(mockHome, ".config", "opencode"), { recursive: true });
       await fs.writeFile(path.join(mockHome, ".config", "opencode", "config.json"), JSON.stringify({
-        mcp: { shared: { command: "global-mcp" } }
+        mcp: { shared: { type: "local", command: ["global-mcp"], environment: {} } }
       }));
 
       const { mcps } = await adapter.read();
+      expectHas(mcps, "shared");
       expect(mcps["shared"].command).toBe("project-mcp");
       expect(mcps["shared"].scope).toBe("project");
 
-      await adapter.write({
+      await adapter.write(createAdapterWriteResources({
         mcps: {
-          shared: { command: "updated-project", scope: "project" } as any,
-          stable: { command: "stable-global", scope: "global" } as any,
+          shared: { command: "updated-project", scope: "project" },
+          stable: { command: "stable-global", scope: "global" },
         },
         agents: {},
         skills: {},
-      });
+      }));
 
       const projectContent = JSON.parse(await fs.readFile(path.join(mockHome, "opencode.json"), "utf-8"));
       const userContent = JSON.parse(await fs.readFile(path.join(mockHome, ".config", "opencode", "config.json"), "utf-8"));
-      expect(projectContent.mcp["shared"].command).toBe("updated-project");
-      expect(userContent.mcp["stable"].command).toBe("stable-global");
+      expect(projectContent.mcp["shared"].command).toEqual(["updated-project"]);
+      expect(userContent.mcp["stable"].command).toEqual(["stable-global"]);
     });
 
     it("detects Windows AppData-backed Opencode config", async () => {
@@ -455,10 +472,11 @@ Do the thing.`);
       }));
 
       let {mcps} = await adapter.read();
+      expectHas(mcps, "ag-mcp");
       expect(mcps["ag-mcp"].command).toBe("ruby");
 
       mcps["ag-new"] = { command: "go", args: ["run", "main.go"] };
-      await adapter.write({ mcps, agents: {} });
+      await adapter.write(createAdapterWriteResources({ mcps, agents: {} }));
 
       const content = JSON.parse(await fs.readFile(path.join(mockHome, ".config", "antigravity", "config.json"), "utf-8"));
       expect(content.mcpServers["ag-new"].command).toBe("go");
@@ -477,6 +495,7 @@ Do the thing.`);
       }));
 
       const { mcps } = await adapter.read();
+      expectHas(mcps, "shared");
       expect(mcps["shared"].command).toBe("user-cmd");
       expect(mcps["shared"].scope).toBe("user");
     });
@@ -499,36 +518,20 @@ Do the thing.`);
   });
 
   describe("GithubCopilotCliAdapter", () => {
-    it("reads scoped aliases and writes project/user files separately", async () => {
+    it("reads skills from SKILL.md files and writes them back (v2 format)", async () => {
       const adapter = new GithubCopilotCliAdapter();
-      const projectPath = path.join(mockHome, ".github", "copilot", "config.json");
-      const userPath = path.join(mockHome, ".config", "github-copilot-cli", "config.json");
-      await fs.mkdir(path.dirname(projectPath), { recursive: true });
-      await fs.mkdir(path.dirname(userPath), { recursive: true });
-
-      await fs.writeFile(projectPath, JSON.stringify({ aliases: { shared: "project-initial", onlyProject: "only-project" } }));
-      await fs.writeFile(userPath, JSON.stringify({ aliases: { shared: "user-initial", onlyUser: "only-user" } }));
+      // Create project skill
+      const projSkillDir = path.join(mockHome, ".github", "skills", "proj-skill");
+      await fs.mkdir(projSkillDir, { recursive: true });
+      await fs.writeFile(path.join(projSkillDir, "SKILL.md"), "---\nname: Proj Skill\n---\nProject skill content.");
+      // Create user skill
+      const userSkillDir = path.join(mockHome, ".copilot", "skills", "user-skill");
+      await fs.mkdir(userSkillDir, { recursive: true });
+      await fs.writeFile(path.join(userSkillDir, "SKILL.md"), "---\nname: User Skill\n---\nUser skill content.");
 
       const readResources = await adapter.read();
-      expect(readResources.skills["shared"].content).toBe("project-initial");
-      expect(readResources.skills["onlyProject"].content).toBe("only-project");
-      expect(readResources.skills["onlyUser"].content).toBe("only-user");
-
-      await adapter.write({
-        mcps: {},
-        agents: {},
-        skills: {
-          shared: { name: "shared", content: "project-write", scope: "project" } as any,
-          userOnly: { name: "userOnly", content: "user-write", scope: "user" } as any,
-        },
-      });
-
-      const updatedProject = JSON.parse(await fs.readFile(projectPath, "utf-8"));
-      const updatedUser = JSON.parse(await fs.readFile(userPath, "utf-8"));
-      expect(updatedProject.aliases["shared"]).toBe("project-write");
-      expect(updatedProject.aliases["onlyProject"]).toBe("only-project");
-      expect(updatedUser.aliases["userOnly"]).toBe("user-write");
-      expect(updatedUser.aliases["onlyUser"]).toBe("only-user");
+      expect(readResources.skills["proj-skill"]?.content).toBe("Project skill content.");
+      expect(readResources.skills["user-skill"]?.content).toBe("User skill content.");
     });
   });
 });

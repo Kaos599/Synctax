@@ -59,6 +59,31 @@ export const SkillSchema = z.object({
 });
 export type Skill = z.infer<typeof SkillSchema>;
 
+function defaultPermissions() {
+  return {
+    allowedPaths: [],
+    deniedPaths: [],
+    allowedCommands: [],
+    deniedCommands: [],
+    networkAllow: false,
+    allow: [],
+    deny: [],
+    ask: [],
+    allowedUrls: [],
+    deniedUrls: [],
+    trustedFolders: [],
+  };
+}
+
+function defaultResources() {
+  return {
+    mcps: {},
+    agents: {},
+    skills: {},
+    permissions: defaultPermissions(),
+  };
+}
+
 export const PermissionsSchema = z.object({
   // Legacy fields (backward compat with existing configs)
   allowedPaths: z.array(z.string()).default([]),
@@ -115,11 +140,11 @@ export const ConfigSchema = z.object({
     mcps: z.record(z.string(), McpServerSchema).default({}),
     agents: z.record(z.string(), AgentSchema).default({}),
     skills: z.record(z.string(), SkillSchema).default({}),
-    permissions: PermissionsSchema.default({}),
+    permissions: PermissionsSchema.default(defaultPermissions),
     models: ModelsSchema.optional(),
     prompts: PromptsSchema.optional(),
     credentials: CredentialsSchema.optional(),
-  }).default({}),
+  }).default(defaultResources),
 });
 export type Config = z.infer<typeof ConfigSchema>;
 

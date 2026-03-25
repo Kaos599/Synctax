@@ -1,7 +1,8 @@
 import fs from "fs/promises";
 import path from "path";
-import { ClientAdapter, McpServer, Agent, Skill, Permissions, Models, Prompts, Credentials, ResourceScope } from "../types.js";
-import { ConfigScope, homeDir, xdgStyleConfigCandidates, firstExistingScopedPath, firstExistingPath } from "../platform-paths.js";
+import type { ClientAdapter, McpServer, Agent, Skill, Permissions, Models, Prompts, Credentials, ResourceScope } from "../types.js";
+import { homeDir, xdgStyleConfigCandidates, firstExistingScopedPath, firstExistingPath } from "../platform-paths.js";
+import type { ConfigScope } from "../platform-paths.js";
 import { splitByScope } from "../scopes.js";
 
 function scopeWeight(scope: ConfigScope): number {
@@ -31,6 +32,22 @@ function mergeConfig(parsed: any, permissions: Permissions, models: Models) {
     permissions.allowedCommands = parsed.autoApproveCommands;
   }
   if (typeof parsed.model === "string") models.defaultModel = parsed.model;
+}
+
+function defaultPermissions(): Permissions {
+  return {
+    allowedPaths: [],
+    deniedPaths: [],
+    allowedCommands: [],
+    deniedCommands: [],
+    networkAllow: false,
+    allow: [],
+    deny: [],
+    ask: [],
+    allowedUrls: [],
+    deniedUrls: [],
+    trustedFolders: [],
+  };
 }
 
 export class ClineAdapter implements ClientAdapter {
@@ -70,7 +87,7 @@ export class ClineAdapter implements ClientAdapter {
       mcps: {} as Record<string, McpServer>,
       agents: {} as Record<string, Agent>,
       skills: {} as Record<string, Skill>,
-      permissions: { allowedPaths: [], deniedPaths: [], allowedCommands: [], deniedCommands: [], networkAllow: false } as Permissions,
+      permissions: defaultPermissions(),
       models: {} as Models,
       prompts: {} as Prompts
     };
@@ -119,7 +136,10 @@ export class ClineAdapter implements ClientAdapter {
       ...candidates.filter((entry) => entry.scope !== scope),
     ];
     const found = await firstExistingScopedPath(prioritized);
-    return found?.path ?? candidates[0]?.path;
+    const fallback = candidates[0]?.path;
+    if (found?.path) return found.path;
+    if (fallback) return fallback;
+    throw new Error("No config path candidates available for Cline adapter");
   }
 
   private async writeMcpSettings(configPath: string, mcps: Record<string, McpServer>): Promise<void> {

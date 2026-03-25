@@ -41,8 +41,8 @@ describe("Memory Domain (Context Files)", () => {
     expect(adapter.getMemoryFileName()).toBe("AGENTS.md");
   });
 
-  it("AntigravityAdapter maps to .antigravityrules", async () => {
+  it("AntigravityAdapter maps to GEMINI.md (v2)", async () => {
     const adapter = new AntigravityAdapter();
-    expect(adapter.getMemoryFileName()).toBe(".antigravityrules");
+    expect(adapter.getMemoryFileName()).toBe("GEMINI.md");
   });
 });

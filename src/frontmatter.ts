@@ -5,8 +5,9 @@ export interface FrontmatterResult<T = Record<string, unknown>> {
   content: string;
 }
 
-// Safe schema: no !!js/ type tags, prevents arbitrary code execution
-const SAFE_SCHEMA = yaml.DEFAULT_SCHEMA;
+// JSON_SCHEMA: only JSON-compatible types (strings, numbers, booleans, arrays, objects, null)
+// No !!js/regexp, !!js/function, or other dangerous type tags
+const SAFE_SCHEMA = yaml.JSON_SCHEMA;
 
 /**
  * Parse YAML frontmatter from a string.

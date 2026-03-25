@@ -1,7 +1,24 @@
+import fs from "fs/promises";
+import path from "path";
+import readline from "readline";
 import * as ui from "../ui/index.js";
 import { getConfigManager } from "./_shared.js";
+import { getVersion } from "../version.js";
 
 export async function restoreCommand(options: { from?: string }) {
+  const timer = ui.startTimer();
+
+  // Try reading config for brand header
+  let activeProfile = "default";
+  try {
+    const cm = getConfigManager();
+    const existingConfig = await cm.read();
+    activeProfile = existingConfig.activeProfile || "default";
+  } catch (e) {
+    // Config may not exist
+  }
+
+  console.log(ui.format.brandHeader(getVersion(), activeProfile));
   ui.header("Restoring configuration...");
 
   // The ConfigManager backup logic writes to .bak files in the config dir
@@ -34,27 +51,46 @@ export async function restoreCommand(options: { from?: string }) {
 
     await fs.copyFile(path.join(configDir, targetBackup), path.join(configDir, "config.json"));
     ui.success(`Restored from backup: ${targetBackup}`);
+
+    console.log(ui.format.summary(timer.elapsed(), `restored from ${targetBackup}`));
   } catch (e: any) {
     ui.error(`Restore failed: ${e.message}`);
   }
 }
 
 export async function exportCommand(filePath: string) {
+  const timer = ui.startTimer();
   const configManager = getConfigManager();
   const config = await configManager.read();
 
-  const resolvedPath = require("path").resolve(process.cwd(), filePath);
-  await (await import("fs/promises")).writeFile(resolvedPath, JSON.stringify(config, null, 2), "utf-8");
+  console.log(ui.format.brandHeader(getVersion(), config.activeProfile));
+
+  const resolvedPath = path.resolve(process.cwd(), filePath);
+  await fs.writeFile(resolvedPath, JSON.stringify(config, null, 2), "utf-8");
   ui.success(`Exported master configuration to ${resolvedPath}`);
+
+  console.log(ui.format.summary(timer.elapsed(), `exported to ${resolvedPath}`));
 }
 
 export async function importCommand(filePath: string) {
+  const timer = ui.startTimer();
   const configManager = getConfigManager();
 
-  const resolvedPath = require("path").resolve(process.cwd(), filePath);
+  // Try reading existing config for brand header
+  let activeProfile = "default";
+  try {
+    const existingConfig = await configManager.read();
+    activeProfile = existingConfig.activeProfile || "default";
+  } catch (e) {
+    // Config may not exist yet
+  }
+
+  console.log(ui.format.brandHeader(getVersion(), activeProfile));
+
+  const resolvedPath = path.resolve(process.cwd(), filePath);
   let rawData: string;
   try {
-    rawData = await (await import("fs/promises")).readFile(resolvedPath, "utf-8");
+    rawData = await fs.readFile(resolvedPath, "utf-8");
   } catch (e: any) {
     ui.error(`Could not read file ${resolvedPath}: ${e.message}`);
     return;
@@ -79,27 +115,29 @@ export async function importCommand(filePath: string) {
   const missingClients = importedClients.filter(c => !currentClients.includes(c));
 
   if (missingClients.length > 0) {
-    const readline = require("readline");
     const rl = readline.createInterface({
       input: process.stdin,
       output: process.stdout
     });
 
-    await new Promise<void>((resolve) => {
+    const confirmed = await new Promise<boolean>((resolve) => {
       rl.question(ui.format.warn(`The imported config contains clients not currently enabled (${missingClients.join(', ')}). Continue without them? (y/N) `, { prefix: "" }), (answer: string) => {
         rl.close();
         if (answer.toLowerCase() === 'y' || answer.toLowerCase() === 'yes') {
-          // Remove missing clients from the imported config
           for (const c of missingClients) {
             delete importedConfig.clients[c];
           }
-          resolve();
+          resolve(true);
         } else {
-          ui.error("Import cancelled.");
-          process.exit(1);
+          resolve(false);
         }
       });
     });
+
+    if (!confirmed) {
+      ui.warn("Import cancelled.");
+      return;
+    }
   }
 
   try {
@@ -111,6 +149,8 @@ export async function importCommand(filePath: string) {
     await configManager.write(validConfig);
 
     ui.success(`Successfully imported master configuration from ${resolvedPath}`);
+
+    console.log(ui.format.summary(timer.elapsed(), `imported from ${resolvedPath}`));
   } catch (e: any) {
     ui.error(`Imported config is invalid: ${e.message}`);
   }
