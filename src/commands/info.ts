@@ -163,7 +163,7 @@ export async function infoCommand() {
     headers: ["Client", "Installed", "MCPs", "Agents", "Skills"],
   });
 
-  for (const [id, adapter] of Object.entries(adapters)) {
+  const results = await Promise.all(Object.entries(adapters).map(async ([id, adapter]) => {
     const installed = await adapter.detect();
     let mcpCount = 0;
     let agentCount = 0;
@@ -181,7 +181,10 @@ export async function infoCommand() {
     }
 
     const isActive = config.clients[id]?.enabled;
+    return { id, adapter, installed, mcpCount, agentCount, skillCount, isActive };
+  }));
 
+  for (const { adapter, installed, mcpCount, agentCount, skillCount, isActive } of results) {
     table.push([
       isActive ? ui.semantic.highlight(adapter.name) : ui.semantic.muted(adapter.name),
       installed ? ui.semantic.success("Yes") : ui.semantic.error("No"),
