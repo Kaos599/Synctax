@@ -1,0 +1,4 @@
+## 2024-05-24 - [HIGH] Path Traversal in Configuration Adapters
+**Vulnerability:** Path traversal (Directory traversal) vulnerability was found in `ClaudeAdapter` and `CursorAdapter`.
+**Learning:** When writing files where the filename is constructed dynamically using a user-provided string (e.g., a dictionary key like `resources.agents[key]`), simply using `path.join(directory, key)` is unsafe. An attacker could provide a key like `../../../../etc/passwd` to overwrite arbitrary files on the system.
+**Prevention:** Always sanitize user-provided strings used in file system paths. Using `path.basename(key)` ensures only the final file name portion is used, stripping out any directory traversal characters (`../` or `..\`).
