@@ -1,0 +1,4 @@
+## 2024-03-27 - [CRITICAL] Path Traversal in Configuration Adapters
+**Vulnerability:** User-provided configuration keys were being directly interpolated into `path.join` calls within `fs.writeFile` loops in multiple client adapters (e.g., `src/adapters/claude.ts` and `src/adapters/cursor.ts`). A malicious or poorly formed configuration object with a key like `../../../etc/passwd` or `../some-other-dir/file` could cause the CLI tool to write files arbitrarily outside of the intended, sandboxed agent/skill directories.
+**Learning:** This existed because adapter file operations naively trusted the keys from the master config object (e.g., `resources.agents` or `resources.skills`) when deriving file and directory names.
+**Prevention:** Always sanitize dynamically constructed file paths using `path.basename(key)` when incorporating user-provided string keys from configuration maps into filesystem interactions.
