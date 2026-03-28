@@ -43,13 +43,14 @@ export async function initCommand(options: {
   if (options.detect !== false) {
     ui.dim("Detecting clients...");
     ui.dim("(Looking for client config files on disk, not running processes.)");
-    for (const [id, adapter] of Object.entries(adapters)) {
+
+    await Promise.all(Object.entries(adapters).map(async ([id, adapter]) => {
       const detected = await adapter.detect();
       if (detected) {
         ui.success(`Found ${adapter.name}`);
         newConfig.clients[id] = { enabled: true };
       }
-    }
+    }));
   }
 
   if (!newConfig.source) {
