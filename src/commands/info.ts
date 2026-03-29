@@ -75,38 +75,55 @@ export async function statusCommand() {
   // 3. Sync status
   console.log(ui.format.info("\n  Client Sync Status:"));
   let clientsChecked = 0;
-  for (const [id, clientConf] of Object.entries(config.clients)) {
-    if (!clientConf.enabled) continue;
+
+  // ⚡ Bolt: Parallelize independent I/O (adapter.read()) to reduce total sync check time.
+  // Impact: O(N) sequential reads -> O(1) concurrent reads time, significantly speeding up CLI execution.
+  const syncPromises = Object.entries(config.clients).map(async ([id, clientConf]: [string, any]) => {
+    if (!clientConf.enabled) return null;
     const adapter = adapters[id];
-    if (!adapter) continue;
-    clientsChecked++;
+    if (!adapter) return null;
 
     try {
       const data = await adapter.read();
-      let inSync = true;
-      let driftDetails = [];
-
-      for (const [name, server] of Object.entries(mcps)) {
-        if (!data.mcps[name]) { driftDetails.push(`Missing MCP: ${name}`); inSync = false; }
-        else if (JSON.stringify(server) !== JSON.stringify(data.mcps[name])) { driftDetails.push(`Drift in MCP: ${name}`); inSync = false; }
-      }
-      for (const [name, agent] of Object.entries(agents)) {
-        if (!data.agents[name]) { driftDetails.push(`Missing Agent: ${name}`); inSync = false; }
-        else if (JSON.stringify(agent) !== JSON.stringify(data.agents[name])) { driftDetails.push(`Drift in Agent: ${name}`); inSync = false; }
-      }
-      for (const [name, skill] of Object.entries(skills)) {
-        if (!data.skills[name]) { driftDetails.push(`Missing Skill: ${name}`); inSync = false; }
-        else if (JSON.stringify(skill) !== JSON.stringify(data.skills[name])) { driftDetails.push(`Drift in Skill: ${name}`); inSync = false; }
-      }
-
-      if (inSync) {
-        ui.success(`${adapter.name}: In Sync`, { indent: 2 });
-      } else {
-        ui.warn(`${adapter.name}: Out of Sync (${driftDetails.length} issues)`, { indent: 2 });
-        driftDetails.forEach(d => ui.dim(`      - ${d}`));
-      }
+      return { adapter, data, error: null };
     } catch (e: any) {
-      ui.error(`${adapter.name}: Error reading config (${e.message})`, { indent: 2 });
+      return { adapter, data: null, error: e };
+    }
+  });
+
+  const syncResults = await Promise.all(syncPromises);
+
+  for (const result of syncResults) {
+    if (!result) continue;
+    clientsChecked++;
+    const { adapter, data, error } = result;
+
+    if (error) {
+      ui.error(`${adapter.name}: Error reading config (${error.message})`, { indent: 2 });
+      continue;
+    }
+
+    let inSync = true;
+    let driftDetails = [];
+
+    for (const [name, server] of Object.entries(mcps)) {
+      if (!data.mcps[name]) { driftDetails.push(`Missing MCP: ${name}`); inSync = false; }
+      else if (JSON.stringify(server) !== JSON.stringify(data.mcps[name])) { driftDetails.push(`Drift in MCP: ${name}`); inSync = false; }
+    }
+    for (const [name, agent] of Object.entries(agents)) {
+      if (!data.agents[name]) { driftDetails.push(`Missing Agent: ${name}`); inSync = false; }
+      else if (JSON.stringify(agent) !== JSON.stringify(data.agents[name])) { driftDetails.push(`Drift in Agent: ${name}`); inSync = false; }
+    }
+    for (const [name, skill] of Object.entries(skills)) {
+      if (!data.skills[name]) { driftDetails.push(`Missing Skill: ${name}`); inSync = false; }
+      else if (JSON.stringify(skill) !== JSON.stringify(data.skills[name])) { driftDetails.push(`Drift in Skill: ${name}`); inSync = false; }
+    }
+
+    if (inSync) {
+      ui.success(`${adapter.name}: In Sync`, { indent: 2 });
+    } else {
+      ui.warn(`${adapter.name}: Out of Sync (${driftDetails.length} issues)`, { indent: 2 });
+      driftDetails.forEach(d => ui.dim(`      - ${d}`));
     }
   }
 
@@ -123,17 +140,30 @@ export async function doctorCommand(options: any): Promise<boolean> {
   try {
     const config = await configManager.read();
 
-    // Check missing clients
-    for (const [id, clientConf] of Object.entries(config.clients)) {
-      if (!clientConf.enabled) continue;
+    // ⚡ Bolt: Parallelize independent I/O (adapter.detect()) to reduce total doctor check time.
+    // Impact: Concurrent execution reduces blocking time from multiple disk reads.
+    const doctorPromises = Object.entries(config.clients).map(async ([id, clientConf]: [string, any]) => {
+      if (!clientConf.enabled) return null;
       const adapter = adapters[id];
+      if (!adapter) {
+        return { id, adapter: null, detected: false };
+      }
+      const detected = await adapter.detect();
+      return { id, adapter, detected };
+    });
+
+    const doctorResults = await Promise.all(doctorPromises);
+
+    for (const result of doctorResults) {
+      if (!result) continue;
+      const { id, adapter, detected } = result;
+
       if (!adapter) {
         ui.error(`Adapter missing for enabled client: ${id}`);
         healthy = false;
         continue;
       }
 
-      const detected = await adapter.detect();
       if (!detected) {
         ui.warn(`Enabled client ${adapter.name} config not found on disk.`);
         healthy = false;
@@ -163,21 +193,32 @@ export async function infoCommand() {
     headers: ["Client", "Installed", "MCPs", "Agents", "Skills"],
   });
 
-  for (const [id, adapter] of Object.entries(adapters)) {
+  // ⚡ Bolt: Parallelize independent I/O (adapter.detect() and adapter.read()) to speed up info gathering.
+  // Impact: Drastically improves the speed of listing all installed adapters and configurations.
+  const infoPromises = Object.entries(adapters).map(async ([id, adapter]) => {
     const installed = await adapter.detect();
+    let data = null;
+    if (installed) {
+      try {
+        data = await adapter.read();
+      } catch (e) {
+        // If config is broken, we just show 0
+      }
+    }
+    return { id, adapter, installed, data };
+  });
+
+  const infoResults = await Promise.all(infoPromises);
+
+  for (const { id, adapter, installed, data } of infoResults) {
     let mcpCount = 0;
     let agentCount = 0;
     let skillCount = 0;
 
-    if (installed) {
-      try {
-        const data = await adapter.read();
-        mcpCount = Object.keys(data.mcps || {}).length;
-        agentCount = Object.keys(data.agents || {}).length;
-        skillCount = Object.keys(data.skills || {}).length;
-      } catch (e) {
-        // If config is broken, we just show 0
-      }
+    if (data) {
+      mcpCount = Object.keys(data.mcps || {}).length;
+      agentCount = Object.keys(data.agents || {}).length;
+      skillCount = Object.keys(data.skills || {}).length;
     }
 
     const isActive = config.clients[id]?.enabled;
