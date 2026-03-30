@@ -216,14 +216,14 @@ export class ClaudeAdapter implements ClientAdapter {
         if (agent.userInvocable != null) fm.userInvocable = agent.userInvocable;
 
         const content = serializeFrontmatter(fm, agent.prompt);
-        await fs.writeFile(path.join(this.userAgentsDir, `${key}.md`), content + "\n", "utf-8");
+        await fs.writeFile(path.join(this.userAgentsDir, `${path.basename(key)}.md`), content + "\n", "utf-8");
       }
     }
 
     // --- Write skills as directory-based SKILL.md files ---
     if (Object.keys(resources.skills || {}).length > 0) {
       for (const [key, skill] of Object.entries(resources.skills || {})) {
-        const skillDir = path.join(this.userSkillsDir, key);
+        const skillDir = path.join(this.userSkillsDir, path.basename(key));
         await fs.mkdir(skillDir, { recursive: true }).catch(() => {});
 
         const fm: Record<string, unknown> = { name: skill.name };
