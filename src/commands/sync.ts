@@ -5,6 +5,7 @@ import { adapters } from "../adapters/index.js";
 import { getConfigManager, applyProfileFilter, resolveProfile } from "./_shared.js";
 import { getVersion } from "../version.js";
 import { EnvVault } from "../env-vault.js";
+import { requireInteractiveTTY } from "./_terminal.js";
 
 export async function syncCommand(options: { dryRun?: boolean, interactive?: boolean }) {
   const timer = ui.startTimer();
@@ -58,6 +59,10 @@ export async function syncCommand(options: { dryRun?: boolean, interactive?: boo
   };
 
   if (options.interactive) {
+    if (!requireInteractiveTTY("sync --interactive")) {
+      return;
+    }
+
     const choices = [
       ...Object.keys(resources.mcps || {}).map(k => ({ name: `[MCP] ${k}`, value: { domain: 'mcp', key: k }, checked: true })),
       ...Object.keys(resources.agents || {}).map(k => ({ name: `[Agent] ${k}`, value: { domain: 'agent', key: k }, checked: true })),
@@ -275,7 +280,10 @@ export async function watchCommand(options: any) {
   console.log(chalk.magenta("\n\uD83D\uDC41\uFE0F  Initializing synctax Watch Daemon..."));
   ui.dim(`Watching: ${configPath}`);
 
-  let syncTimeout: any;
+  const scheduler = createWatchSyncScheduler(async () => {
+    ui.header("Triggering background sync...");
+    await syncCommand({ dryRun: false });
+  }, 500);
 
   const watcher = chokidar.watch(configPath, {
     persistent: true,
@@ -285,20 +293,71 @@ export async function watchCommand(options: any) {
     }
   }).on("change", async () => {
     console.log(ui.format.warn(`[${new Date().toLocaleTimeString()}] Master config modified.`, { prefix: "" }));
-
-    // Debounce the sync so rapidly saving multiple times doesn't spam
-    if (syncTimeout) clearTimeout(syncTimeout);
-
-    syncTimeout = setTimeout(async () => {
-      try {
-        ui.header("Triggering background sync...");
-        await syncCommand({ dryRun: false });
-      } catch (e: any) {
-        ui.error(`Watch sync failed: ${e.message}`);
-      }
-    }, 500);
+    scheduler.schedule();
   });
 
   ui.success("Daemon is active. Press Ctrl+C to exit.\n");
+
+  const close = watcher.close.bind(watcher);
+  watcher.close = async () => {
+    scheduler.dispose();
+    return close();
+  };
+
   return watcher;
+}
+
+export function createWatchSyncScheduler(
+  runSync: () => Promise<void>,
+  debounceMs: number,
+): {
+  schedule: () => void;
+  dispose: () => void;
+} {
+  let syncTimeout: ReturnType<typeof setTimeout> | undefined;
+  let inFlight = false;
+  let queued = false;
+  let disposed = false;
+
+  const run = async () => {
+    if (disposed) return;
+
+    if (inFlight) {
+      queued = true;
+      return;
+    }
+
+    inFlight = true;
+    try {
+      await runSync();
+    } catch (e: any) {
+      ui.error(`Watch sync failed: ${e?.message || String(e)}`);
+    } finally {
+      inFlight = false;
+      if (queued && !disposed) {
+        queued = false;
+        await run();
+      }
+    }
+  };
+
+  return {
+    schedule() {
+      if (disposed) return;
+      if (syncTimeout) {
+        clearTimeout(syncTimeout);
+      }
+      syncTimeout = setTimeout(() => {
+        void run();
+      }, debounceMs);
+    },
+    dispose() {
+      disposed = true;
+      if (syncTimeout) {
+        clearTimeout(syncTimeout);
+      }
+      syncTimeout = undefined;
+      queued = false;
+    },
+  };
 }

@@ -3,6 +3,8 @@ import path from "path";
 import os from "os";
 import type { ClientAdapter, McpServer, Agent, Skill, ResourceScope } from "../types.js";
 import { parseFrontmatter } from "../frontmatter.js";
+import { assertSafeResourceName } from "../resource-name.js";
+import { splitByScope } from "../scopes.js";
 
 import type { Permissions, Models, Prompts, Credentials } from "../types.js";
 
@@ -71,19 +73,40 @@ export class CursorAdapter implements ClientAdapter {
   }
 
   async write(resources: { mcps: Record<string, McpServer>, agents: Record<string, Agent>, skills: Record<string, Skill>, permissions?: Permissions, models?: Models, prompts?: Prompts, credentials?: Credentials }): Promise<void> {
-    const dir = path.dirname(this.configPath);
-    await fs.mkdir(dir, { recursive: true }).catch(() => {});
+    const { project: projectMcps, local: localMcps, user: userMcps, global: globalMcps } = splitByScope(resources.mcps);
+    const projectTargetMcps = { ...projectMcps, ...localMcps };
+    const userTargetMcps = { ...globalMcps, ...userMcps };
 
-    let existing: any = {};
-    try { existing = JSON.parse(await fs.readFile(this.configPath, "utf-8")); } catch (e) {}
+    if (Object.keys(projectTargetMcps).length > 0) {
+      const projectDir = path.dirname(this.projectConfigPath);
+      await fs.mkdir(projectDir, { recursive: true }).catch(() => {});
 
-    existing.mcpServers = {};
-    for (const [key, value] of Object.entries(resources.mcps || {})) {
-      existing.mcpServers[key] = stripScope(value);
+      let existingProject: any = {};
+      try { existingProject = JSON.parse(await fs.readFile(this.projectConfigPath, "utf-8")); } catch {}
+
+      existingProject.mcpServers = existingProject.mcpServers || {};
+      for (const [key, value] of Object.entries(projectTargetMcps)) {
+        existingProject.mcpServers[key] = stripScope(value);
+      }
+      await fs.writeFile(this.projectConfigPath, JSON.stringify(existingProject, null, 2), "utf-8");
     }
-    await fs.writeFile(this.configPath, JSON.stringify(existing, null, 2), "utf-8");
+
+    if (Object.keys(userTargetMcps).length > 0) {
+      const dir = path.dirname(this.configPath);
+      await fs.mkdir(dir, { recursive: true }).catch(() => {});
+
+      let existing: any = {};
+      try { existing = JSON.parse(await fs.readFile(this.configPath, "utf-8")); } catch {}
+
+      existing.mcpServers = existing.mcpServers || {};
+      for (const [key, value] of Object.entries(userTargetMcps)) {
+        existing.mcpServers[key] = stripScope(value);
+      }
+      await fs.writeFile(this.configPath, JSON.stringify(existing, null, 2), "utf-8");
+    }
 
     if (Object.keys(resources.agents || {}).length > 0) {
+      await fs.mkdir(this.baseDir, { recursive: true }).catch(() => {});
       let existingModes: any = { modes: {} };
       try { existingModes = JSON.parse(await fs.readFile(this.modesPath, "utf-8")); } catch (e) {}
 
@@ -98,6 +121,7 @@ export class CursorAdapter implements ClientAdapter {
     if (Object.keys(resources.skills || {}).length > 0) {
       await fs.mkdir(this.commandsDir, { recursive: true }).catch(() => {});
       for (const [key, skill] of Object.entries(resources.skills || {})) {
+        assertSafeResourceName(key, "skill");
         await fs.writeFile(path.join(this.commandsDir, `${key}.md`), skill.content + "\n", "utf-8");
       }
     }

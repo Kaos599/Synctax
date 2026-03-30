@@ -11,6 +11,7 @@ import {
 } from "../platform-paths.js";
 import { splitByScope } from "../scopes.js";
 import { parseFrontmatter, serializeFrontmatter } from "../frontmatter.js";
+import { assertSafeResourceName } from "../resource-name.js";
 
 function scopeWeight(scope: ConfigScope): number {
   if (scope === "global") return 0;
@@ -185,6 +186,7 @@ export class AntigravityAdapter implements ClientAdapter {
       await fs.mkdir(rulesDir, { recursive: true }).catch(() => {});
 
       for (const [key, agent] of Object.entries(resources.agents || {})) {
+        assertSafeResourceName(key, "agent");
         const fm: Record<string, unknown> = { name: agent.name };
         if (agent.description) fm.description = agent.description;
         if (agent.model) fm.model = agent.model;
@@ -198,6 +200,7 @@ export class AntigravityAdapter implements ClientAdapter {
     // --- Write skills as SKILL.md files ---
     if (Object.keys(resources.skills || {}).length > 0) {
       for (const [key, skill] of Object.entries(resources.skills || {})) {
+        assertSafeResourceName(key, "skill");
         const scope = skill.scope || "user";
         const baseDir = (scope === "project" || scope === "local")
           ? this.projectSkillsDir

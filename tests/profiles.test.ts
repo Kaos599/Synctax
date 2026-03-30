@@ -164,7 +164,7 @@ describe("Profiles Domain", () => {
     try {
       process.exitCode = undefined;
       await expect(profileDiffCommand("missing")).resolves.toBeUndefined();
-      expect(process.exitCode).not.toBe(1);
+      expect(process.exitCode).toBe(1);
     } finally {
       process.exitCode = previousExitCode;
       errorSpy.mockRestore();

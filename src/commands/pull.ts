@@ -4,8 +4,20 @@ import { adapters } from "../adapters/index.js";
 import { getConfigManager, mergePermissions } from "./_shared.js";
 import { getVersion } from "../version.js";
 import type { Agent, ClientAdapter, McpServer, Skill } from "../types.js";
+import { requireInteractiveTTY } from "./_terminal.js";
 
 type PulledData = Awaited<ReturnType<ClientAdapter["read"]>>;
+
+const PULL_DOMAINS = new Set(["mcp", "mcps", "agent", "agents", "skill", "skills", "permissions", "models", "prompts"]);
+
+function normalizePullDomain(domain?: string): "mcp" | "agents" | "skills" | "permissions" | "models" | "prompts" | undefined {
+  if (!domain) return undefined;
+  const normalized = domain.trim().toLowerCase();
+  if (!PULL_DOMAINS.has(normalized)) return undefined;
+  if (normalized === "agent") return "agents";
+  if (normalized === "skill") return "skills";
+  return normalized as "mcp" | "agents" | "skills" | "permissions" | "models" | "prompts";
+}
 
 export async function pullCommand(options: { from: string, merge?: boolean, overwrite?: boolean, domain?: string, interactive?: boolean }) {
   const timer = ui.startTimer();
@@ -14,6 +26,24 @@ export async function pullCommand(options: { from: string, merge?: boolean, over
   const adapter = adapters[options.from];
   if (!adapter) {
     ui.error(`Adapter not found for client: ${options.from}`);
+    process.exitCode = 1;
+    return;
+  }
+
+  if (options.merge && options.overwrite) {
+    ui.error("Cannot use --merge and --overwrite together.");
+    process.exitCode = 1;
+    return;
+  }
+
+  if (options.interactive && !requireInteractiveTTY("pull --interactive")) {
+    return;
+  }
+
+  const domain = normalizePullDomain(options.domain);
+  if (options.domain && !domain) {
+    ui.error(`Invalid --domain value: ${options.domain}`);
+    process.exitCode = 1;
     return;
   }
 
@@ -79,22 +109,24 @@ export async function pullCommand(options: { from: string, merge?: boolean, over
       }
     }
 
-    if (options.overwrite) {
-      if (!options.domain || options.domain === 'mcp') { config.resources.mcps = toMerge.mcps; }
-      if (!options.domain || options.domain === 'agents') { config.resources.agents = toMerge.agents; }
-      if (!options.domain || options.domain === 'skills') { config.resources.skills = toMerge.skills; }
-      if (!options.domain || options.domain === 'permissions' ) {
+    const shouldOverwrite = Boolean(options.overwrite);
+
+    if (shouldOverwrite) {
+      if (!domain || domain === "mcp") { config.resources.mcps = toMerge.mcps; }
+      if (!domain || domain === "agents") { config.resources.agents = toMerge.agents; }
+      if (!domain || domain === "skills") { config.resources.skills = toMerge.skills; }
+      if (!domain || domain === "permissions" ) {
         if (toMerge.permissions) config.resources.permissions = toMerge.permissions;
       }
-      if (!options.domain || options.domain === 'models') { config.resources.models = toMerge.models; }
-      if (!options.domain || options.domain === 'prompts') { config.resources.prompts = toMerge.prompts; }
+      if (!domain || domain === "models") { config.resources.models = toMerge.models; }
+      if (!domain || domain === "prompts") { config.resources.prompts = toMerge.prompts; }
     } else {
-      if (!options.domain || options.domain === 'mcp') { config.resources.mcps = { ...config.resources.mcps, ...toMerge.mcps }; }
-      if (!options.domain || options.domain === 'agents') { config.resources.agents = { ...config.resources.agents, ...toMerge.agents }; }
-      if (!options.domain || options.domain === 'skills') { config.resources.skills = { ...config.resources.skills, ...toMerge.skills }; }
-      if (!options.domain || options.domain === 'permissions') { config.resources.permissions = mergePermissions(config.resources.permissions, toMerge.permissions); }
-      if (!options.domain || options.domain === 'models') { config.resources.models = { ...config.resources.models, ...toMerge.models }; }
-      if (!options.domain || options.domain === 'prompts') { config.resources.prompts = { ...config.resources.prompts, ...toMerge.prompts }; }
+      if (!domain || domain === "mcp") { config.resources.mcps = { ...config.resources.mcps, ...toMerge.mcps }; }
+      if (!domain || domain === "agents") { config.resources.agents = { ...config.resources.agents, ...toMerge.agents }; }
+      if (!domain || domain === "skills") { config.resources.skills = { ...config.resources.skills, ...toMerge.skills }; }
+      if (!domain || domain === "permissions") { config.resources.permissions = mergePermissions(config.resources.permissions, toMerge.permissions); }
+      if (!domain || domain === "models") { config.resources.models = { ...config.resources.models, ...toMerge.models }; }
+      if (!domain || domain === "prompts") { config.resources.prompts = { ...config.resources.prompts, ...toMerge.prompts }; }
     }
 
     config.source = options.from;

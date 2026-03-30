@@ -331,6 +331,10 @@ export async function doctorCommand(options: any): Promise<boolean> {
   if (healthy) console.log("\n" + ui.format.success("All checks passed!"));
   else console.log("\n" + ui.format.warn("Issues found.", { prefix: "" }));
 
+  if (!healthy) {
+    process.exitCode = 1;
+  }
+
   console.log(ui.format.summary(timer.elapsed(), "doctor check complete"));
 
   return healthy;

@@ -2,10 +2,15 @@ import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { pullCommand, moveCommand } from "../src/commands.js";
 import { ConfigManager } from "../src/config.js";
 import { adapters } from "../src/adapters/index.js";
+import { checkbox } from "@inquirer/prompts";
 import fs from "fs/promises";
 import path from "path";
 import os from "os";
 import { createConfig, createPermissions, createResources, expectDefined } from "./test-helpers.js";
+
+vi.mock("@inquirer/prompts", () => ({
+  checkbox: vi.fn(),
+}));
 
 describe("CLI Commands", () => {
   let mockHome: string;
@@ -95,6 +100,22 @@ describe("CLI Commands", () => {
     }
   });
 
+  it("pullCommand rejects conflicting --merge and --overwrite options", async () => {
+    const previousExitCode = process.exitCode;
+
+    try {
+      process.exitCode = undefined;
+      await pullCommand({ from: "mockclient", merge: true, overwrite: true });
+
+      const config = await manager.read();
+      expect(process.exitCode).toBe(1);
+      expect(config.source).toBe("claude");
+      expect(config.resources.mcps["mock-mcp"]).toBeUndefined();
+    } finally {
+      process.exitCode = previousExitCode;
+    }
+  });
+
   it("moveCommand updates resource scope", async () => {
     await manager.write(createConfig({
       version: 1,
@@ -114,6 +135,108 @@ describe("CLI Commands", () => {
     const config = await manager.read();
     const moved = expectDefined(config.resources.mcps["moveable-mcp"], "Expected moveable-mcp to exist");
     expect(moved.scope).toBe("global");
+  });
+
+  it("moveCommand rejects conflicting destination options", async () => {
+    await manager.write(createConfig({
+      version: 1,
+      resources: {
+        mcps: {
+          "moveable-mcp": { command: "test", scope: "local" },
+        },
+        agents: {},
+        skills: {},
+        permissions: createPermissions(),
+      },
+      clients: {},
+    }));
+
+    const previousExitCode = process.exitCode;
+    try {
+      process.exitCode = undefined;
+      await moveCommand("mcp", "moveable-mcp", { toGlobal: true, toLocal: true });
+
+      const config = await manager.read();
+      const moved = expectDefined(config.resources.mcps["moveable-mcp"], "Expected moveable-mcp to exist");
+      expect(process.exitCode).toBe(1);
+      expect(moved.scope).toBe("local");
+    } finally {
+      process.exitCode = previousExitCode;
+    }
+  });
+
+  it("moveCommand requires one destination option", async () => {
+    await manager.write(createConfig({
+      version: 1,
+      resources: {
+        mcps: {
+          "moveable-mcp": { command: "test", scope: "local" },
+        },
+        agents: {},
+        skills: {},
+        permissions: createPermissions(),
+      },
+      clients: {},
+    }));
+
+    const previousExitCode = process.exitCode;
+    try {
+      process.exitCode = undefined;
+      await moveCommand("mcp", "moveable-mcp", {});
+
+      const config = await manager.read();
+      const moved = expectDefined(config.resources.mcps["moveable-mcp"], "Expected moveable-mcp to exist");
+      expect(process.exitCode).toBe(1);
+      expect(moved.scope).toBe("local");
+    } finally {
+      process.exitCode = previousExitCode;
+    }
+  });
+
+  it("removeCommand interactive dry-run does not mutate resources", async () => {
+    const { removeCommand } = await import("../src/commands.js");
+
+    await manager.write(createConfig({
+      version: 1,
+      source: "claude",
+      clients: {},
+      resources: createResources({
+        mcps: { "dry-mcp": { command: "echo" } },
+        agents: {},
+        skills: {},
+        permissions: createPermissions(),
+      }),
+    }));
+
+    const restoreStdout = (() => {
+      const descriptor = Object.getOwnPropertyDescriptor(process.stdout, "isTTY");
+      Object.defineProperty(process.stdout, "isTTY", { configurable: true, value: true });
+      return () => {
+        if (descriptor) Object.defineProperty(process.stdout, "isTTY", descriptor);
+      };
+    })();
+
+    const restoreStderr = (() => {
+      const descriptor = Object.getOwnPropertyDescriptor(process.stderr, "isTTY");
+      Object.defineProperty(process.stderr, "isTTY", { configurable: true, value: true });
+      return () => {
+        if (descriptor) Object.defineProperty(process.stderr, "isTTY", descriptor);
+      };
+    })();
+
+    vi.mocked(checkbox).mockResolvedValue([
+      { domain: "mcp", key: "dry-mcp" } as any,
+    ]);
+
+    try {
+      await removeCommand(undefined, undefined, { interactive: true, dryRun: true });
+      const config = await manager.read();
+      expect(config.resources.mcps["dry-mcp"]).toBeDefined();
+    } finally {
+      vi.mocked(checkbox).mockReset();
+      restoreStdout();
+      restoreStderr();
+    }
   });
 
 
@@ -248,6 +371,81 @@ describe("CLI Commands", () => {
     const config = await manager.read();
     expect(config.resources.mcps["old"]).toBeDefined();
     expect(config.resources.mcps["bad"]).toBeUndefined();
+  });
+
+  it("restoreCommand requires exact --from backup identifier", async () => {
+    const { restoreCommand } = await import("../src/commands.js");
+
+    await manager.write(createConfig({
+      version: 1,
+      source: "claude",
+      clients: {},
+      resources: createResources({
+        mcps: { first: { command: "first" } },
+      }),
+    }));
+    await manager.backup();
+
+    await manager.write(createConfig({
+      version: 1,
+      source: "claude",
+      clients: {},
+      resources: createResources({
+        mcps: { second: { command: "second" } },
+      }),
+    }));
+    await manager.backup();
+
+    await manager.write(createConfig({
+      version: 1,
+      source: "claude",
+      clients: {},
+      resources: createResources({
+        mcps: { current: { command: "current" } },
+      }),
+    }));
+
+    const previousExitCode = process.exitCode;
+    try {
+      process.exitCode = undefined;
+      await restoreCommand({ from: "config.json" });
+      const config = await manager.read();
+      expect(config.resources.mcps.current).toBeDefined();
+      expect(process.exitCode).toBe(1);
+    } finally {
+      process.exitCode = previousExitCode;
+    }
+  });
+
+  it("restoreCommand does not overwrite config with invalid backup", async () => {
+    const { restoreCommand } = await import("../src/commands.js");
+    const fs = await import("fs/promises");
+    const path = await import("path");
+
+    await manager.write(createConfig({
+      version: 1,
+      source: "claude",
+      clients: {},
+      resources: createResources({
+        mcps: { good: { command: "good" } },
+      }),
+    }));
+
+    const backupPath = path.join(mockHome, ".synctax", "config.json.0000-invalid.bak");
+    await fs.writeFile(backupPath, "{\"resources\":{\"mcps\":{\"oops\":{}}}}", "utf-8");
+
+    const previousExitCode = process.exitCode;
+    try {
+      process.exitCode = undefined;
+      await restoreCommand({ from: "config.json.0000-invalid.bak" });
+
+      const config = await manager.read();
+      expect(config.resources.mcps.good).toBeDefined();
+      expect(config.resources.mcps.oops).toBeUndefined();
+      expect(process.exitCode).toBe(1);
+    } finally {
+      process.exitCode = previousExitCode;
+    }
   });
 
   it("initCommand saves the theme properly", async () => {
@@ -483,6 +681,37 @@ describe("CLI Commands", () => {
     expect(mergedPrompts.globalSystemPrompt).toBe("Be helpful");
     expect(mergedCredentials.envRefs.SHOULD_NOT).toBeUndefined();
     fetchSpyMerge.mockRestore();
+  });
+
+  it("profilePullCommand rejects unsafe resource keys", async () => {
+    const { profilePullCommand } = await import("../src/commands.js");
+    const previousExitCode = process.exitCode;
+
+    const fetchSpyUnsafe = vi.spyOn(globalThis, "fetch").mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({
+        name: "unsafe-profile",
+        profile: { include: [] },
+        resources: {
+          mcps: {
+            "../../escape": { command: "echo", args: ["oops"] },
+          },
+        },
+      }),
+    } as any);
+
+    try {
+      process.exitCode = undefined;
+      await profilePullCommand("https://dummy.url");
+
+      const config = await manager.read();
+      expect(config.resources.mcps["../../escape"]).toBeUndefined();
+      expect(config.profiles["unsafe-profile"]).toBeUndefined();
+      expect(process.exitCode).toBe(1);
+    } finally {
+      process.exitCode = previousExitCode;
+      fetchSpyUnsafe.mockRestore();
+    }
   });
 
   it("profile publish/pull round-trip keeps supported resources and excludes credentials", async () => {

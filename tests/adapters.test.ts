@@ -315,7 +315,16 @@ Do the thing.`);
     it("round-trips MCPs through write then read", async () => {
       const adapter = new ClaudeAdapter();
       const mcps = {
-        postgres: { command: "npx", args: ["-y", "pg-server"], env: { DB: "test" }, scope: "user" as const },
+        postgres: {
+          command: "npx",
+          args: ["-y", "pg-server"],
+          env: { DB: "test" },
+          transport: "sse" as const,
+          url: "https://example.com/mcp",
+          headers: { Authorization: "Bearer token" },
+          cwd: "/tmp",
+          scope: "user" as const,
+        },
       };
 
       await adapter.write({ mcps, agents: {}, skills: {} });
@@ -324,6 +333,10 @@ Do the thing.`);
       expect(result.mcps.postgres.command).toBe("npx");
       expect(result.mcps.postgres.args).toEqual(["-y", "pg-server"]);
       expect(result.mcps.postgres.env?.DB).toBe("test");
+      expect(result.mcps.postgres.transport).toBe("sse");
+      expect(result.mcps.postgres.url).toBe("https://example.com/mcp");
+      expect(result.mcps.postgres.headers?.Authorization).toBe("Bearer token");
+      expect(result.mcps.postgres.cwd).toBe("/tmp");
     });
 
     it("preserves non-managed fields in settings.json", async () => {
@@ -338,6 +351,20 @@ Do the thing.`);
 
       const settings = JSON.parse(await fs.readFile(path.join(mockHome, ".claude", "settings.json"), "utf-8"));
       expect(settings.customField).toBe("keep me");
+    });
+
+    it("rejects unsafe agent keys on write", async () => {
+      const adapter = new ClaudeAdapter();
+
+      await expect(
+        adapter.write({
+          mcps: {},
+          agents: {
+            "../../escape": { name: "Escape", prompt: "bad" },
+          },
+          skills: {},
+        }),
+      ).rejects.toThrow(/invalid/i);
     });
   });
 
@@ -357,6 +384,39 @@ Do the thing.`);
       const configContent = await fs.readFile(path.join(mockHome, ".cursor", "mcp.json"), "utf-8");
       const json = JSON.parse(configContent);
       expect(json.mcpServers["test-mcp"].command).toBe("npx");
+    });
+
+    it("routes local-scoped MCPs to project mcp.json", async () => {
+      const projectDir = path.join(mockHome, "cursor-project");
+      await fs.mkdir(projectDir, { recursive: true });
+      process.chdir(projectDir);
+
+      const adapter = new CursorAdapter();
+      await adapter.write(createAdapterWriteResources({
+        mcps: {
+          localOnly: {
+            command: "bun",
+            args: ["run", "local"],
+            scope: "local",
+          },
+          globalOnly: {
+            command: "node",
+            args: ["global"],
+            scope: "global",
+          },
+        },
+        agents: {},
+      }));
+
+      const projectPath = path.join(projectDir, ".cursor", "mcp.json");
+      const userPath = path.join(mockHome, ".cursor", "mcp.json");
+      const projectConfig = JSON.parse(await fs.readFile(projectPath, "utf-8"));
+      const userConfig = JSON.parse(await fs.readFile(userPath, "utf-8"));
+
+      expect(projectConfig.mcpServers.localOnly).toBeDefined();
+      expect(projectConfig.mcpServers.globalOnly).toBeUndefined();
+      expect(userConfig.mcpServers.globalOnly).toBeDefined();
+      expect(userConfig.mcpServers.localOnly).toBeUndefined();
     });
   });
 
@@ -446,7 +506,7 @@ Do the thing.`);
 
   describe("AntigravityAdapter", () => {
     it("detects correctly", async () => {
-      process.chdir(originalCwd); // Antigravity detect doesn't need cwd
+      process.chdir(mockHome);
       const adapter = new AntigravityAdapter();
       expect(await adapter.detect()).toBe(false);
 
@@ -498,6 +558,25 @@ Do the thing.`);
       expectHas(mcps, "shared");
       expect(mcps["shared"].command).toBe("user-cmd");
       expect(mcps["shared"].scope).toBe("user");
+    });
+
+    it("routes local-scoped skills to project skills dir", async () => {
+      const adapter = new AntigravityAdapter();
+
+      await adapter.write(createAdapterWriteResources({
+        mcps: {},
+        agents: {},
+        skills: {
+          "local-skill": {
+            name: "Local Skill",
+            content: "Local antigravity skill.",
+            scope: "local",
+          },
+        },
+      }));
+
+      const projectSkillPath = path.join(mockHome, ".agents", "skills", "local-skill", "SKILL.md");
+      await expect(fs.readFile(projectSkillPath, "utf-8")).resolves.toContain("Local antigravity skill.");
     });
   });
 

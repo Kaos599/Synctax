@@ -19,6 +19,44 @@ function sha256(input: Uint8Array): string {
   return createHash("sha256").update(input).digest("hex");
 }
 
+async function writeFileAtomic(targetPath: string, data: Uint8Array | Buffer | string): Promise<void> {
+  const tempPath = `${targetPath}.tmp-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  await fs.writeFile(tempPath, data);
+  await fs.rename(tempPath, targetPath);
+}
+
+async function pathExists(filePath: string): Promise<boolean> {
+  try {
+    await fs.access(filePath);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function splitExtension(filePath: string): { dir: string; base: string; ext: string } {
+  const dir = path.dirname(filePath);
+  const ext = path.extname(filePath);
+  const base = path.basename(filePath, ext);
+  return { dir, base, ext };
+}
+
+async function nextAvailablePath(preferredPath: string): Promise<string> {
+  if (!(await pathExists(preferredPath))) {
+    return preferredPath;
+  }
+
+  const { dir, base, ext } = splitExtension(preferredPath);
+  let index = 1;
+  while (true) {
+    const candidate = path.join(dir, `${base}-${index}${ext}`);
+    if (!(await pathExists(candidate))) {
+      return candidate;
+    }
+    index += 1;
+  }
+}
+
 function buildClientManifest(
   createdAt: string,
   client: { id: string; name: string },
@@ -131,17 +169,20 @@ export async function writeBackupBundle(params: {
 
   const zipped = zipSync(entries, { level: 6 });
   await fs.mkdir(path.dirname(params.outputPath), { recursive: true });
-  await fs.writeFile(params.outputPath, Buffer.from(zipped));
+  const outputPath = await nextAvailablePath(params.outputPath);
+  await writeFileAtomic(outputPath, Buffer.from(zipped));
 
   for (const result of clientResults) {
-    result.archivePath = params.outputPath;
+    result.archivePath = outputPath;
   }
+
+  const bundleSha = sha256(zipped);
 
   return {
     layout: "bundle",
     selectedClientIds: params.clients.map((c) => c.id),
     createdAt: params.createdAt,
-    artifacts: [{ kind: "bundle", path: params.outputPath }],
+    artifacts: [{ kind: "bundle", path: outputPath, sha256: bundleSha }],
     clientResults,
   };
 }
@@ -199,12 +240,12 @@ export async function writePerClientBackups(params: {
 
     entries["manifest.json"] = strToU8(JSON.stringify(manifest, null, 2));
 
-    const outputPath = path.join(params.outputDir, `${client.id}-backup.zip`);
+    const outputPath = await nextAvailablePath(path.join(params.outputDir, `${client.id}-backup.zip`));
     await fs.mkdir(path.dirname(outputPath), { recursive: true });
     const zipped = zipSync(entries, { level: 6 });
-    await fs.writeFile(outputPath, Buffer.from(zipped));
+    await writeFileAtomic(outputPath, Buffer.from(zipped));
 
-    artifacts.push({ kind: "client", path: outputPath });
+    artifacts.push({ kind: "client", path: outputPath, sha256: sha256(zipped) });
     clientResults.push({
       clientId: client.id,
       clientName: client.name,
@@ -248,7 +289,12 @@ export async function writeRollupManifest(
   };
 
   await fs.mkdir(path.dirname(outputPath), { recursive: true });
-  await fs.writeFile(outputPath, JSON.stringify(payload, null, 2), "utf-8");
+  const finalPath = await nextAvailablePath(outputPath);
+  const serialized = JSON.stringify(payload, null, 2);
+  await writeFileAtomic(finalPath, serialized);
+
+  const rollupSha = sha256(strToU8(serialized));
+  runResult.artifacts.push({ kind: "rollup", path: finalPath, sha256: rollupSha });
 }
 
 export async function writeBackupsByLayout(params: {

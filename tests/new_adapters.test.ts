@@ -46,6 +46,20 @@ describe("New Adapters (Cline, Zed, Github Copilot)", () => {
     expect(shared.scope).toBe("user");
   });
 
+  it("ClineAdapter preserves explicit false network approval from higher precedence config", async () => {
+    const adapter = new ClineAdapter();
+    const globalConfigPath = path.join(mockHome, ".cline", "config.json");
+    const userConfigPath = path.join(mockHome, ".config", "cline", "config.json");
+
+    await fs.mkdir(path.dirname(globalConfigPath), { recursive: true });
+    await fs.mkdir(path.dirname(userConfigPath), { recursive: true });
+    await fs.writeFile(globalConfigPath, JSON.stringify({ autoApproveNetwork: true }));
+    await fs.writeFile(userConfigPath, JSON.stringify({ autoApproveNetwork: false }));
+
+    const { permissions } = await adapter.read();
+    expect(permissions?.networkAllow).toBe(false);
+  });
+
   it("ZedAdapter handles context_servers", async () => {
     const adapter = new ZedAdapter();
     await adapter.write({

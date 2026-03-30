@@ -205,6 +205,31 @@ describe("GithubCopilotAdapter v2", () => {
       expect(mcps.roundtrip.transport).toBe("http");
       expect(mcps.roundtrip.headers?.["X-Key"]).toBe("val");
     });
+
+    it("writes non-project MCPs to user target when project mcp.json exists", async () => {
+      const adapter = new GithubCopilotAdapter();
+      await fs.mkdir(path.join(mockHome, ".vscode"), { recursive: true });
+      await fs.writeFile(path.join(mockHome, ".vscode", "settings.json"), "{}");
+      await fs.writeFile(path.join(mockHome, ".vscode", "mcp.json"), "{}");
+
+      await adapter.write({
+        mcps: {
+          "user-targeted": {
+            command: "node",
+            args: ["srv.js"],
+            scope: "user",
+          },
+        },
+        agents: {},
+        skills: {},
+      });
+
+      const settings = JSON.parse(await fs.readFile(path.join(mockHome, ".vscode", "settings.json"), "utf-8"));
+      const mcpJson = JSON.parse(await fs.readFile(path.join(mockHome, ".vscode", "mcp.json"), "utf-8"));
+
+      expect(settings["mcp.servers"]?.["user-targeted"]).toBeDefined();
+      expect(mcpJson.servers?.["user-targeted"]).toBeUndefined();
+    });
   });
 
   describe("agent file support", () => {

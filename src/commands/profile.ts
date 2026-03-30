@@ -3,6 +3,7 @@ import { applyProfileFilter, getConfigManager, mergePermissions, resolveProfile 
 import { syncCommand } from "./sync.js";
 import { getVersion } from "../version.js";
 import { EnvVault } from "../env-vault.js";
+import { assertSafeResourceMapKeys } from "../resource-name.js";
 
 function toSortedKeys(record: Record<string, unknown> | undefined): string[] {
   return Object.keys(record || {}).sort((a, b) => a.localeCompare(b));
@@ -66,6 +67,7 @@ export async function profileDiffCommand(name: string, options?: { json?: boolea
 
   if (!config.profiles[name]) {
     ui.error(`Profile ${name} does not exist.`);
+    process.exitCode = 1;
     return;
   }
 
@@ -160,6 +162,7 @@ export async function profileUseCommand(name: string, options: { dryRun?: boolea
 
   if (!config.profiles[name]) {
     ui.error(`Profile ${name} does not exist.`);
+    process.exitCode = 1;
     return;
   }
 
@@ -218,6 +221,10 @@ export async function profilePullCommand(url: string, options?: any) {
 
     // Merge resources
     if (payload.resources) {
+      assertSafeResourceMapKeys(payload.resources.mcps as Record<string, unknown> | undefined, "MCP");
+      assertSafeResourceMapKeys(payload.resources.agents as Record<string, unknown> | undefined, "agent");
+      assertSafeResourceMapKeys(payload.resources.skills as Record<string, unknown> | undefined, "skill");
+
       if (payload.resources.mcps) config.resources.mcps = { ...config.resources.mcps, ...payload.resources.mcps };
       if (payload.resources.agents) config.resources.agents = { ...config.resources.agents, ...payload.resources.agents };
       if (payload.resources.skills) config.resources.skills = { ...config.resources.skills, ...payload.resources.skills };
@@ -238,6 +245,7 @@ export async function profilePullCommand(url: string, options?: any) {
     }
   } catch (e: any) {
     ui.error(`Failed to pull profile: ${e.message}`);
+    process.exitCode = 1;
   }
 }
 
@@ -250,6 +258,7 @@ export async function profilePublishCommand(name: string, options?: any): Promis
 
   if (!config.profiles[name]) {
     ui.error(`Profile ${name} not found.`);
+    process.exitCode = 1;
     return null;
   }
 

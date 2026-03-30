@@ -284,6 +284,27 @@ describe("GithubCopilotCliAdapter v2", () => {
       const raw = await fs.readFile(agentPath, "utf-8");
       expect(raw).toContain("name: Global Agent");
     });
+
+    it("treats local-scoped agents as project-scoped for writes", async () => {
+      const adapter = new GithubCopilotCliAdapter();
+      await adapter.write({
+        mcps: {},
+        agents: {
+          "local-agent": {
+            name: "Local Agent",
+            prompt: "I am local.",
+            scope: "local",
+          },
+        },
+        skills: {},
+      });
+
+      const projectAgentPath = path.join(mockHome, ".github", "agents", "local-agent.md");
+      const userAgentPath = path.join(mockHome, ".copilot", "agents", "local-agent.md");
+
+      await expect(fs.readFile(projectAgentPath, "utf-8")).resolves.toContain("Local Agent");
+      await expect(fs.readFile(userAgentPath, "utf-8")).rejects.toThrow();
+    });
   });
 
   // ── Skill Read/Write ───────────────────────────────────────
@@ -406,6 +427,27 @@ describe("GithubCopilotCliAdapter v2", () => {
       const raw = await fs.readFile(skillPath, "utf-8");
       expect(raw).toContain("name: User Skill");
       expect(raw).toContain("User-level skill content.");
+    });
+
+    it("treats local-scoped skills as project-scoped for writes", async () => {
+      const adapter = new GithubCopilotCliAdapter();
+      await adapter.write({
+        mcps: {},
+        agents: {},
+        skills: {
+          "local-skill": {
+            name: "Local Skill",
+            content: "Use local scope.",
+            scope: "local",
+          },
+        },
+      });
+
+      const projectSkillPath = path.join(mockHome, ".github", "skills", "local-skill", "SKILL.md");
+      const userSkillPath = path.join(mockHome, ".copilot", "skills", "local-skill", "SKILL.md");
+
+      await expect(fs.readFile(projectSkillPath, "utf-8")).resolves.toContain("Local Skill");
+      await expect(fs.readFile(userSkillPath, "utf-8")).rejects.toThrow();
     });
 
     it("does not read aliases from legacy config format", async () => {

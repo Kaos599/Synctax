@@ -3,6 +3,7 @@ import path from "path";
 import type { ClientAdapter, McpServer, Agent, Skill, Permissions, Models, Prompts, Credentials, ResourceScope } from "../types.js";
 import { parseFrontmatter, serializeFrontmatter } from "../frontmatter.js";
 import { homeDir } from "../platform-paths.js";
+import { assertSafeResourceName } from "../resource-name.js";
 
 function stripScope<T extends { scope?: ResourceScope }>(item: T): Omit<T, "scope"> {
   const { scope: _scope, ...rest } = item;
@@ -200,6 +201,7 @@ export class ClaudeAdapter implements ClientAdapter {
     if (Object.keys(resources.agents || {}).length > 0) {
       await fs.mkdir(this.userAgentsDir, { recursive: true }).catch(() => {});
       for (const [key, agent] of Object.entries(resources.agents || {})) {
+        assertSafeResourceName(key, "agent");
         const fm: Record<string, unknown> = { name: agent.name };
         if (agent.description) fm.description = agent.description;
         if (agent.model) fm.model = agent.model;
@@ -223,6 +225,7 @@ export class ClaudeAdapter implements ClientAdapter {
     // --- Write skills as directory-based SKILL.md files ---
     if (Object.keys(resources.skills || {}).length > 0) {
       for (const [key, skill] of Object.entries(resources.skills || {})) {
+        assertSafeResourceName(key, "skill");
         const skillDir = path.join(this.userSkillsDir, key);
         await fs.mkdir(skillDir, { recursive: true }).catch(() => {});
 
@@ -270,7 +273,7 @@ export class ClaudeAdapter implements ClientAdapter {
         command: val.command || "",
         args: val.args,
         env: val.env,
-        transport: val.type || (val.url ? "http" : undefined),
+        transport: val.transport || (val.url ? (val.type || "http") : val.type),
         url: val.url,
         headers: val.headers,
         cwd: val.cwd,

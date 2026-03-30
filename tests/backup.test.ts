@@ -126,4 +126,32 @@ describe("backupCommand", () => {
     expect(zedResult).toBeDefined();
     expect(["partial", "skipped", "failed"]).toContain(zedResult.status);
   });
+
+  it("avoids overwriting per-client archives on repeated backups", async () => {
+    const { backupCommand } = await import("../src/commands.js") as any;
+
+    const outputDir = path.join(projectDir, "per-client");
+    const first = await backupCommand({ layout: "per-client", output: outputDir, client: ["claude"] });
+    const second = await backupCommand({ layout: "per-client", output: outputDir, client: ["claude"] });
+
+    const firstPath = first?.artifacts?.[0]?.path;
+    const secondPath = second?.artifacts?.[0]?.path;
+    expect(firstPath).toBeDefined();
+    expect(secondPath).toBeDefined();
+    expect(firstPath).not.toBe(secondPath);
+  });
+
+  it("includes artifact checksums in backup result metadata", async () => {
+    const { backupCommand } = await import("../src/commands.js") as any;
+
+    const output = path.join(projectDir, "checksum-bundle.zip");
+    const result = await backupCommand({ output, rollup: true });
+    const allArtifacts = result?.artifacts || [];
+
+    expect(allArtifacts.length).toBeGreaterThan(0);
+    for (const artifact of allArtifacts) {
+      expect(typeof artifact.sha256).toBe("string");
+      expect((artifact.sha256 as string).length).toBe(64);
+    }
+  });
 });

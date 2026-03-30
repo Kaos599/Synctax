@@ -27,6 +27,7 @@ import {
   linkCommand,
   unlinkCommand,
   backupCommand,
+  requireInteractiveTTY,
 } from "../src/commands.js";
 import { getVersion } from "../src/version.js";
 
@@ -91,7 +92,7 @@ program
   .requiredOption("--from <client>", "Client to pull from")
   .option("--merge", "Merge pulled config with existing master (default)")
   .option("--overwrite", "Replace master config entirely")
-  .option("--domain <domain>", "Pull only specific domain (mcp, agents)")
+  .option("--domain <domain>", "Pull only specific domain (mcp|agents|skills|permissions|models|prompts)")
   .option("-i, --interactive", "Interactively select resources to pull")
   .action((options) => {
     void pullCommand(options);
@@ -272,6 +273,10 @@ program
   });
 
 if (process.argv.length <= 2 || (process.argv.length === 4 && process.argv[2] === "--theme")) {
+  if (!requireInteractiveTTY("interactive mode")) {
+    process.exit(process.exitCode || 1);
+  }
+
   let themeOverride = undefined;
   if (process.argv.length === 4 && process.argv[2] === "--theme") {
     themeOverride = process.argv[3];

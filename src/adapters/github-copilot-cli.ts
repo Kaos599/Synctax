@@ -4,6 +4,7 @@ import type { ClientAdapter, McpServer, Agent, Skill, Permissions, Models, Promp
 import { homeDir } from "../platform-paths.js";
 import { splitByScope } from "../scopes.js";
 import { parseFrontmatter, serializeFrontmatter } from "../frontmatter.js";
+import { assertSafeResourceName } from "../resource-name.js";
 
 function stripScope<T extends { scope?: ResourceScope }>(item: T): Omit<T, "scope"> {
   const { scope: _scope, ...rest } = item;
@@ -148,12 +149,14 @@ export class GithubCopilotCliAdapter implements ClientAdapter {
 
     // --- Write agents as frontmatter markdown files ---
     if (Object.keys(resources.agents || {}).length > 0) {
-      const { project: projectAgents, user: userAgents, global: globalAgents } = splitByScope(resources.agents);
+      const { project: projectAgents, local: localAgents, user: userAgents, global: globalAgents } = splitByScope(resources.agents);
+      const scopedProjectAgents = { ...projectAgents, ...localAgents };
 
       // Write project-scoped agents to .github/agents/
-      if (Object.keys(projectAgents).length > 0) {
+      if (Object.keys(scopedProjectAgents).length > 0) {
         await fs.mkdir(this.projectAgentsDir, { recursive: true }).catch(() => {});
-        for (const [key, agent] of Object.entries(projectAgents)) {
+        for (const [key, agent] of Object.entries(scopedProjectAgents)) {
+          assertSafeResourceName(key, "agent");
           await this.writeAgentFile(path.join(this.projectAgentsDir, `${key}.md`), agent);
         }
       }
@@ -163,6 +166,7 @@ export class GithubCopilotCliAdapter implements ClientAdapter {
       if (Object.keys(homeAgents).length > 0) {
         await fs.mkdir(this.userAgentsDir, { recursive: true }).catch(() => {});
         for (const [key, agent] of Object.entries(homeAgents)) {
+          assertSafeResourceName(key, "agent");
           await this.writeAgentFile(path.join(this.userAgentsDir, `${key}.md`), agent);
         }
       }
@@ -170,11 +174,13 @@ export class GithubCopilotCliAdapter implements ClientAdapter {
 
     // --- Write skills as SKILL.md files ---
     if (Object.keys(resources.skills || {}).length > 0) {
-      const { project: projectSkills, user: userSkills, global: globalSkills } = splitByScope(resources.skills);
+      const { project: projectSkills, local: localSkills, user: userSkills, global: globalSkills } = splitByScope(resources.skills);
+      const scopedProjectSkills = { ...projectSkills, ...localSkills };
 
       // Write project-scoped skills to .github/skills/
-      if (Object.keys(projectSkills).length > 0) {
-        for (const [key, skill] of Object.entries(projectSkills)) {
+      if (Object.keys(scopedProjectSkills).length > 0) {
+        for (const [key, skill] of Object.entries(scopedProjectSkills)) {
+          assertSafeResourceName(key, "skill");
           const skillDir = path.join(this.projectSkillsDir, key);
           await fs.mkdir(skillDir, { recursive: true }).catch(() => {});
           await this.writeSkillFile(path.join(skillDir, "SKILL.md"), skill);
@@ -185,6 +191,7 @@ export class GithubCopilotCliAdapter implements ClientAdapter {
       const homeSkills = { ...globalSkills, ...userSkills };
       if (Object.keys(homeSkills).length > 0) {
         for (const [key, skill] of Object.entries(homeSkills)) {
+          assertSafeResourceName(key, "skill");
           const skillDir = path.join(this.userSkillsDir, key);
           await fs.mkdir(skillDir, { recursive: true }).catch(() => {});
           await this.writeSkillFile(path.join(skillDir, "SKILL.md"), skill);

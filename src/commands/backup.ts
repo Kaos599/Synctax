@@ -6,6 +6,7 @@ import { getVersion } from "../version.js";
 import { discoverBackupFilesForAdapter } from "../backup/discovery.js";
 import { writeBackupsByLayout, writeRollupManifest } from "../backup/archive.js";
 import type { BackupLayout } from "../backup/types.js";
+import { requireInteractiveTTY } from "./_terminal.js";
 
 type BackupCommandOptions = {
   client?: string[] | string;
@@ -59,6 +60,16 @@ export async function backupCommand(options: BackupCommandOptions = {}) {
   let selectedIds = toClientList(options.client);
 
   if (options.interactive) {
+    if (!requireInteractiveTTY("backup --interactive")) {
+      return {
+        layout: options.layout || "bundle",
+        selectedClientIds: [],
+        clientResults: [],
+        artifacts: [],
+        createdAt: new Date().toISOString(),
+      };
+    }
+
     selectedIds = await checkbox({
       message: "Select clients to back up:",
       choices: enabledIds.map((id) => ({
@@ -109,7 +120,6 @@ export async function backupCommand(options: BackupCommandOptions = {}) {
       ? `${outputPath}.rollup.json`
       : `${outputPath}/rollup.json`;
     await writeRollupManifest(rollupPath, result);
-    result.artifacts.push({ kind: "rollup", path: rollupPath });
   }
 
   for (const client of result.clientResults) {
@@ -123,7 +133,8 @@ export async function backupCommand(options: BackupCommandOptions = {}) {
   }
 
   if (layout === "bundle") {
-    ui.success(`Bundle created: ${outputPath}`);
+    const bundleArtifact = result.artifacts.find((artifact) => artifact.kind === "bundle");
+    ui.success(`Bundle created: ${bundleArtifact?.path || outputPath}`);
   } else {
     ui.success(`Per-client backups created in: ${outputPath}`);
   }

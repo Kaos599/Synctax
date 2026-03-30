@@ -3,6 +3,7 @@ import { checkbox } from "@inquirer/prompts";
 import { getConfigManager } from "./_shared.js";
 import { syncCommand } from "./sync.js";
 import { getVersion } from "../version.js";
+import { requireInteractiveTTY } from "./_terminal.js";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
@@ -133,6 +134,10 @@ export async function removeCommand(domain: string | undefined, name: string | u
   console.log(ui.format.brandHeader(getVersion(), config.activeProfile));
 
   if (options.interactive || (!domain && !name)) {
+    if (!requireInteractiveTTY("remove --interactive")) {
+      return;
+    }
+
     const choices = [
       ...Object.keys(config.resources.mcps || {}).map(k => ({ name: `[MCP] ${k}`, value: { domain: 'mcp', key: k } })),
       ...Object.keys(config.resources.agents || {}).map(k => ({ name: `[Agent] ${k}`, value: { domain: 'agent', key: k } })),
@@ -155,10 +160,18 @@ export async function removeCommand(domain: string | undefined, name: string | u
     }
 
     for (const item of selected) {
+      if (options.dryRun) {
+        ui.dryRun(`Would remove ${item.domain}: ${item.key}`);
+        continue;
+      }
       if (item.domain === 'mcp') delete config.resources.mcps[item.key];
       if (item.domain === 'agent') delete config.resources.agents[item.key];
       if (item.domain === 'skill') delete config.resources.skills[item.key];
       ui.success(`Removed ${item.domain}: ${item.key}`);
+    }
+
+    if (options.dryRun) {
+      return;
     }
   } else {
     if (!domain || !name) {
@@ -213,6 +226,14 @@ export async function moveCommand(domain: string, name: string, options: { toGlo
   const resource = resourceGroup[name];
   if (!resource) {
     ui.error(`Resource ${name} not found in master config.`);
+    process.exitCode = 1;
+    return;
+  }
+
+  const destinationCount = Number(Boolean(options.toGlobal)) + Number(Boolean(options.toLocal));
+  if (destinationCount !== 1) {
+    ui.error("Specify exactly one destination: --to-global or --to-local.");
+    process.exitCode = 1;
     return;
   }
 

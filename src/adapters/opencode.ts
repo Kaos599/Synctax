@@ -15,6 +15,7 @@ import { firstExistingPath, firstExistingScopedPath, homeDir, opencodeConfigCand
 import type { ConfigScope } from "../platform-paths.js";
 import { splitByScope } from "../scopes.js";
 import { parseFrontmatter, serializeFrontmatter } from "../frontmatter.js";
+import { assertSafeResourceName } from "../resource-name.js";
 
 function scopeWeight(scope: ConfigScope): number {
   if (scope === "global") return 0;
@@ -247,6 +248,7 @@ export class OpenCodeAdapter implements ClientAdapter {
     skills: Record<string, Skill>,
   ): Promise<void> {
     for (const [key, skill] of Object.entries(skills)) {
+      assertSafeResourceName(key, "skill");
       const skillDir = path.join(baseDir, key);
       await fs.mkdir(skillDir, { recursive: true }).catch(() => {});
 

@@ -27,7 +27,7 @@ function mergeMcpServers(parsed: Record<string, any>, into: Record<string, McpSe
 
 function mergeConfig(parsed: any, permissions: Permissions, models: Models) {
   if (!parsed || typeof parsed !== "object") return;
-  if (parsed.autoApproveNetwork === true) permissions.networkAllow = true;
+  if (typeof parsed.autoApproveNetwork === "boolean") permissions.networkAllow = parsed.autoApproveNetwork;
   if (Array.isArray(parsed.autoApproveCommands)) {
     permissions.allowedCommands = parsed.autoApproveCommands;
   }
