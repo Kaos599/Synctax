@@ -1,0 +1,5 @@
+# Bolt's Journal
+
+## 2025-03-31 - Sequential File System I/O Bottleneck in CLI Commands
+**Learning:** This codebase's CLI interacts with multiple adapters, which sequentially read files (configs, detections) directly from the filesystem across `for...of` loops. This sequential approach in `src/commands/info.ts` (e.g., `infoCommand`, `statusCommand`, `doctorCommand`) scales linearly with the number of adapters/clients, causing significant execution delays in CLI commands when checking multiple AI clients.
+**Action:** Always map operations to an array of promises and use `Promise.all` to parallelize independent file system and adapter I/O operations (like config reads and availability checks). This drastically cuts down execution time while ensuring UI logging is preserved by processing the resolved promise results in order.
