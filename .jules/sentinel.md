@@ -1,0 +1,4 @@
+## 2024-05-18 - Path Traversal Vulnerability in Resource Paths
+**Vulnerability:** Constructing file system paths directly using unsanitized user-provided keys from the `resources.agents` and `resources.skills` entries in config adapters (like `claude.ts` and `cursor.ts`).
+**Learning:** Keys were used as path segments when generating the actual output paths on the local file system. This allows for directory traversal attacks, permitting arbitrary files to be created or overwritten via specially crafted keys like `../../badfile`.
+**Prevention:** Always sanitize user-provided keys using `path.basename()` or equivalent safe processing before using them to build paths for system resource creation, specifically within configuration and file adapter utilities.
