@@ -1,0 +1,3 @@
+## 2024-05-15 - [Sequential I/O Blocking in CLI Read Operations]
+**Learning:** Sequential calls to read adapter configuration (`await adapter.detect()` and `await adapter.read()`) inside `for...of` loops cause a linear scaling bottleneck as the number of supported client adapters increases. I/O should be parallelized, but the order of formatted output in CLI commands must be maintained.
+**Action:** When querying multiple configuration adapters or the file system in a mapping operation, use `Promise.all` coupled with an array `map` operation to fetch the data concurrently. Wait for all promises to resolve before pushing the results into sequential terminal outputs or tables, maintaining determinism while drastically cutting execution time.

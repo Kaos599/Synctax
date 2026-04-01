@@ -163,32 +163,39 @@ export async function infoCommand() {
     headers: ["Client", "Installed", "MCPs", "Agents", "Skills"],
   });
 
-  for (const [id, adapter] of Object.entries(adapters)) {
-    const installed = await adapter.detect();
-    let mcpCount = 0;
-    let agentCount = 0;
-    let skillCount = 0;
+  const rows = await Promise.all(
+    Object.entries(adapters).map(async ([id, adapter]) => {
+      const installed = await adapter.detect();
+      let mcpCount = 0;
+      let agentCount = 0;
+      let skillCount = 0;
 
-    if (installed) {
-      try {
-        const data = await adapter.read();
-        mcpCount = Object.keys(data.mcps || {}).length;
-        agentCount = Object.keys(data.agents || {}).length;
-        skillCount = Object.keys(data.skills || {}).length;
-      } catch (e) {
-        // If config is broken, we just show 0
+      if (installed) {
+        try {
+          // ⚡ Bolt: Fetching adapter data in parallel drastically improves execution speed
+          const data = await adapter.read();
+          mcpCount = Object.keys(data.mcps || {}).length;
+          agentCount = Object.keys(data.agents || {}).length;
+          skillCount = Object.keys(data.skills || {}).length;
+        } catch (e) {
+          // If config is broken, we just show 0
+        }
       }
-    }
 
-    const isActive = config.clients[id]?.enabled;
+      const isActive = config.clients[id]?.enabled;
 
-    table.push([
-      isActive ? ui.semantic.highlight(adapter.name) : ui.semantic.muted(adapter.name),
-      installed ? ui.semantic.success("Yes") : ui.semantic.error("No"),
-      `${mcpCount} MCP${mcpCount !== 1 ? "s" : ""}`,
-      `${agentCount} Agent${agentCount !== 1 ? "s" : ""}`,
-      `${skillCount} Skill${skillCount !== 1 ? "s" : ""}`
-    ]);
+      return [
+        isActive ? ui.semantic.highlight(adapter.name) : ui.semantic.muted(adapter.name),
+        installed ? ui.semantic.success("Yes") : ui.semantic.error("No"),
+        `${mcpCount} MCP${mcpCount !== 1 ? "s" : ""}`,
+        `${agentCount} Agent${agentCount !== 1 ? "s" : ""}`,
+        `${skillCount} Skill${skillCount !== 1 ? "s" : ""}`
+      ];
+    })
+  );
+
+  for (const row of rows) {
+    table.push(row);
   }
 
   console.log(table.toString());
