@@ -83,13 +83,39 @@ src/
     timer.ts                    # startTimer() → { elapsed(), elapsedMs() }
     table.ts                    # createTable() — pre-styled cli-table3 wrapper with brand colors
     spinner.ts                  # Minimal TTY-aware spinner for async operations
+  tui/
+    ink-app.tsx                 # Ink render entry (fullscreen alternate buffer)
+    ink-types.ts                # TuiMode, TuiFrameData, TuiPendingAction types
+    theme.ts                    # 16-theme design system with Proxy-based runtime switching
+    entry.ts                    # No-arg routing (fullscreen TUI vs fallback)
+    data.ts                     # Dashboard data hydration from ConfigManager
+    actions.ts                  # 12 quick action definitions + command dispatch
+    executor.ts                 # Guarded output capture for in-TUI execution
+    state.ts                    # Pure key reducer (used by tests)
+    runtime-context.ts          # Runtime context type for action execution
+    components/
+      App.tsx                   # Root component — state, input handling, view switching
+      Header.tsx                # ASCII art wordmark + version/profile/source/health
+      Panel.tsx                 # Reusable bordered panel with focus highlight
+      Overview.tsx              # Status panel — clients, MCPs, agents, skills, drift
+      QuickActions.tsx           # Hotkey action grid (1-9, 0)
+      Diagnostics.tsx           # Warning display with colored icons
+      Features.tsx              # Feature map categorized by domain
+      StatusBar.tsx             # Mode indicator, status line, keyboard hints, clock
+      ConfirmModal.tsx          # Confirmation view
+      HelpOverlay.tsx           # Keyboard reference view
+      CommandPalette.tsx        # Searchable command palette with TextInput
+      SourceSelector.tsx        # Adapter picker with @inkjs/ui Select
+      ThemeSelector.tsx         # Theme picker with @inkjs/ui Select (16 themes)
+      RunningView.tsx           # Execution spinner + result summary
+      Toast.tsx                 # Auto-dismissing notification
   interactive.ts                # Zero-arg interactive command palette (@inquirer/prompts search)
   config.ts                     # ConfigManager class: reads/writes/backup/pruneBackups ~/.synctax/config.json
   types.ts                      # Zod schemas + TypeScript types + ClientAdapter interface
   scopes.ts                     # splitByScope(), toConfigScope()
   platform-paths.ts             # Cross-platform path resolution, ScopedCandidate
   banner.ts                     # ASCII art banner rendering (rebel FIGlet + pixel wordmark)
-  theme.ts                      # Theme palette definitions + paint utils
+  theme.ts                      # CLI theme palette definitions + paint utils (separate from TUI themes)
   install-path.ts               # PATH setup logic for `synctax init`
   adapters/
     index.ts                    # Adapter registry + getAdapter()
@@ -103,6 +129,12 @@ src/
     github-copilot-cli.ts       # GithubCopilotCliAdapter — aliases in config.json (scoped)
     gemini-cli.ts               # GeminiCliAdapter — .gemini/settings.json (scoped)
 tests/
+  tui/
+    actions.test.ts             # TUI action registry + command dispatch tests
+    state.test.ts               # Key reducer transition tests
+    executor.test.ts            # Output capture tests
+    data.test.ts                # Dashboard data hydration tests
+    entry.test.ts               # No-arg routing tests
   ui/
     colors.test.ts              # Semantic palette, symbols, brand color tests
     output.test.ts              # Format functions + print function tests
@@ -254,10 +286,21 @@ Every adapter uses a `stripScope<T>()` helper that removes the `scope` field bef
 
 ### Banner & Theme System
 
-- Default theme: `rebel` (FIGlet block art).
-- Alternate themes: `pixel`/`synctax` (custom pixel wordmark with shadow dither), `default`, `cyber`, `green`.
+- **CLI banner themes** (for non-TUI output): `rebel` (FIGlet block art), `pixel`/`synctax` (custom pixel wordmark with shadow dither), `default`, `cyber`, `green`. Defined in `src/theme.ts` + `src/banner.ts`.
+- **TUI themes** (for the fullscreen dashboard): 16 color presets defined in `src/tui/theme.ts`. Default: `synctax`. Others: `catppuccin`, `dracula`, `nord`, `tokyo-night`, `gruvbox`, `one-dark`, `solarized`, `rose-pine`, `monokai`, `cyberpunk`, `sunset`, `ocean`, `forest`, `ember`, `aurora`.
 - `--theme <name>` flag overrides on any run.
 - Theme is persisted in master config `theme` field.
+- TUI themes use Proxy-based runtime switching — `colors` and `palette` exports dynamically reflect the active theme.
+- Press `t` in the TUI dashboard to switch themes interactively.
+
+### Fullscreen TUI (src/tui/)
+
+- Built with **Ink** (React for terminals) + **@inkjs/ui** components.
+- Entry: `src/tui/entry.ts` → `src/tui/ink-app.tsx` → `src/tui/components/App.tsx`.
+- View switching: each mode (`dashboard`, `confirm`, `running`, `result`, `help`, `palette`, `source`, `theme`) renders a completely different view — no overlays.
+- Uses alternate screen buffer for fullscreen mode (ANSI `\x1b[?1049h`).
+- Navigation: `Esc` universally goes back, `q` universally quits, `Tab`/`Shift+Tab` cycles panel focus.
+- See `docs/fullscreen-tui.md` for the full TUI guide.
 
 ### PATH Installation (src/install-path.ts)
 
