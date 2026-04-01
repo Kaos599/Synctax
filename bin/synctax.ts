@@ -281,8 +281,8 @@ if (process.argv.length <= 2 || (process.argv.length === 4 && process.argv[2] ==
   if (process.argv.length === 4 && process.argv[2] === "--theme") {
     themeOverride = process.argv[3];
   }
-  void import("../src/interactive.js").then(({ startInteractiveMode }) => {
-    startInteractiveMode(themeOverride).catch((err) => {
+  void import("../src/tui/entry.js").then(({ startNoArgExperience }) => {
+    startNoArgExperience(themeOverride).catch((err) => {
       const cancelNames = ["ExitPromptError", "CancelPromptError", "AbortPromptError"];
       if (!cancelNames.includes(err.name)) {
         console.error(err);

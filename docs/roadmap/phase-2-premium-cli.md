@@ -117,3 +117,9 @@ User preference on banner style. Can be A/B tested during implementation.
 - Non-interactive/CI output uses concise static progress lines instead of animation frames.
 - Symbol rendering supports ASCII fallback (`SYNCTAX_ASCII=1` or `TERM=dumb`).
 - Pull failures now set non-zero exit codes, and sync failure paths no longer report "Sync complete!".
+
+## Fullscreen TUI Follow-up Notes (2026-03-30)
+
+- No-arg launch now routes to the fullscreen TUI when both stdin/stdout are TTY and viewport is at least `92x24`; otherwise it falls back to the prompt-based interactive mode.
+- Quick actions now require explicit confirmation (`Enter`/`y` to run, `Esc`/`n` to cancel) before command execution.
+- Confirmed actions move through `confirm -> running -> result` states so execution feedback remains in-app without breaking fullscreen redraw behavior.

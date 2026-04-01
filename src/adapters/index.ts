@@ -9,7 +9,19 @@ import { GithubCopilotCliAdapter } from "./github-copilot-cli.js";
 import { GeminiCliAdapter } from "./gemini-cli.js";
 import type { ClientAdapter } from "../types.js";
 
-export const adapters: Record<string, ClientAdapter> = {
+type CanonicalAdapters = {
+  claude: ClientAdapter;
+  cursor: ClientAdapter;
+  opencode: ClientAdapter;
+  antigravity: ClientAdapter;
+  cline: ClientAdapter;
+  zed: ClientAdapter;
+  "github-copilot": ClientAdapter;
+  "github-copilot-cli": ClientAdapter;
+  "gemini-cli": ClientAdapter;
+};
+
+const BASE_ADAPTERS: CanonicalAdapters = {
   claude: new ClaudeAdapter(),
   cursor: new CursorAdapter(),
   opencode: new OpenCodeAdapter(),
@@ -21,6 +33,16 @@ export const adapters: Record<string, ClientAdapter> = {
   "gemini-cli": new GeminiCliAdapter(),
 };
 
+export type AdapterId = keyof typeof BASE_ADAPTERS;
+
+export type AdapterRegistry = CanonicalAdapters & Record<string, ClientAdapter>;
+
+export const adapters: AdapterRegistry = {
+  ...BASE_ADAPTERS,
+};
+
+export function getAdapter(id: AdapterId): ClientAdapter;
+export function getAdapter(id: string): ClientAdapter | undefined;
 export function getAdapter(id: string): ClientAdapter | undefined {
   return adapters[id];
 }

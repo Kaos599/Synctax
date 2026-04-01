@@ -20,6 +20,12 @@ describe("Theme System", () => {
     expect(stripped).toBe("████");
   });
 
+  it("paintPixelWordmarkLine preserves spacing between face and shadow columns", () => {
+    const out = paintPixelWordmarkLine("W W");
+    const stripped = out.replace(/\u001b\[[0-9;]*m/g, "");
+    expect(stripped).toBe("█ █");
+  });
+
   it("paintLines loops through colors correctly", () => {
     const text = "line1\nline2\nline3\nline4\nline5";
     const painted = paintLines(text, themes.default);

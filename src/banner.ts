@@ -96,6 +96,25 @@ function buildFaceGrid(word: string): string[] {
   return rows;
 }
 
+function expandFaceSeparation(faceRows: string[]): string[] {
+  const expandedRows: string[] = [];
+  for (const rawLine of faceRows) {
+    let next = "";
+    for (let i = 0; i < rawLine.length; i++) {
+      const ch = rawLine.charAt(i);
+      next += ch;
+      const currentIsFace = ch === "W";
+      const nextCh = rawLine.charAt(i + 1);
+      const nextIsFace = nextCh === "W";
+      if (currentIsFace && nextIsFace) {
+        next += " ";
+      }
+    }
+    expandedRows.push(next);
+  }
+  return expandedRows;
+}
+
 function compositeShadow(faceRows: string[], down: number, left: number): string[] {
   const fh = faceRows.length;
   const fw = Math.max(...faceRows.map((l) => l.length));
@@ -144,7 +163,7 @@ function compositeShadow(faceRows: string[], down: number, left: number): string
   return grid.map((row) => row.join(""));
 }
 
-const pixelSynctaxLines = compositeShadow(buildFaceGrid("SYNCTAX"), 2, 2);
+const pixelSynctaxLines = compositeShadow(expandFaceSeparation(buildFaceGrid("SYNCTAX")), 2, 2);
 
 export function printBanner(themeName: string = "pixel") {
   if (themeName === "pixel" || themeName === "synctax") {
