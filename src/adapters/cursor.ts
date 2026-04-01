@@ -117,7 +117,9 @@ export class CursorAdapter implements ClientAdapter {
         if (skill.description) content += `description: ${skill.description}\n`;
         if (skill.trigger) content += `trigger: ${skill.trigger}\n`;
         content += `---\n${skill.content}\n`;
-        await fs.writeFile(path.join(this.commandsDir, `${key}.md`), content, "utf-8");
+        // Sanitize key to prevent path traversal
+        const safeKey = path.basename(key);
+        await fs.writeFile(path.join(this.commandsDir, `${safeKey}.md`), content, "utf-8");
       }
     }
   }
