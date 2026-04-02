@@ -74,44 +74,51 @@ export async function statusCommand() {
 
   // 3. Sync status
   console.log(ui.format.info("\n  Client Sync Status:"));
-  let clientsChecked = 0;
-  for (const [id, clientConf] of Object.entries(config.clients)) {
-    if (!clientConf.enabled) continue;
-    const adapter = adapters[id];
-    if (!adapter) continue;
-    clientsChecked++;
 
-    try {
-      const data = await adapter.read();
-      let inSync = true;
-      let driftDetails = [];
-
-      for (const [name, server] of Object.entries(mcps)) {
-        if (!data.mcps[name]) { driftDetails.push(`Missing MCP: ${name}`); inSync = false; }
-        else if (JSON.stringify(server) !== JSON.stringify(data.mcps[name])) { driftDetails.push(`Drift in MCP: ${name}`); inSync = false; }
-      }
-      for (const [name, agent] of Object.entries(agents)) {
-        if (!data.agents[name]) { driftDetails.push(`Missing Agent: ${name}`); inSync = false; }
-        else if (JSON.stringify(agent) !== JSON.stringify(data.agents[name])) { driftDetails.push(`Drift in Agent: ${name}`); inSync = false; }
-      }
-      for (const [name, skill] of Object.entries(skills)) {
-        if (!data.skills[name]) { driftDetails.push(`Missing Skill: ${name}`); inSync = false; }
-        else if (JSON.stringify(skill) !== JSON.stringify(data.skills[name])) { driftDetails.push(`Drift in Skill: ${name}`); inSync = false; }
-      }
-
-      if (inSync) {
-        ui.success(`${adapter.name}: In Sync`, { indent: 2 });
-      } else {
-        ui.warn(`${adapter.name}: Out of Sync (${driftDetails.length} issues)`, { indent: 2 });
-        driftDetails.forEach(d => ui.dim(`      - ${d}`));
-      }
-    } catch (e: any) {
-      ui.error(`${adapter.name}: Error reading config (${e.message})`, { indent: 2 });
-    }
-  }
+  const activeClients = Object.entries(config.clients).filter(([id, conf]) => conf.enabled && adapters[id]);
+  const clientsChecked = activeClients.length;
 
   if (clientsChecked === 0) {
     ui.dim("    No clients enabled.");
+  } else {
+    const syncResults = await Promise.all(
+      activeClients.map(async ([id]) => {
+        const adapter = adapters[id]!;
+        try {
+          const data = await adapter.read();
+          let inSync = true;
+          let driftDetails: string[] = [];
+
+          for (const [name, server] of Object.entries(mcps)) {
+            if (!data.mcps[name]) { driftDetails.push(`Missing MCP: ${name}`); inSync = false; }
+            else if (JSON.stringify(server) !== JSON.stringify(data.mcps[name])) { driftDetails.push(`Drift in MCP: ${name}`); inSync = false; }
+          }
+          for (const [name, agent] of Object.entries(agents)) {
+            if (!data.agents[name]) { driftDetails.push(`Missing Agent: ${name}`); inSync = false; }
+            else if (JSON.stringify(agent) !== JSON.stringify(data.agents[name])) { driftDetails.push(`Drift in Agent: ${name}`); inSync = false; }
+          }
+          for (const [name, skill] of Object.entries(skills)) {
+            if (!data.skills[name]) { driftDetails.push(`Missing Skill: ${name}`); inSync = false; }
+            else if (JSON.stringify(skill) !== JSON.stringify(data.skills[name])) { driftDetails.push(`Drift in Skill: ${name}`); inSync = false; }
+          }
+
+          return { adapter, success: true, inSync, driftDetails };
+        } catch (e: any) {
+          return { adapter, success: false, error: e.message };
+        }
+      })
+    );
+
+    for (const result of syncResults) {
+      if (!result.success) {
+        ui.error(`${result.adapter.name}: Error reading config (${result.error})`, { indent: 2 });
+      } else if (result.inSync) {
+        ui.success(`${result.adapter.name}: In Sync`, { indent: 2 });
+      } else {
+        ui.warn(`${result.adapter.name}: Out of Sync (${result.driftDetails!.length} issues)`, { indent: 2 });
+        result.driftDetails!.forEach(d => ui.dim(`      - ${d}`));
+      }
+    }
   }
 }
 
@@ -163,33 +170,37 @@ export async function infoCommand() {
     headers: ["Client", "Installed", "MCPs", "Agents", "Skills"],
   });
 
-  for (const [id, adapter] of Object.entries(adapters)) {
-    const installed = await adapter.detect();
-    let mcpCount = 0;
-    let agentCount = 0;
-    let skillCount = 0;
+  const results = await Promise.all(
+    Object.entries(adapters).map(async ([id, adapter]) => {
+      const installed = await adapter.detect();
+      let mcpCount = 0;
+      let agentCount = 0;
+      let skillCount = 0;
 
-    if (installed) {
-      try {
-        const data = await adapter.read();
-        mcpCount = Object.keys(data.mcps || {}).length;
-        agentCount = Object.keys(data.agents || {}).length;
-        skillCount = Object.keys(data.skills || {}).length;
-      } catch (e) {
-        // If config is broken, we just show 0
+      if (installed) {
+        try {
+          const data = await adapter.read();
+          mcpCount = Object.keys(data.mcps || {}).length;
+          agentCount = Object.keys(data.agents || {}).length;
+          skillCount = Object.keys(data.skills || {}).length;
+        } catch (e) {
+          // If config is broken, we just show 0
+        }
       }
-    }
 
-    const isActive = config.clients[id]?.enabled;
+      const isActive = config.clients[id]?.enabled;
 
-    table.push([
-      isActive ? ui.semantic.highlight(adapter.name) : ui.semantic.muted(adapter.name),
-      installed ? ui.semantic.success("Yes") : ui.semantic.error("No"),
-      `${mcpCount} MCP${mcpCount !== 1 ? "s" : ""}`,
-      `${agentCount} Agent${agentCount !== 1 ? "s" : ""}`,
-      `${skillCount} Skill${skillCount !== 1 ? "s" : ""}`
-    ]);
-  }
+      return [
+        isActive ? ui.semantic.highlight(adapter.name) : ui.semantic.muted(adapter.name),
+        installed ? ui.semantic.success("Yes") : ui.semantic.error("No"),
+        `${mcpCount} MCP${mcpCount !== 1 ? "s" : ""}`,
+        `${agentCount} Agent${agentCount !== 1 ? "s" : ""}`,
+        `${skillCount} Skill${skillCount !== 1 ? "s" : ""}`
+      ];
+    })
+  );
+
+  results.forEach(row => table.push(row));
 
   console.log(table.toString());
   console.log("\n");
