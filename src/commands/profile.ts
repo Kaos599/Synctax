@@ -225,6 +225,22 @@ export async function profilePullCommand(url: string, options?: any) {
       assertSafeResourceMapKeys(payload.resources.agents as Record<string, unknown> | undefined, "agent");
       assertSafeResourceMapKeys(payload.resources.skills as Record<string, unknown> | undefined, "skill");
 
+      // Detect resource name collisions
+      const collisionDomains = ["mcps", "agents", "skills"] as const;
+      const allCollisions: string[] = [];
+      for (const domain of collisionDomains) {
+        const incomingKeys = Object.keys((payload.resources as any)[domain] || {});
+        const existingKeys = Object.keys((config.resources as any)[domain] || {});
+        const collisions = incomingKeys.filter(k => existingKeys.includes(k));
+        if (collisions.length > 0) {
+          allCollisions.push(...collisions.map(k => `${domain}/${k}`));
+        }
+      }
+      if (allCollisions.length > 0) {
+        ui.warn(`Resource name collisions detected: ${allCollisions.join(", ")}`);
+        ui.warn("Incoming definitions will overwrite existing ones.");
+      }
+
       if (payload.resources.mcps) config.resources.mcps = { ...config.resources.mcps, ...payload.resources.mcps };
       if (payload.resources.agents) config.resources.agents = { ...config.resources.agents, ...payload.resources.agents };
       if (payload.resources.skills) config.resources.skills = { ...config.resources.skills, ...payload.resources.skills };
@@ -262,17 +278,27 @@ export async function profilePublishCommand(name: string, options?: any): Promis
     return null;
   }
 
-  // Strip credentials and generate export
+  // Filter resources by profile include/exclude before export
+  let resolvedProfile: any;
+  try {
+    resolvedProfile = resolveProfile(config.profiles, name);
+  } catch (e: any) {
+    ui.error(`Profile resolution failed: ${e.message}`);
+    process.exitCode = 1;
+    return null;
+  }
+  const filtered = await applyProfileFilter(config.resources, resolvedProfile);
+
   const exportPayload = {
     name,
     profile: config.profiles[name],
     resources: {
-      mcps: config.resources.mcps,
-      agents: config.resources.agents,
-      skills: config.resources.skills,
-      permissions: config.resources.permissions,
-      models: config.resources.models,
-      prompts: config.resources.prompts,
+      mcps: filtered.mcps,
+      agents: filtered.agents,
+      skills: filtered.skills,
+      permissions: filtered.permissions,
+      models: filtered.models,
+      prompts: filtered.prompts,
       // Credentials explicitly excluded
     }
   };
