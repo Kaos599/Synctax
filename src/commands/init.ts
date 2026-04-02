@@ -5,6 +5,7 @@ import { maybePromptAndInstallPath } from "../install-path.js";
 import { adapters } from "../adapters/index.js";
 import { getConfigManager } from "./_shared.js";
 import { getVersion } from "../version.js";
+import { select } from "@inquirer/prompts";
 
 export async function initCommand(options: {
   detect?: boolean;
@@ -89,12 +90,24 @@ export async function initCommand(options: {
   }
 
   if (!newConfig.source) {
-    const firstClient = Object.keys(newConfig.clients)[0];
-    if (firstClient) {
-      newConfig.source = firstClient;
-      const firstAdapter = adapters[firstClient];
-      if (firstAdapter) {
-        ui.dim(`Setting ${firstAdapter.name} as the default source.`);
+    const detected = Object.entries(newConfig.clients)
+      .filter(([, c]) => c.enabled)
+      .map(([id]) => ({ id, name: adapters[id]?.name || id }));
+
+    if (detected.length === 1) {
+      newConfig.source = detected[0]!.id;
+      ui.dim(`Setting ${detected[0]!.name} as the default source (only client detected).`);
+    } else if (detected.length > 1) {
+      const isTTY = process.stdin.isTTY && !process.env.VITEST;
+      if (isTTY) {
+        const choice = await select({
+          message: "Which client should be your source of truth?",
+          choices: detected.map(d => ({ name: d.name, value: d.id })),
+        });
+        newConfig.source = choice;
+      } else {
+        newConfig.source = detected[0]!.id;
+        ui.dim(`Setting ${detected[0]!.name} as default source (non-interactive).`);
       }
     }
   }
