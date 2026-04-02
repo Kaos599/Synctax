@@ -1,19 +1,75 @@
 import chalk from "chalk";
 import * as ui from "../ui/index.js";
-import { checkbox } from "@inquirer/prompts";
+import { checkbox, confirm } from "@inquirer/prompts";
 import { adapters } from "../adapters/index.js";
-import { getConfigManager, applyProfileFilter, resolveProfile } from "./_shared.js";
+import { getConfigManager, applyProfileFilter, resolveProfile, mergePermissions } from "./_shared.js";
 import { getVersion } from "../version.js";
 import { EnvVault } from "../env-vault.js";
 import { requireInteractiveTTY } from "./_terminal.js";
+import { compareDomain, renderClientDiff, hasDiffChanges } from "../diff-utils.js";
+import type { ClientDiff } from "../diff-utils.js";
+import { acquireLock } from "../lock.js";
 
-export async function syncCommand(options: { dryRun?: boolean, interactive?: boolean }) {
+export async function syncCommand(options: { dryRun?: boolean, interactive?: boolean, yes?: boolean, strictEnv?: boolean }) {
   const timer = ui.startTimer();
   const configManager = getConfigManager();
 
+  // Acquire lock to prevent concurrent syncs
+  let lock: { release: () => Promise<void> } | undefined;
+  if (!options.dryRun) {
+    try {
+      lock = await acquireLock("sync");
+    } catch (e: any) {
+      ui.error(e.message);
+      process.exitCode = 1;
+      return;
+    }
+  }
+
+  try {
+    await syncCommandInner(options, configManager, timer);
+  } finally {
+    await lock?.release();
+  }
+}
+
+async function syncCommandInner(
+  options: { dryRun?: boolean, interactive?: boolean, yes?: boolean, strictEnv?: boolean },
+  configManager: ReturnType<typeof getConfigManager>,
+  timer: ReturnType<typeof ui.startTimer>,
+) {
   const config = await configManager.read();
   console.log(ui.format.brandHeader(getVersion(), config.activeProfile));
   ui.header("Starting sync...");
+
+  // --- Client-first pull: if source is configured, pull from it first ---
+  const sourceId = config.source;
+  const sourceAdapter = sourceId ? adapters[sourceId] : undefined;
+
+  if (sourceAdapter) {
+    const spin = ui.spinner(`Pulling from ${sourceAdapter.name}...`);
+    try {
+      const sourceData = await sourceAdapter.read();
+      // Additive merge into master config
+      for (const [key, value] of Object.entries(sourceData.mcps || {})) {
+        config.resources.mcps[key] = value as any;
+      }
+      for (const [key, value] of Object.entries(sourceData.agents || {})) {
+        config.resources.agents[key] = value as any;
+      }
+      for (const [key, value] of Object.entries(sourceData.skills || {})) {
+        config.resources.skills[key] = value as any;
+      }
+      if (sourceData.permissions) {
+        config.resources.permissions = mergePermissions(config.resources.permissions, sourceData.permissions);
+      }
+      await configManager.write(config);
+      spin.succeed(`Pulled from ${sourceAdapter.name}`);
+    } catch (e: any) {
+      spin.fail(`Pull from ${sourceAdapter.name} failed: ${e.message}`);
+      ui.warn("Continuing with current master config.");
+    }
+  }
 
   let resources: any;
   try {
@@ -85,6 +141,70 @@ export async function syncCommand(options: { dryRun?: boolean, interactive?: boo
     }
   }
 
+  // Build enabled clients list (excluding source — it's the authority)
+  const enabledClients: Array<{ id: string; adapter: any }> = [];
+  for (const [id, clientConf] of Object.entries(config.clients)) {
+    if (!clientConf.enabled) continue;
+    if (id === sourceId) continue; // Source client is never written to
+    const adapter = adapters[id];
+    if (!adapter) continue;
+    enabledClients.push({ id, adapter });
+  }
+
+  // --- Diff preview: show what will change before writing ---
+  if (!options.dryRun && enabledClients.length > 0) {
+    const clientDiffs: ClientDiff[] = [];
+    for (const { id, adapter } of enabledClients) {
+      try {
+        const data = await adapter.read();
+        const diff: ClientDiff = {
+          id,
+          name: adapter.name,
+          domains: {
+            mcps: compareDomain(resources.mcps || {}, data.mcps || {}),
+            agents: compareDomain(resources.agents || {}, data.agents || {}),
+            skills: compareDomain(resources.skills || {}, data.skills || {}),
+          },
+        };
+        clientDiffs.push(diff);
+      } catch {
+        // Can't diff — will attempt write anyway
+      }
+    }
+
+    const hasChanges = clientDiffs.some(hasDiffChanges);
+
+    if (hasChanges) {
+      ui.header("Sync plan:");
+      for (const diff of clientDiffs) {
+        if (hasDiffChanges(diff)) {
+          renderClientDiff(diff);
+        }
+      }
+      console.log("");
+
+      // Ask for confirmation unless --yes was passed
+      if (!options.yes) {
+        const isTTY = process.stdin.isTTY && !process.env.VITEST;
+        if (isTTY) {
+          const proceed = await confirm({
+            message: "Apply these changes?",
+            default: false,
+          });
+          if (!proceed) {
+            ui.dim("Sync cancelled.");
+            console.log(ui.format.summary(timer.elapsed(), "cancelled"));
+            return;
+          }
+        }
+      }
+    } else {
+      ui.dim("All clients are already in sync.");
+      console.log(ui.format.summary(timer.elapsed(), "0 changes needed"));
+      return;
+    }
+  }
+
   if (!options.dryRun) {
     await configManager.backup();
   }
@@ -94,15 +214,6 @@ export async function syncCommand(options: { dryRun?: boolean, interactive?: boo
   const mcpCount = Object.keys(resources.mcps || {}).length;
   const agentCount = Object.keys(resources.agents || {}).length;
   const skillCount = Object.keys(resources.skills || {}).length;
-
-  const enabledClients: Array<{ id: string; adapter: any }> = [];
-  for (const [id, clientConf] of Object.entries(config.clients)) {
-    if (!clientConf.enabled) continue;
-
-    const adapter = adapters[id];
-    if (!adapter) continue;
-    enabledClients.push({ id, adapter });
-  }
 
   const snapshots = new Map<string, any>();
   if (!options.dryRun) {
@@ -118,8 +229,8 @@ export async function syncCommand(options: { dryRun?: boolean, interactive?: boo
           prompts: snapshot?.prompts,
           credentials: snapshot?.credentials,
         });
-      } catch {
-        // Best-effort snapshot; rollback skips clients without a readable snapshot.
+      } catch (err: any) {
+        ui.warn(`Snapshot failed for ${adapter.name}: ${err?.message || "unknown error"}. Rollback for this client will be unavailable.`);
       }
     }
   }
@@ -212,13 +323,9 @@ export async function memorySyncCommand(options: { source?: string, dryRun?: boo
   let sourceAdapter = sourceId ? adapters[sourceId] : undefined;
 
   if (!sourceAdapter) {
-    sourceAdapter = adapters["claude"];
-    if (!sourceAdapter) {
-      ui.error("No valid source of truth adapter found.");
-      process.exitCode = 1;
-      return;
-    }
-    console.log(ui.format.warn(`No valid source of truth found. Defaulting to ${sourceAdapter.name}.`, { prefix: "" }));
+    ui.error(`Source client "${sourceId || "(none)"}" not found. Run "synctax init" to set a valid source.`);
+    process.exitCode = 1;
+    return;
   }
 
   const sourceFileName = sourceAdapter.getMemoryFileName();
@@ -282,7 +389,7 @@ export async function watchCommand(options: any) {
 
   const scheduler = createWatchSyncScheduler(async () => {
     ui.header("Triggering background sync...");
-    await syncCommand({ dryRun: false });
+    await syncCommand({ dryRun: false, yes: true });
   }, 500);
 
   const watcher = chokidar.watch(configPath, {

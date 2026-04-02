@@ -71,6 +71,8 @@ program
   .command("sync")
   .description("Push all resources from master to all enabled clients")
   .option("--dry-run", "Preview all changes without writing any files")
+  .option("-y, --yes", "Skip confirmation prompt (auto-approve)")
+  .option("--strict-env", "Refuse to sync if env vars fall back to process.env")
   .option("-i, --interactive", "Interactively select resources to sync")
   .action((options) => {
     void syncCommand(options);

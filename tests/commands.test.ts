@@ -524,9 +524,21 @@ describe("CLI Commands", () => {
     const { syncCommand } = await import("../src/commands.js");
 
     const writes: any[] = [];
-    adapters["mockclient"] = {
-      id: "mockclient",
-      name: "Mock Client",
+    // Source client (pull from, never written to)
+    adapters["mocksource"] = {
+      id: "mocksource",
+      name: "Mock Source",
+      detect: async () => true,
+      read: async () => ({ mcps: {}, agents: {}, skills: {} }),
+      write: async () => {},
+      getMemoryFileName: () => "SOURCE.md",
+      readMemory: async () => null,
+      writeMemory: async () => {},
+    } as any;
+    // Target client (written to during sync)
+    adapters["mocktarget"] = {
+      id: "mocktarget",
+      name: "Mock Target",
       detect: async () => true,
       read: async () => ({ mcps: {}, agents: {}, skills: {} }),
       write: async (resources: any) => {
@@ -535,13 +547,13 @@ describe("CLI Commands", () => {
       getMemoryFileName: () => "MOCK.md",
       readMemory: async () => "mock memory",
       writeMemory: async () => {},
-    };
+    } as any;
 
     await manager.write(createConfig({
       version: 1,
-      source: "mockclient",
+      source: "mocksource",
       activeProfile: "work",
-      clients: { mockclient: { enabled: true } },
+      clients: { mocksource: { enabled: true }, mocktarget: { enabled: true } },
       profiles: { default: {}, work: {} },
       resources: {
         mcps: {
@@ -566,13 +578,16 @@ describe("CLI Commands", () => {
       "utf-8",
     );
 
-    await syncCommand({ dryRun: false });
+    await syncCommand({ dryRun: false, yes: true });
 
     expect(writes).toHaveLength(1);
     expect(writes[0].mcps["env-mcp"].env).toEqual({
       API_KEY: "from-profile",
       LITERAL: "ok",
     });
+
+    delete adapters["mocksource"];
+    delete adapters["mocktarget"];
   });
 
   it("sync dry-run does not create missing profile env file", async () => {
@@ -722,7 +737,7 @@ describe("CLI Commands", () => {
       source: "claude",
       clients: {},
       profiles: {
-        "team-profile": { include: ["team-mcp"], exclude: ["skip-this"] },
+        "team-profile": { include: ["team-mcp", "team-agent", "team-skill"], exclude: ["skip-this"] },
       },
       activeProfile: "default",
       resources: {
