@@ -4,6 +4,7 @@ import type { ClientAdapter, McpServer, Agent, Skill, Permissions, Models, Promp
 import { parseFrontmatter, serializeFrontmatter } from "../frontmatter.js";
 import { homeDir } from "../platform-paths.js";
 import { assertSafeResourceName } from "../resource-name.js";
+import { atomicWriteFile } from "../fs-utils.js";
 
 function stripScope<T extends { scope?: ResourceScope }>(item: T): Omit<T, "scope"> {
   const { scope: _scope, ...rest } = item;
@@ -173,14 +174,14 @@ export class ClaudeAdapter implements ClientAdapter {
     if (Object.keys(projectMcps).length > 0) {
       const existing = await readJsonSafe(this.projectMcpPath);
       existing.mcpServers = { ...(existing.mcpServers || {}), ...projectMcps };
-      await fs.writeFile(this.projectMcpPath, JSON.stringify(existing, null, 2), "utf-8");
+      await atomicWriteFile(this.projectMcpPath, JSON.stringify(existing, null, 2));
     }
 
     // Write user MCPs to ~/.claude.json
     const userMcpFile = await readJsonSafe(this.userMcpPath);
     userMcpFile.mcpServers = userMcps;
     await fs.mkdir(path.dirname(this.userMcpPath), { recursive: true }).catch(() => {});
-    await fs.writeFile(this.userMcpPath, JSON.stringify(userMcpFile, null, 2), "utf-8");
+    await atomicWriteFile(this.userMcpPath, JSON.stringify(userMcpFile, null, 2));
 
     // --- Write permissions + model to settings.json ---
     const settingsDir = path.dirname(this.userSettingsPath);
@@ -195,7 +196,7 @@ export class ClaudeAdapter implements ClientAdapter {
       existingSettings.model = resources.models.defaultModel;
     }
 
-    await fs.writeFile(this.userSettingsPath, JSON.stringify(existingSettings, null, 2), "utf-8");
+    await atomicWriteFile(this.userSettingsPath, JSON.stringify(existingSettings, null, 2));
 
     // --- Write agents as frontmatter .md files ---
     if (Object.keys(resources.agents || {}).length > 0) {
@@ -218,7 +219,7 @@ export class ClaudeAdapter implements ClientAdapter {
         if (agent.userInvocable != null) fm.userInvocable = agent.userInvocable;
 
         const content = serializeFrontmatter(fm, agent.prompt);
-        await fs.writeFile(path.join(this.userAgentsDir, `${key}.md`), content + "\n", "utf-8");
+        await atomicWriteFile(path.join(this.userAgentsDir, `${key}.md`), content + "\n");
       }
     }
 
@@ -243,7 +244,7 @@ export class ClaudeAdapter implements ClientAdapter {
         if (skill.hooks) fm.hooks = skill.hooks;
 
         const content = serializeFrontmatter(fm, skill.content);
-        await fs.writeFile(path.join(skillDir, "SKILL.md"), content + "\n", "utf-8");
+        await atomicWriteFile(path.join(skillDir, "SKILL.md"), content + "\n");
       }
     }
   }
@@ -256,7 +257,7 @@ export class ClaudeAdapter implements ClientAdapter {
   }
 
   async writeMemory(projectDir: string, content: string): Promise<void> {
-    await fs.writeFile(path.join(projectDir, this.getMemoryFileName()), content, "utf-8");
+    await atomicWriteFile(path.join(projectDir, this.getMemoryFileName()), content);
   }
 
   // --- Private helpers ---

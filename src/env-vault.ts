@@ -110,7 +110,11 @@ export class EnvVault {
 
     const fromProcess = process.env[variable];
     if (fromProcess !== undefined) {
-      return { value: fromProcess, resolved: true };
+      return {
+        value: fromProcess,
+        resolved: true,
+        warning: `"${variable}" resolved from process.env (not profile .env). Use --strict-env to disable this fallback.`,
+      };
     }
 
     return {

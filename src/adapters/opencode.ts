@@ -16,6 +16,7 @@ import type { ConfigScope } from "../platform-paths.js";
 import { splitByScope } from "../scopes.js";
 import { parseFrontmatter, serializeFrontmatter } from "../frontmatter.js";
 import { assertSafeResourceName } from "../resource-name.js";
+import { atomicWriteFile } from "../fs-utils.js";
 
 function scopeWeight(scope: ConfigScope): number {
   if (scope === "global") return 0;
@@ -240,7 +241,7 @@ export class OpenCodeAdapter implements ClientAdapter {
       }
     }
 
-    await fs.writeFile(configPath, JSON.stringify(existing, null, 2), "utf-8");
+    await atomicWriteFile(configPath, JSON.stringify(existing, null, 2));
   }
 
   private async writeSkillsToDir(
@@ -257,7 +258,7 @@ export class OpenCodeAdapter implements ClientAdapter {
       if (skill.trigger) fm.trigger = skill.trigger;
 
       const content = serializeFrontmatter(fm, skill.content);
-      await fs.writeFile(path.join(skillDir, "SKILL.md"), content + "\n", "utf-8");
+      await atomicWriteFile(path.join(skillDir, "SKILL.md"), content + "\n");
     }
   }
 
@@ -271,6 +272,6 @@ export class OpenCodeAdapter implements ClientAdapter {
   }
 
   async writeMemory(projectDir: string, content: string): Promise<void> {
-    await fs.writeFile(path.join(projectDir, this.getMemoryFileName()), content, "utf-8");
+    await atomicWriteFile(path.join(projectDir, this.getMemoryFileName()), content);
   }
 }

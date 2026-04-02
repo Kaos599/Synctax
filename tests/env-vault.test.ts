@@ -96,8 +96,29 @@ describe("EnvVault", () => {
       MISSING: "$DOES_NOT_EXIST",
       LITERAL: "ok",
     });
-    expect(result.warnings).toHaveLength(1);
-    expect(result.warnings[0]).toContain("DOES_NOT_EXIST");
+    expect(result.warnings).toHaveLength(2);
+    expect(result.warnings.some((w: string) => w.includes("DOES_NOT_EXIST"))).toBe(true);
+    expect(result.warnings.some((w: string) => w.includes("process.env"))).toBe(true);
+  });
+
+  it("warns when resolving from process.env instead of profile vars", () => {
+    const vault = new EnvVault();
+    process.env.SYNCTAX_ENV_FALLBACK = "from-process";
+
+    const result = vault.resolveEnvValue("$SYNCTAX_ENV_FALLBACK", {});
+    expect(result.resolved).toBe(true);
+    expect(result.value).toBe("from-process");
+    expect(result.warning).toContain("process.env");
+  });
+
+  it("prefers profile vars over process.env without warning", () => {
+    const vault = new EnvVault();
+    process.env.SYNCTAX_ENV_FALLBACK = "from-process";
+
+    const result = vault.resolveEnvValue("$SYNCTAX_ENV_FALLBACK", { SYNCTAX_ENV_FALLBACK: "from-profile" });
+    expect(result.resolved).toBe(true);
+    expect(result.value).toBe("from-profile");
+    expect(result.warning).toBeUndefined();
   });
 
   it("sanitizes profile names to prevent path traversal", async () => {

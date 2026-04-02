@@ -4,6 +4,7 @@ import type { ClientAdapter, McpServer, Agent, Skill, Permissions, Models, Promp
 import { homeDir, xdgStyleConfigCandidates, firstExistingScopedPath, firstExistingPath } from "../platform-paths.js";
 import type { ConfigScope } from "../platform-paths.js";
 import { splitByScope } from "../scopes.js";
+import { atomicWriteFile } from "../fs-utils.js";
 
 function scopeWeight(scope: ConfigScope): number {
   if (scope === "global") return 0;
@@ -158,7 +159,7 @@ export class ClineAdapter implements ClientAdapter {
       existing.mcpServers[key] = stripScope(value);
     }
 
-    await fs.writeFile(configPath, JSON.stringify(existing, null, 2), "utf-8");
+    await atomicWriteFile(configPath, JSON.stringify(existing, null, 2));
   }
 
   private async writeConfig(configPath: string, permissions?: Permissions, models?: Models): Promise<void> {
@@ -182,7 +183,7 @@ export class ClineAdapter implements ClientAdapter {
       existing.model = models.defaultModel;
     }
 
-    await fs.writeFile(configPath, JSON.stringify(existing, null, 2), "utf-8");
+    await atomicWriteFile(configPath, JSON.stringify(existing, null, 2));
   }
 
   getMemoryFileName(): string { return ".clinerules"; }
@@ -194,6 +195,6 @@ export class ClineAdapter implements ClientAdapter {
     }
   }
   async writeMemory(projectDir: string, content: string): Promise<void> {
-    await fs.writeFile(path.join(projectDir, this.getMemoryFileName()), content, "utf-8");
+    await atomicWriteFile(path.join(projectDir, this.getMemoryFileName()), content);
   }
 }

@@ -5,6 +5,7 @@ import type { ClientAdapter, McpServer, Agent, Skill, ResourceScope } from "../t
 import { parseFrontmatter } from "../frontmatter.js";
 import { assertSafeResourceName } from "../resource-name.js";
 import { splitByScope } from "../scopes.js";
+import { atomicWriteFile } from "../fs-utils.js";
 
 import type { Permissions, Models, Prompts, Credentials } from "../types.js";
 
@@ -88,7 +89,7 @@ export class CursorAdapter implements ClientAdapter {
       for (const [key, value] of Object.entries(projectTargetMcps)) {
         existingProject.mcpServers[key] = stripScope(value);
       }
-      await fs.writeFile(this.projectConfigPath, JSON.stringify(existingProject, null, 2), "utf-8");
+      await atomicWriteFile(this.projectConfigPath, JSON.stringify(existingProject, null, 2));
     }
 
     if (Object.keys(userTargetMcps).length > 0) {
@@ -102,7 +103,7 @@ export class CursorAdapter implements ClientAdapter {
       for (const [key, value] of Object.entries(userTargetMcps)) {
         existing.mcpServers[key] = stripScope(value);
       }
-      await fs.writeFile(this.configPath, JSON.stringify(existing, null, 2), "utf-8");
+      await atomicWriteFile(this.configPath, JSON.stringify(existing, null, 2));
     }
 
     if (Object.keys(resources.agents || {}).length > 0) {
@@ -114,7 +115,7 @@ export class CursorAdapter implements ClientAdapter {
         const clean = stripScope(agent);
         existingModes.modes[key] = { name: clean.name, description: clean.description, systemPrompt: clean.prompt, model: clean.model };
       }
-      await fs.writeFile(this.modesPath, JSON.stringify(existingModes, null, 2), "utf-8");
+      await atomicWriteFile(this.modesPath, JSON.stringify(existingModes, null, 2));
     }
 
     // Write skills as plain markdown commands (no frontmatter)
@@ -122,7 +123,7 @@ export class CursorAdapter implements ClientAdapter {
       await fs.mkdir(this.commandsDir, { recursive: true }).catch(() => {});
       for (const [key, skill] of Object.entries(resources.skills || {})) {
         assertSafeResourceName(key, "skill");
-        await fs.writeFile(path.join(this.commandsDir, `${key}.md`), skill.content + "\n", "utf-8");
+        await atomicWriteFile(path.join(this.commandsDir, `${key}.md`), skill.content + "\n");
       }
     }
   }
@@ -132,7 +133,7 @@ export class CursorAdapter implements ClientAdapter {
     try { return await fs.readFile(path.join(projectDir, this.getMemoryFileName()), "utf-8"); } catch { return null; }
   }
   async writeMemory(projectDir: string, content: string): Promise<void> {
-    await fs.writeFile(path.join(projectDir, this.getMemoryFileName()), content, "utf-8");
+    await atomicWriteFile(path.join(projectDir, this.getMemoryFileName()), content);
   }
 
   // --- Private helpers ---

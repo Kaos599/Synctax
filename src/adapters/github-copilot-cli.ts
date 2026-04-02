@@ -5,6 +5,7 @@ import { homeDir } from "../platform-paths.js";
 import { splitByScope } from "../scopes.js";
 import { parseFrontmatter, serializeFrontmatter } from "../frontmatter.js";
 import { assertSafeResourceName } from "../resource-name.js";
+import { atomicWriteFile } from "../fs-utils.js";
 
 function stripScope<T extends { scope?: ResourceScope }>(item: T): Omit<T, "scope"> {
   const { scope: _scope, ...rest } = item;
@@ -144,7 +145,7 @@ export class GithubCopilotCliAdapter implements ClientAdapter {
       for (const [key, value] of Object.entries(allMcps)) {
         existing.mcpServers[key] = stripScope(value);
       }
-      await fs.writeFile(this.mcpConfigPath, JSON.stringify(existing, null, 2), "utf-8");
+      await atomicWriteFile(this.mcpConfigPath, JSON.stringify(existing, null, 2));
     }
 
     // --- Write agents as frontmatter markdown files ---
@@ -211,7 +212,7 @@ export class GithubCopilotCliAdapter implements ClientAdapter {
         if (perms.allowedUrls?.length) existing.allowed_urls = perms.allowedUrls;
         if (perms.deniedUrls?.length) existing.denied_urls = perms.deniedUrls;
         if (perms.trustedFolders?.length) existing.trusted_folders = perms.trustedFolders;
-        await fs.writeFile(this.userConfigPath, JSON.stringify(existing, null, 2), "utf-8");
+        await atomicWriteFile(this.userConfigPath, JSON.stringify(existing, null, 2));
       }
     }
   }
@@ -226,7 +227,7 @@ export class GithubCopilotCliAdapter implements ClientAdapter {
   async writeMemory(projectDir: string, content: string): Promise<void> {
     const filePath = path.join(projectDir, this.getMemoryFileName());
     await fs.mkdir(path.dirname(filePath), { recursive: true }).catch(() => {});
-    await fs.writeFile(filePath, content, "utf-8");
+    await atomicWriteFile(filePath, content);
   }
 
   // --- Private helpers ---
@@ -261,7 +262,7 @@ export class GithubCopilotCliAdapter implements ClientAdapter {
     if (agent.model) fm.model = agent.model;
     if (agent.tools) fm.tools = agent.tools;
     const content = serializeFrontmatter(fm, agent.prompt);
-    await fs.writeFile(filePath, content + "\n", "utf-8");
+    await atomicWriteFile(filePath, content + "\n");
   }
 
   private async readSkillsFromDir(
@@ -299,6 +300,6 @@ export class GithubCopilotCliAdapter implements ClientAdapter {
     if (skill.description) fm.description = skill.description;
     if (skill.trigger) fm.trigger = skill.trigger;
     const content = serializeFrontmatter(fm, skill.content);
-    await fs.writeFile(filePath, content + "\n", "utf-8");
+    await atomicWriteFile(filePath, content + "\n");
   }
 }

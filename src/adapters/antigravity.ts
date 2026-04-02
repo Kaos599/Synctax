@@ -12,6 +12,7 @@ import {
 import { splitByScope } from "../scopes.js";
 import { parseFrontmatter, serializeFrontmatter } from "../frontmatter.js";
 import { assertSafeResourceName } from "../resource-name.js";
+import { atomicWriteFile } from "../fs-utils.js";
 
 function scopeWeight(scope: ConfigScope): number {
   if (scope === "global") return 0;
@@ -177,7 +178,7 @@ export class AntigravityAdapter implements ClientAdapter {
       for (const [key, value] of Object.entries(toWriteMcps)) {
         existing.mcpServers[key] = stripScope(value);
       }
-      await fs.writeFile(configPath, JSON.stringify(existing, null, 2), "utf-8");
+      await atomicWriteFile(configPath, JSON.stringify(existing, null, 2));
     }
 
     // --- Write agents as instruction markdown files ---
@@ -193,7 +194,7 @@ export class AntigravityAdapter implements ClientAdapter {
         if (agent.tools) fm.tools = agent.tools;
 
         const content = serializeFrontmatter(fm, agent.prompt);
-        await fs.writeFile(path.join(rulesDir, `${key}.md`), content + "\n", "utf-8");
+        await atomicWriteFile(path.join(rulesDir, `${key}.md`), content + "\n");
       }
     }
 
@@ -213,7 +214,7 @@ export class AntigravityAdapter implements ClientAdapter {
         if (skill.trigger) fm.trigger = skill.trigger;
 
         const content = serializeFrontmatter(fm, skill.content);
-        await fs.writeFile(path.join(skillDir, "SKILL.md"), content + "\n", "utf-8");
+        await atomicWriteFile(path.join(skillDir, "SKILL.md"), content + "\n");
       }
     }
   }
@@ -226,7 +227,7 @@ export class AntigravityAdapter implements ClientAdapter {
   }
 
   async writeMemory(projectDir: string, content: string): Promise<void> {
-    await fs.writeFile(path.join(projectDir, this.getMemoryFileName()), content, "utf-8");
+    await atomicWriteFile(path.join(projectDir, this.getMemoryFileName()), content);
   }
 
   // --- Private helpers ---

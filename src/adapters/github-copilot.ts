@@ -12,6 +12,7 @@ import {
   vscodeUserSettingsCandidates,
 } from "../platform-paths.js";
 import { splitByScope } from "../scopes.js";
+import { atomicWriteFile } from "../fs-utils.js";
 
 type CandidateScope = "global" | "user" | "project";
 
@@ -204,7 +205,7 @@ export class GithubCopilotAdapter implements ClientAdapter {
       existing.servers = formatted;
     }
 
-    await fs.writeFile(configPath, JSON.stringify(existing, null, 2), "utf-8");
+    await atomicWriteFile(configPath, JSON.stringify(existing, null, 2));
   }
 
   getMemoryFileName(): string { return ".github/copilot-instructions.md"; }
@@ -214,7 +215,7 @@ export class GithubCopilotAdapter implements ClientAdapter {
   async writeMemory(projectDir: string, content: string): Promise<void> {
     const filePath = path.join(projectDir, this.getMemoryFileName());
     await fs.mkdir(path.dirname(filePath), { recursive: true }).catch(() => {});
-    await fs.writeFile(filePath, content, "utf-8");
+    await atomicWriteFile(filePath, content);
   }
 
   // --- Private helpers ---

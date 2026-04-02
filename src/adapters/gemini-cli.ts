@@ -3,6 +3,7 @@ import path from "path";
 import type { ClientAdapter, McpServer, Agent, Skill, Permissions, Models, Prompts, Credentials } from "../types.js";
 import { firstExistingPath, homeDir, firstExistingScopedPath } from "../platform-paths.js";
 import type { ConfigScope } from "../platform-paths.js";
+import { atomicWriteFile } from "../fs-utils.js";
 
 function scopeWeight(scope: ConfigScope): number {
   if (scope === "global") return 0;
@@ -29,7 +30,7 @@ function writeGeminiTo(configPath: string, resources: { models?: Models; prompts
       if (resources.prompts?.globalSystemPrompt) existing.systemInstruction = resources.prompts.globalSystemPrompt;
       const dir = path.dirname(configPath);
       await fs.mkdir(dir, { recursive: true }).catch(() => {});
-      await fs.writeFile(configPath, JSON.stringify(existing, null, 2), "utf-8");
+      await atomicWriteFile(configPath, JSON.stringify(existing, null, 2));
     });
 }
 
@@ -81,6 +82,6 @@ export class GeminiCliAdapter implements ClientAdapter {
     try { return await fs.readFile(path.join(projectDir, this.getMemoryFileName()), "utf-8"); } catch { return null; }
   }
   async writeMemory(projectDir: string, content: string): Promise<void> {
-    await fs.writeFile(path.join(projectDir, this.getMemoryFileName()), content, "utf-8");
+    await atomicWriteFile(path.join(projectDir, this.getMemoryFileName()), content);
   }
 }
