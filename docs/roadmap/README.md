@@ -15,7 +15,7 @@ This directory contains detailed documentation for each phase of the Synctax v2.
 | 5 | Team & Sharing | Planned | — | [phase-5-team-sharing.md](phase-5-team-sharing.md) |
 | 6 | Deferred / Future | Backlog | — | [phase-6-deferred.md](phase-6-deferred.md) |
 
-**Current test count (branch): 377 tests across 39 files, all passing.**
+**Current test count (branch): 433 tests across 46 files, all passing.**
 
 ## What Was Done in Phase 1.5 (Adapter Correctness)
 
@@ -37,6 +37,7 @@ Full research: [docs/research/clients.md](../research/clients.md)
 - Tabular sync output with aligned columns
 - Interactive mode status line
 - `list`/`info` deprecation → `synctax status`
+- **Fullscreen TUI** (Ink-based React dashboard): 15 components, 16 color themes, command palette, source/theme selectors, tab navigation, fullscreen buffer, toast notifications, 12 quick actions
 
 ## Current Phase 3 Progress (branch snapshot)
 

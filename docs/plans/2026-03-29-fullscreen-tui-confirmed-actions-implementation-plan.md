@@ -1,6 +1,6 @@
 # Fullscreen TUI Confirmed Actions Implementation Plan
 
-> **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
+> **ARCHIVED (April 2026):** This implementation plan is complete. The final implementation differs from this plan — it uses Ink (React for terminals) instead of raw ANSI rendering, with 15 React components, 16 themes, and a view-switching architecture. See [Fullscreen TUI Guide](../fullscreen-tui.md) for the current system.
 
 **Goal:** Ship a fullscreen no-arg TUI that confirms quick actions before execution, runs real Synctax command handlers, and falls back safely outside interactive TTY contexts.
 

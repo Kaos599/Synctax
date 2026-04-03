@@ -1,7 +1,9 @@
 # Fullscreen TUI with Confirmed Actions Design
 
+> **ARCHIVED (April 2026):** This design document describes the planning phase for the fullscreen TUI. The implementation is complete and uses Ink (React for terminals) with 16 color themes, a command palette, source/theme selectors, and fullscreen alternate buffer mode. See [Fullscreen TUI Guide](../fullscreen-tui.md) for current architecture and keyboard controls.
+
 Date: 2026-03-29
-Status: Approved in-session
+Status: **Implemented** — superseded by Ink-based TUI
 
 ## Context
 
