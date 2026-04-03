@@ -74,13 +74,13 @@ export async function statusCommand() {
 
   // 3. Sync status
   console.log(ui.format.info("\n  Client Sync Status:"));
-  let clientsChecked = 0;
-  for (const [id, clientConf] of Object.entries(config.clients)) {
-    if (!clientConf.enabled) continue;
-    const adapter = adapters[id];
-    if (!adapter) continue;
-    clientsChecked++;
 
+  const enabledClients = Object.entries(config.clients).filter(([id, conf]) => conf.enabled && adapters[id]);
+  const clientsChecked = enabledClients.length;
+
+  // Run adapter I/O in parallel to drastically improve performance when checking multiple clients
+  const syncResults = await Promise.all(enabledClients.map(async ([id]) => {
+    const adapter = adapters[id];
     try {
       const data = await adapter.read();
       let inSync = true;
@@ -99,14 +99,20 @@ export async function statusCommand() {
         else if (JSON.stringify(skill) !== JSON.stringify(data.skills[name])) { driftDetails.push(`Drift in Skill: ${name}`); inSync = false; }
       }
 
-      if (inSync) {
-        ui.success(`${adapter.name}: In Sync`, { indent: 2 });
-      } else {
-        ui.warn(`${adapter.name}: Out of Sync (${driftDetails.length} issues)`, { indent: 2 });
-        driftDetails.forEach(d => ui.dim(`      - ${d}`));
-      }
+      return { adapter, success: true, inSync, driftDetails };
     } catch (e: any) {
-      ui.error(`${adapter.name}: Error reading config (${e.message})`, { indent: 2 });
+      return { adapter, success: false, error: e.message };
+    }
+  }));
+
+  for (const res of syncResults) {
+    if (!res.success) {
+      ui.error(`${res.adapter.name}: Error reading config (${res.error})`, { indent: 2 });
+    } else if (res.inSync) {
+      ui.success(`${res.adapter.name}: In Sync`, { indent: 2 });
+    } else {
+      ui.warn(`${res.adapter.name}: Out of Sync (${res.driftDetails!.length} issues)`, { indent: 2 });
+      res.driftDetails!.forEach(d => ui.dim(`      - ${d}`));
     }
   }
 
@@ -123,22 +129,28 @@ export async function doctorCommand(options: any): Promise<boolean> {
   try {
     const config = await configManager.read();
 
-    // Check missing clients
-    for (const [id, clientConf] of Object.entries(config.clients)) {
-      if (!clientConf.enabled) continue;
+    const enabledClients = Object.entries(config.clients).filter(([id, conf]) => conf.enabled);
+
+    // Parallelize adapter.detect() calls to improve performance
+    const checkResults = await Promise.all(enabledClients.map(async ([id]) => {
       const adapter = adapters[id];
       if (!adapter) {
-        ui.error(`Adapter missing for enabled client: ${id}`);
-        healthy = false;
-        continue;
+        return { id, adapter: null, detected: false, error: `Adapter missing for enabled client: ${id}` };
       }
 
       const detected = await adapter.detect();
-      if (!detected) {
-        ui.warn(`Enabled client ${adapter.name} config not found on disk.`);
+      return { id, adapter, detected };
+    }));
+
+    for (const res of checkResults) {
+      if (res.error) {
+        ui.error(res.error);
+        healthy = false;
+      } else if (!res.detected) {
+        ui.warn(`Enabled client ${res.adapter!.name} config not found on disk.`);
         healthy = false;
       } else {
-        ui.success(`Client ${adapter.name} config found.`);
+        ui.success(`Client ${res.adapter!.name} config found.`);
       }
     }
 
@@ -163,7 +175,9 @@ export async function infoCommand() {
     headers: ["Client", "Installed", "MCPs", "Agents", "Skills"],
   });
 
-  for (const [id, adapter] of Object.entries(adapters)) {
+  const adapterEntries = Object.entries(adapters);
+  // Execute adapter.detect() and adapter.read() for all adapters in parallel to optimize startup time
+  const infoResults = await Promise.all(adapterEntries.map(async ([id, adapter]) => {
     const installed = await adapter.detect();
     let mcpCount = 0;
     let agentCount = 0;
@@ -182,12 +196,16 @@ export async function infoCommand() {
 
     const isActive = config.clients[id]?.enabled;
 
+    return { adapter, installed, mcpCount, agentCount, skillCount, isActive };
+  }));
+
+  for (const res of infoResults) {
     table.push([
-      isActive ? ui.semantic.highlight(adapter.name) : ui.semantic.muted(adapter.name),
-      installed ? ui.semantic.success("Yes") : ui.semantic.error("No"),
-      `${mcpCount} MCP${mcpCount !== 1 ? "s" : ""}`,
-      `${agentCount} Agent${agentCount !== 1 ? "s" : ""}`,
-      `${skillCount} Skill${skillCount !== 1 ? "s" : ""}`
+      res.isActive ? ui.semantic.highlight(res.adapter.name) : ui.semantic.muted(res.adapter.name),
+      res.installed ? ui.semantic.success("Yes") : ui.semantic.error("No"),
+      `${res.mcpCount} MCP${res.mcpCount !== 1 ? "s" : ""}`,
+      `${res.agentCount} Agent${res.agentCount !== 1 ? "s" : ""}`,
+      `${res.skillCount} Skill${res.skillCount !== 1 ? "s" : ""}`
     ]);
   }
 
