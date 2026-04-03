@@ -38,21 +38,33 @@ export async function syncCommand(options: { dryRun?: boolean, interactive?: boo
     await configManager.backup();
   }
 
-  for (const [id, clientConf] of Object.entries(config.clients)) {
-    if (!clientConf.enabled) continue;
+  // ⚡ Bolt Optimization: Parallelize configuration writes across all active adapters to reduce total sync latency
+  const results = await Promise.all(Object.entries(config.clients).map(async ([id, clientConf]) => {
+    if (!clientConf.enabled) return null;
 
     const adapter = adapters[id];
-    if (!adapter) continue;
+    if (!adapter) return null;
 
     if (options.dryRun) {
-      ui.dryRun(`Would write to ${adapter.name}`);
+      return { dryRun: true, name: adapter.name };
     } else {
       try {
         await adapter.write(resources);
-        ui.success(`Synced ${adapter.name}`);
+        return { dryRun: false, success: true, name: adapter.name };
       } catch (e: any) {
-        ui.error(`Failed to sync ${adapter.name}: ${e.message}`);
+        return { dryRun: false, success: false, name: adapter.name, error: e.message };
       }
+    }
+  }));
+
+  for (const res of results) {
+    if (!res) continue;
+    if (res.dryRun) {
+      ui.dryRun(`Would write to ${res.name}`);
+    } else if (res.success) {
+      ui.success(`Synced ${res.name}`);
+    } else {
+      ui.error(`Failed to sync ${res.name}: ${res.error}`);
     }
   }
 
@@ -86,25 +98,37 @@ export async function memorySyncCommand(options: { source?: string, dryRun?: boo
   let succeeded = 0;
   let failed = 0;
 
-  for (const [id, clientConf] of Object.entries(config.clients)) {
-    if (!clientConf.enabled || id === sourceId) continue;
+  // ⚡ Bolt Optimization: Execute memory file writes concurrently to drastically minimize overall I/O block time
+  const results = await Promise.all(Object.entries(config.clients).map(async ([id, clientConf]) => {
+    if (!clientConf.enabled || id === sourceId) return null;
 
     const adapter = adapters[id];
-    if (!adapter) continue;
+    if (!adapter) return null;
 
     const targetFileName = adapter.getMemoryFileName();
     if (options.dryRun) {
-      ui.dryRun(`Would sync ${sourceFileName} -> ${targetFileName}`);
-      succeeded++;
+      return { dryRun: true, targetFileName };
     } else {
       try {
         await adapter.writeMemory(cwd, sourceContent);
-        ui.success(`Synced to ${targetFileName}`);
-        succeeded++;
+        return { dryRun: false, success: true, targetFileName };
       } catch (e: any) {
-        ui.error(`Failed to sync to ${targetFileName}: ${e.message}`);
-        failed++;
+        return { dryRun: false, success: false, targetFileName, error: e.message };
       }
+    }
+  }));
+
+  for (const res of results) {
+    if (!res) continue;
+    if (res.dryRun) {
+      ui.dryRun(`Would sync ${sourceFileName} -> ${res.targetFileName}`);
+      succeeded++;
+    } else if (res.success) {
+      ui.success(`Synced to ${res.targetFileName}`);
+      succeeded++;
+    } else {
+      ui.error(`Failed to sync to ${res.targetFileName}: ${res.error}`);
+      failed++;
     }
   }
 

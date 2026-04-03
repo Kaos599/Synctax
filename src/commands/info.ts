@@ -75,16 +75,16 @@ export async function statusCommand() {
   // 3. Sync status
   console.log(ui.format.info("\n  Client Sync Status:"));
   let clientsChecked = 0;
-  for (const [id, clientConf] of Object.entries(config.clients)) {
-    if (!clientConf.enabled) continue;
+  // ⚡ Bolt Optimization: Parallelize adapter file reads across clients to drastically speed up sync status checks
+  const results = await Promise.all(Object.entries(config.clients).map(async ([id, clientConf]) => {
+    if (!clientConf.enabled) return null;
     const adapter = adapters[id];
-    if (!adapter) continue;
-    clientsChecked++;
+    if (!adapter) return null;
 
     try {
       const data = await adapter.read();
       let inSync = true;
-      let driftDetails = [];
+      let driftDetails: string[] = [];
 
       for (const [name, server] of Object.entries(mcps)) {
         if (!data.mcps[name]) { driftDetails.push(`Missing MCP: ${name}`); inSync = false; }
@@ -99,14 +99,24 @@ export async function statusCommand() {
         else if (JSON.stringify(skill) !== JSON.stringify(data.skills[name])) { driftDetails.push(`Drift in Skill: ${name}`); inSync = false; }
       }
 
-      if (inSync) {
-        ui.success(`${adapter.name}: In Sync`, { indent: 2 });
-      } else {
-        ui.warn(`${adapter.name}: Out of Sync (${driftDetails.length} issues)`, { indent: 2 });
-        driftDetails.forEach(d => ui.dim(`      - ${d}`));
-      }
+      return { adapterName: adapter.name, success: true, inSync, driftDetails };
     } catch (e: any) {
-      ui.error(`${adapter.name}: Error reading config (${e.message})`, { indent: 2 });
+      return { adapterName: adapter.name, success: false, error: e.message };
+    }
+  }));
+
+  for (const res of results) {
+    if (!res) continue;
+    clientsChecked++;
+    if (res.success) {
+      if (res.inSync) {
+        ui.success(`${res.adapterName}: In Sync`, { indent: 2 });
+      } else {
+        ui.warn(`${res.adapterName}: Out of Sync (${res.driftDetails!.length} issues)`, { indent: 2 });
+        res.driftDetails!.forEach((d: string) => ui.dim(`      - ${d}`));
+      }
+    } else {
+      ui.error(`${res.adapterName}: Error reading config (${res.error})`, { indent: 2 });
     }
   }
 
@@ -124,21 +134,27 @@ export async function doctorCommand(options: any): Promise<boolean> {
     const config = await configManager.read();
 
     // Check missing clients
-    for (const [id, clientConf] of Object.entries(config.clients)) {
-      if (!clientConf.enabled) continue;
+    // ⚡ Bolt Optimization: Execute adapter detection concurrently across all configured clients for faster execution
+    const results = await Promise.all(Object.entries(config.clients).map(async ([id, clientConf]) => {
+      if (!clientConf.enabled) return null;
       const adapter = adapters[id];
       if (!adapter) {
-        ui.error(`Adapter missing for enabled client: ${id}`);
-        healthy = false;
-        continue;
+        return { id, missingAdapter: true };
       }
-
       const detected = await adapter.detect();
-      if (!detected) {
-        ui.warn(`Enabled client ${adapter.name} config not found on disk.`);
+      return { id, missingAdapter: false, adapterName: adapter.name, detected };
+    }));
+
+    for (const res of results) {
+      if (!res) continue;
+      if (res.missingAdapter) {
+        ui.error(`Adapter missing for enabled client: ${res.id}`);
+        healthy = false;
+      } else if (!res.detected) {
+        ui.warn(`Enabled client ${res.adapterName} config not found on disk.`);
         healthy = false;
       } else {
-        ui.success(`Client ${adapter.name} config found.`);
+        ui.success(`Client ${res.adapterName} config found.`);
       }
     }
 
@@ -163,7 +179,8 @@ export async function infoCommand() {
     headers: ["Client", "Installed", "MCPs", "Agents", "Skills"],
   });
 
-  for (const [id, adapter] of Object.entries(adapters)) {
+  // ⚡ Bolt Optimization: Parallelize adapter detection and reading to significantly speed up info gathering
+  const rows = await Promise.all(Object.entries(adapters).map(async ([id, adapter]) => {
     const installed = await adapter.detect();
     let mcpCount = 0;
     let agentCount = 0;
@@ -182,13 +199,17 @@ export async function infoCommand() {
 
     const isActive = config.clients[id]?.enabled;
 
-    table.push([
+    return [
       isActive ? ui.semantic.highlight(adapter.name) : ui.semantic.muted(adapter.name),
       installed ? ui.semantic.success("Yes") : ui.semantic.error("No"),
       `${mcpCount} MCP${mcpCount !== 1 ? "s" : ""}`,
       `${agentCount} Agent${agentCount !== 1 ? "s" : ""}`,
       `${skillCount} Skill${skillCount !== 1 ? "s" : ""}`
-    ]);
+    ];
+  }));
+
+  for (const row of rows) {
+    table.push(row);
   }
 
   console.log(table.toString());
