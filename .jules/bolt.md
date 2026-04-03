@@ -1,0 +1,3 @@
+## 2025-04-03 - [Parallelized infoCommand and statusCommand Sync Checks]
+**Learning:** Sequential `await` statements inside a `for` loop dramatically slow down synchronous, unrelated cross-client operations. Even when adapter detection/sync checks seem fast, they bottleneck execution linearly relative to the number of clients when mapped iteratively.
+**Action:** Always wrap independent FileSystem and adapter operations (like reading client configurations or checking sync status across multiple clients) in `Promise.all` alongside `.map()` to enable parallel execution. This reduces total latency to the slowest individual operation rather than the sum of all operations.

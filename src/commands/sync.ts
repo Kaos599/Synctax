@@ -38,11 +38,11 @@ export async function syncCommand(options: { dryRun?: boolean, interactive?: boo
     await configManager.backup();
   }
 
-  for (const [id, clientConf] of Object.entries(config.clients)) {
-    if (!clientConf.enabled) continue;
+  const writePromises = Object.entries(config.clients).map(async ([id, clientConf]) => {
+    if (!clientConf.enabled) return;
 
     const adapter = adapters[id];
-    if (!adapter) continue;
+    if (!adapter) return;
 
     if (options.dryRun) {
       ui.dryRun(`Would write to ${adapter.name}`);
@@ -54,7 +54,9 @@ export async function syncCommand(options: { dryRun?: boolean, interactive?: boo
         ui.error(`Failed to sync ${adapter.name}: ${e.message}`);
       }
     }
-  }
+  });
+
+  await Promise.all(writePromises);
 
   ui.header("Sync complete!");
 }
@@ -86,11 +88,11 @@ export async function memorySyncCommand(options: { source?: string, dryRun?: boo
   let succeeded = 0;
   let failed = 0;
 
-  for (const [id, clientConf] of Object.entries(config.clients)) {
-    if (!clientConf.enabled || id === sourceId) continue;
+  const syncPromises = Object.entries(config.clients).map(async ([id, clientConf]) => {
+    if (!clientConf.enabled || id === sourceId) return;
 
     const adapter = adapters[id];
-    if (!adapter) continue;
+    if (!adapter) return;
 
     const targetFileName = adapter.getMemoryFileName();
     if (options.dryRun) {
@@ -106,7 +108,9 @@ export async function memorySyncCommand(options: { source?: string, dryRun?: boo
         failed++;
       }
     }
-  }
+  });
+
+  await Promise.all(syncPromises);
 
   if (failed > 0) {
     process.exitCode = 1;
