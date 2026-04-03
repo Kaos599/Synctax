@@ -38,7 +38,6 @@ export function App({ data, executeAction }: AppProps) {
   const [focus, setFocus] = useState<TuiFocus>("overview");
   const [statusLine, setStatusLine] = useState("Ready. Press / for commands, h for help, t for themes.");
   const [pendingAction, setPendingAction] = useState<TuiPendingAction | undefined>();
-  const [time, setTime] = useState(new Date().toLocaleTimeString());
   const [runOutput, setRunOutput] = useState<string[]>([]);
   const [lastResult, setLastResult] = useState<GuardedActionResult | undefined>();
   const [lastActionLabel, setLastActionLabel] = useState("");
@@ -61,14 +60,6 @@ export function App({ data, executeAction }: AppProps) {
   const goHome = useCallback(() => {
     setMode("dashboard");
     setStatusLine("Ready. Press / for commands, h for help, t for themes.");
-  }, []);
-
-  // Clock tick
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setTime(new Date().toLocaleTimeString());
-    }, 1000);
-    return () => clearInterval(interval);
   }, []);
 
   // Auto-dismiss toast
@@ -227,7 +218,7 @@ export function App({ data, executeAction }: AppProps) {
 
   if (mode === "running") {
     return (
-      <Shell w={termWidth} h={termHeight} data={data} source={currentSource} mode={mode} status={statusLine} time={time}>
+      <Shell w={termWidth} h={termHeight} data={data} source={currentSource} mode={mode} status={statusLine}>
         <RunningView actionLabel={lastActionLabel} output={runOutput} />
       </Shell>
     );
@@ -235,7 +226,7 @@ export function App({ data, executeAction }: AppProps) {
 
   if (mode === "result" && lastResult) {
     return (
-      <Shell w={termWidth} h={termHeight} data={data} source={currentSource} mode={mode} status={statusLine} time={time}>
+      <Shell w={termWidth} h={termHeight} data={data} source={currentSource} mode={mode} status={statusLine}>
         {toast && <Toast message={toast.message} type={toast.type} />}
         <ResultView
           actionLabel={lastActionLabel}
@@ -250,7 +241,7 @@ export function App({ data, executeAction }: AppProps) {
 
   if (mode === "confirm" && pendingAction) {
     return (
-      <Shell w={termWidth} h={termHeight} data={data} source={currentSource} mode={mode} status={statusLine} time={time}>
+      <Shell w={termWidth} h={termHeight} data={data} source={currentSource} mode={mode} status={statusLine}>
         <ConfirmView action={pendingAction} />
       </Shell>
     );
@@ -258,7 +249,7 @@ export function App({ data, executeAction }: AppProps) {
 
   if (mode === "help") {
     return (
-      <Shell w={termWidth} h={termHeight} data={data} source={currentSource} mode={mode} status={statusLine} time={time}>
+      <Shell w={termWidth} h={termHeight} data={data} source={currentSource} mode={mode} status={statusLine}>
         <HelpView />
       </Shell>
     );
@@ -266,7 +257,7 @@ export function App({ data, executeAction }: AppProps) {
 
   if (mode === "palette") {
     return (
-      <Shell w={termWidth} h={termHeight} data={data} source={currentSource} mode={mode} status={statusLine} time={time}>
+      <Shell w={termWidth} h={termHeight} data={data} source={currentSource} mode={mode} status={statusLine}>
         <CommandPalette onSelect={selectAction} onCancel={goHome} />
       </Shell>
     );
@@ -274,7 +265,7 @@ export function App({ data, executeAction }: AppProps) {
 
   if (mode === "source") {
     return (
-      <Shell w={termWidth} h={termHeight} data={data} source={currentSource} mode={mode} status={statusLine} time={time}>
+      <Shell w={termWidth} h={termHeight} data={data} source={currentSource} mode={mode} status={statusLine}>
         <SourceSelector
           currentSource={currentSource}
           onSelect={(selectedId) => {
@@ -303,7 +294,7 @@ export function App({ data, executeAction }: AppProps) {
 
   if (mode === "theme") {
     return (
-      <Shell w={termWidth} h={termHeight} data={data} source={currentSource} mode={mode} status={statusLine} time={time}>
+      <Shell w={termWidth} h={termHeight} data={data} source={currentSource} mode={mode} status={statusLine}>
         <ThemeSelector
           currentTheme={currentTheme}
           onSelect={(name) => {
@@ -356,7 +347,7 @@ export function App({ data, executeAction }: AppProps) {
       </Box>
 
       <Separator />
-      <StatusBar mode={mode} statusLine={statusLine} time={time} />
+      <StatusBar mode={mode} statusLine={statusLine} />
     </Box>
   );
 }
@@ -369,11 +360,10 @@ interface ShellProps {
   source: string;
   mode: TuiMode;
   status: string;
-  time: string;
   children: React.ReactNode;
 }
 
-function Shell({ w, h, data, source, mode, status, time, children }: ShellProps) {
+function Shell({ w, h, data, source, mode, status, children }: ShellProps) {
   return (
     <Box flexDirection="column" width={w} height={h}>
       <Header version={data.version} profile={data.profile} source={source} health={data.health} />
@@ -382,7 +372,7 @@ function Shell({ w, h, data, source, mode, status, time, children }: ShellProps)
         {children}
       </Box>
       <Separator />
-      <StatusBar mode={mode} statusLine={status} time={time} />
+      <StatusBar mode={mode} statusLine={status} />
     </Box>
   );
 }

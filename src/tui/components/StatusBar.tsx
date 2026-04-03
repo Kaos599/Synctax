@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useEffect, useState } from "react";
 import { Box, Text } from "ink";
 import { colors, chars } from "../theme.js";
 import type { TuiMode } from "../ink-types.js";
@@ -6,7 +6,6 @@ import type { TuiMode } from "../ink-types.js";
 export interface StatusBarProps {
   mode: TuiMode;
   statusLine: string;
-  time: string;
 }
 
 function ModeIndicator({ mode }: { mode: TuiMode }) {
@@ -29,8 +28,23 @@ function ModeIndicator({ mode }: { mode: TuiMode }) {
   );
 }
 
-export function StatusBar({ mode, statusLine, time }: StatusBarProps) {
+export function StatusBar({ mode, statusLine }: StatusBarProps) {
   const isSubView = mode !== "dashboard";
+  const [time, setTime] = useState("");
+
+  useEffect(() => {
+    if (process.platform === "win32") {
+      setTime("");
+      return;
+    }
+
+    setTime(new Date().toLocaleTimeString());
+    const interval = setInterval(() => {
+      setTime(new Date().toLocaleTimeString());
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, []);
 
   return (
     <Box paddingX={1} justifyContent="space-between">
@@ -58,7 +72,7 @@ export function StatusBar({ mode, statusLine, time }: StatusBarProps) {
         <Text color={colors.textMuted}>
           <Text color={colors.hotkey}>[q]</Text> quit
         </Text>
-        <Text color={colors.textMuted}>{time}</Text>
+        {!!time && <Text color={colors.textMuted}>{time}</Text>}
       </Box>
     </Box>
   );
