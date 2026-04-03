@@ -13,6 +13,7 @@ import {
 } from "../platform-paths.js";
 import { splitByScope } from "../scopes.js";
 import { atomicWriteFile } from "../fs-utils.js";
+import { toArray, toBool } from "../coerce.js";
 
 type CandidateScope = "global" | "user" | "project";
 
@@ -40,7 +41,7 @@ function mergeMcpsFromSettingsJson(parsed: Record<string, unknown>, into: Record
     if (val.url) {
       into[key] = {
         command: val.command || "",
-        args: val.args,
+        args: toArray(val.args),
         env: val.env,
         url: val.url,
         transport: val.type || "http",
@@ -48,7 +49,7 @@ function mergeMcpsFromSettingsJson(parsed: Record<string, unknown>, into: Record
         scope,
       };
     } else if (typeof val.command === "string") {
-      into[key] = { command: val.command, args: val.args, env: val.env, scope };
+      into[key] = { command: val.command, args: toArray(val.args), env: val.env, scope };
     }
   }
 }
@@ -61,7 +62,7 @@ function mergeMcpsFromMcpJson(parsed: Record<string, unknown>, into: Record<stri
     if (val.url) {
       into[key] = {
         command: val.command || "",
-        args: val.args,
+        args: toArray(val.args),
         env: val.env,
         url: val.url,
         transport: val.type || "http",
@@ -69,7 +70,7 @@ function mergeMcpsFromMcpJson(parsed: Record<string, unknown>, into: Record<stri
         scope,
       };
     } else if (typeof val.command === "string") {
-      into[key] = { command: val.command, args: val.args, env: val.env, scope };
+      into[key] = { command: val.command, args: toArray(val.args), env: val.env, scope };
     }
   }
 }
@@ -239,9 +240,9 @@ export class GithubCopilotAdapter implements ClientAdapter {
         description: data.description,
         prompt: content,
         model: data.model,
-        tools: data.tools,
-        mcpServers: data["mcp-servers"],
-        userInvocable: data["user-invocable"],
+        tools: toArray(data.tools),
+        mcpServers: Array.isArray(data["mcp-servers"]) ? data["mcp-servers"] : (typeof data["mcp-servers"] === "object" && data["mcp-servers"] ? data["mcp-servers"] : undefined),
+        userInvocable: toBool(data["user-invocable"]),
         scope,
       };
     }
@@ -273,10 +274,10 @@ export class GithubCopilotAdapter implements ClientAdapter {
             argumentHint: data["argument-hint"],
             disableModelInvocation: data["disable-model-invocation"],
             userInvocable: data["user-invocable"],
-            allowedTools: data["allowed-tools"],
+            allowedTools: toArray(data["allowed-tools"]),
             model: data.model,
             effort: data.effort,
-            context: data.context,
+            context: toArray(data.context),
             agent: data.agent,
             hooks: data.hooks,
             scope,

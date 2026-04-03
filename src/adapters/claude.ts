@@ -5,6 +5,7 @@ import { parseFrontmatter, serializeFrontmatter } from "../frontmatter.js";
 import { homeDir } from "../platform-paths.js";
 import { assertSafeResourceName } from "../resource-name.js";
 import { atomicWriteFile } from "../fs-utils.js";
+import { toArray, toBool, toNum } from "../coerce.js";
 
 function stripScope<T extends { scope?: ResourceScope }>(item: T): Omit<T, "scope"> {
   const { scope: _scope, ...rest } = item;
@@ -30,9 +31,9 @@ function fromClaudePermissions(settings: any): Permissions {
   const perms = settings?.permissions || {};
   return {
     ...emptyPermissions(),
-    allow: perms.allow || [],
-    deny: perms.deny || [],
-    ask: perms.ask || [],
+    allow: toArray(perms.allow) || [],
+    deny: toArray(perms.deny) || [],
+    ask: toArray(perms.ask) || [],
   };
 }
 
@@ -65,7 +66,7 @@ export class ClaudeAdapter implements ClientAdapter {
 
   private get home() { return homeDir(); }
 
-  // --- MCP file locations (NOT settings.json) ---
+  // --- MCP file locations ---
   private get projectMcpPath() { return path.join(process.cwd(), ".mcp.json"); }
   private get userMcpPath() { return path.join(this.home, ".claude.json"); }
 
@@ -85,7 +86,9 @@ export class ClaudeAdapter implements ClientAdapter {
     return (
       await fileExists(this.userSettingsPath) ||
       await fileExists(this.userMcpPath) ||
-      await fileExists(this.projectMcpPath)
+      await fileExists(this.projectMcpPath) ||
+      await fileExists(this.userAgentsDir) ||
+      await fileExists(this.userSkillsDir)
     );
   }
 
@@ -112,15 +115,22 @@ export class ClaudeAdapter implements ClientAdapter {
       permissions: emptyPermissions(),
     };
 
-    // --- Read MCPs from .mcp.json (project) and ~/.claude.json (user) ---
+    // --- Read MCPs from all sources (user < project < local precedence) ---
     await this.readMcpsFromFile(this.userMcpPath, "user", result.mcps);
-    await this.readMcpsFromFile(this.projectMcpPath, "project", result.mcps); // project overrides user
+    await this.readMcpsFromFile(this.projectMcpPath, "project", result.mcps);
 
-    // --- Read settings (permissions, model) from settings.json ---
+    // --- Read settings (permissions, model, MCPs) from settings.json ---
     // Merge: user < project < local (higher precedence overwrites)
     const userSettings = await readJsonSafe(this.userSettingsPath);
     const projectSettings = await readJsonSafe(this.projectSettingsPath);
     const localSettings = await readJsonSafe(this.localSettingsPath);
+
+    // MCPs from settings.json (user-level) — many users store MCPs here
+    await this.readMcpsFromSettings(this.userSettingsPath, "user", result.mcps);
+    // MCPs from settings.json (project-level) — overrides user
+    await this.readMcpsFromSettings(this.projectSettingsPath, "project", result.mcps);
+    // MCPs from settings.local.json — highest precedence
+    await this.readMcpsFromSettings(this.localSettingsPath, "local", result.mcps);
 
     // Permissions come from the highest-precedence settings file that has them
     const settingsChain = [userSettings, projectSettings, localSettings];
@@ -272,7 +282,28 @@ export class ClaudeAdapter implements ClientAdapter {
     for (const [key, val] of Object.entries<any>(mcpServers)) {
       target[key] = {
         command: val.command || "",
-        args: val.args,
+        args: toArray(val.args),
+        env: val.env,
+        transport: val.transport || (val.url ? (val.type || "http") : val.type),
+        url: val.url,
+        headers: val.headers,
+        cwd: val.cwd,
+        scope,
+      };
+    }
+  }
+
+  private async readMcpsFromSettings(
+    filePath: string,
+    scope: ResourceScope,
+    target: Record<string, McpServer>
+  ): Promise<void> {
+    const settings = await readJsonSafe(filePath);
+    const mcpServers = settings.mcpServers || {};
+    for (const [key, val] of Object.entries<any>(mcpServers)) {
+      target[key] = {
+        command: val.command || "",
+        args: toArray(val.args),
         env: val.env,
         transport: val.transport || (val.url ? (val.type || "http") : val.type),
         url: val.url,
@@ -303,17 +334,17 @@ export class ClaudeAdapter implements ClientAdapter {
         description: data.description,
         prompt: content,
         model: data.model,
-        tools: data.tools,
-        disallowedTools: data.disallowedTools,
+        tools: toArray(data.tools),
+        disallowedTools: toArray(data.disallowedTools),
         permissionMode: data.permissionMode,
-        maxTurns: data.maxTurns,
-        mcpServers: data.mcpServers,
+        maxTurns: toNum(data.maxTurns),
+        mcpServers: Array.isArray(data.mcpServers) ? data.mcpServers : (typeof data.mcpServers === "object" && data.mcpServers ? data.mcpServers : undefined),
         hooks: data.hooks,
-        memory: data.memory,
-        background: data.background,
+        memory: toArray(data.memory),
+        background: toBool(data.background),
         effort: data.effort,
-        isolation: data.isolation,
-        userInvocable: data.userInvocable,
+        isolation: toBool(data.isolation),
+        userInvocable: toBool(data.userInvocable),
         scope,
       };
     }
@@ -344,12 +375,12 @@ export class ClaudeAdapter implements ClientAdapter {
             content,
             trigger: data.trigger,
             argumentHint: data["argument-hint"],
-            disableModelInvocation: data["disable-model-invocation"],
-            userInvocable: data["user-invocable"],
-            allowedTools: data["allowed-tools"],
+            disableModelInvocation: toBool(data["disable-model-invocation"]),
+            userInvocable: toBool(data["user-invocable"]),
+            allowedTools: toArray(data["allowed-tools"]),
             model: data.model,
             effort: data.effort,
-            context: data.context,
+            context: toArray(data.context),
             agent: data.agent,
             hooks: data.hooks,
             scope,

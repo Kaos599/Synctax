@@ -6,6 +6,7 @@ import { parseFrontmatter } from "../frontmatter.js";
 import { assertSafeResourceName } from "../resource-name.js";
 import { splitByScope } from "../scopes.js";
 import { atomicWriteFile } from "../fs-utils.js";
+import { toArray } from "../coerce.js";
 
 import type { Permissions, Models, Prompts, Credentials } from "../types.js";
 
@@ -148,7 +149,7 @@ export class CursorAdapter implements ClientAdapter {
       const parsed = JSON.parse(data);
       const mcpServers = parsed.mcpServers || {};
       for (const [key, val] of Object.entries<any>(mcpServers)) {
-        target[key] = { command: val.command, args: val.args, env: val.env, scope };
+        target[key] = { command: val.command, args: toArray(val.args), env: val.env, scope };
       }
     } catch (e: any) {}
   }
@@ -195,10 +196,10 @@ export class CursorAdapter implements ClientAdapter {
             argumentHint: data["argument-hint"],
             disableModelInvocation: data["disable-model-invocation"],
             userInvocable: data["user-invocable"],
-            allowedTools: data["allowed-tools"],
+            allowedTools: toArray(data["allowed-tools"]),
             model: data.model,
             effort: data.effort,
-            context: data.context,
+            context: toArray(data.context),
             agent: data.agent,
             hooks: data.hooks,
             scope,

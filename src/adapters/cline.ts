@@ -5,6 +5,7 @@ import { homeDir, xdgStyleConfigCandidates, firstExistingScopedPath, firstExisti
 import type { ConfigScope } from "../platform-paths.js";
 import { splitByScope } from "../scopes.js";
 import { atomicWriteFile } from "../fs-utils.js";
+import { toArray } from "../coerce.js";
 
 function scopeWeight(scope: ConfigScope): number {
   if (scope === "global") return 0;
@@ -21,7 +22,7 @@ function mergeMcpServers(parsed: Record<string, any>, into: Record<string, McpSe
   const mcpServers = parsed.mcpServers || {};
   for (const [key, val] of Object.entries<any>(mcpServers)) {
     if (val && typeof val === "object" && typeof val.command === "string") {
-      into[key] = { command: val.command, args: val.args, env: val.env, scope };
+      into[key] = { command: val.command, args: toArray(val.args), env: val.env, scope };
     }
   }
 }

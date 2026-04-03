@@ -6,6 +6,7 @@ import { splitByScope } from "../scopes.js";
 import { parseFrontmatter, serializeFrontmatter } from "../frontmatter.js";
 import { assertSafeResourceName } from "../resource-name.js";
 import { atomicWriteFile } from "../fs-utils.js";
+import { toArray } from "../coerce.js";
 
 function stripScope<T extends { scope?: ResourceScope }>(item: T): Omit<T, "scope"> {
   const { scope: _scope, ...rest } = item;
@@ -88,7 +89,7 @@ export class GithubCopilotCliAdapter implements ClientAdapter {
       if (val && typeof val === "object" && typeof val.command === "string") {
         result.mcps[key] = {
           command: val.command,
-          args: val.args,
+          args: toArray(val.args),
           env: val.env,
           scope: "user",
         };
@@ -114,13 +115,13 @@ export class GithubCopilotCliAdapter implements ClientAdapter {
     if (hasPerms(userConfig) || hasPerms(projectConfig)) {
       const perms = emptyPermissions();
       // User-level first
-      if (userConfig.allowed_urls) perms.allowedUrls = userConfig.allowed_urls;
-      if (userConfig.denied_urls) perms.deniedUrls = userConfig.denied_urls;
-      if (userConfig.trusted_folders) perms.trustedFolders = userConfig.trusted_folders;
+      if (userConfig.allowed_urls) perms.allowedUrls = toArray(userConfig.allowed_urls) || [];
+      if (userConfig.denied_urls) perms.deniedUrls = toArray(userConfig.denied_urls) || [];
+      if (userConfig.trusted_folders) perms.trustedFolders = toArray(userConfig.trusted_folders) || [];
       // Project-level overrides
-      if (projectConfig.allowed_urls) perms.allowedUrls = projectConfig.allowed_urls;
-      if (projectConfig.denied_urls) perms.deniedUrls = projectConfig.denied_urls;
-      if (projectConfig.trusted_folders) perms.trustedFolders = projectConfig.trusted_folders;
+      if (projectConfig.allowed_urls) perms.allowedUrls = toArray(projectConfig.allowed_urls) || [];
+      if (projectConfig.denied_urls) perms.deniedUrls = toArray(projectConfig.denied_urls) || [];
+      if (projectConfig.trusted_folders) perms.trustedFolders = toArray(projectConfig.trusted_folders) || [];
       result.permissions = perms;
     }
 
@@ -250,7 +251,7 @@ export class GithubCopilotCliAdapter implements ClientAdapter {
         description: data.description,
         prompt: content,
         model: data.model,
-        tools: data.tools,
+        tools: toArray(data.tools),
         scope,
       };
     }

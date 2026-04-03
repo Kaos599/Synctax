@@ -3,6 +3,7 @@ import path from "path";
 import type { ClientAdapter, McpServer, Agent, Skill, Permissions, Models, Prompts, Credentials, ResourceScope } from "../types.js";
 import { firstExistingPath, homeDir, zedSettingsCandidates } from "../platform-paths.js";
 import { atomicWriteFile } from "../fs-utils.js";
+import { toArray } from "../coerce.js";
 
 function stripScope<T extends { scope?: ResourceScope }>(item: T): Omit<T, "scope"> {
   const { scope: _scope, ...rest } = item;
@@ -44,7 +45,7 @@ export class ZedAdapter implements ClientAdapter {
       const parsed = JSON.parse(data);
       const mcpServers = parsed.context_servers || {};
       for (const [key, val] of Object.entries<any>(mcpServers)) {
-        result.mcps[key] = { command: val.command, args: val.args, env: val.env };
+        result.mcps[key] = { command: val.command, args: toArray(val.args), env: val.env };
       }
     } catch (e: any) {}
 

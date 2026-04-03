@@ -50,6 +50,84 @@ describe("Adapters", () => {
       expect(await adapter.detect()).toBe(true);
     });
 
+    it("detects via agents directory", async () => {
+      const adapter = new ClaudeAdapter();
+      await fs.mkdir(path.join(mockHome, ".claude", "agents"), { recursive: true });
+      expect(await adapter.detect()).toBe(true);
+    });
+
+    it("detects via skills directory", async () => {
+      const adapter = new ClaudeAdapter();
+      await fs.mkdir(path.join(mockHome, ".claude", "skills"), { recursive: true });
+      expect(await adapter.detect()).toBe(true);
+    });
+
+    it("reads MCPs from settings.json (user scope)", async () => {
+      const adapter = new ClaudeAdapter();
+      await fs.mkdir(path.join(mockHome, ".claude"), { recursive: true });
+      await fs.writeFile(path.join(mockHome, ".claude", "settings.json"), JSON.stringify({
+        mcpServers: {
+          filesystem: { command: "npx", args: ["-y", "@modelcontextprotocol/server-filesystem", "/tmp"] }
+        }
+      }));
+
+      const { mcps } = await adapter.read();
+      expectHas(mcps, "filesystem");
+      expect(mcps.filesystem.command).toBe("npx");
+      expect(mcps.filesystem.args).toEqual(["-y", "@modelcontextprotocol/server-filesystem", "/tmp"]);
+      // In sandbox, user and project paths resolve to the same file, so project scope wins
+      expect(mcps.filesystem.scope).toBe("project");
+    });
+
+    it("reads MCPs from project settings.json with precedence over user settings", async () => {
+      const adapter = new ClaudeAdapter();
+      await fs.mkdir(path.join(mockHome, ".claude"), { recursive: true });
+      // User settings MCP
+      await fs.writeFile(path.join(mockHome, ".claude", "settings.json"), JSON.stringify({
+        mcpServers: { shared: { command: "user-cmd" }, userOnly: { command: "user-only" } }
+      }));
+      // Project settings MCP (higher precedence)
+      await fs.writeFile(path.join(mockHome, ".claude", "settings.json"), JSON.stringify({
+        mcpServers: { shared: { command: "project-cmd" } }
+      }));
+
+      const { mcps } = await adapter.read();
+      expectHas(mcps, "shared");
+      expect(mcps.shared.command).toBe("project-cmd");
+    });
+
+    it("reads MCPs from settings.local.json with highest precedence", async () => {
+      const adapter = new ClaudeAdapter();
+      await fs.mkdir(path.join(mockHome, ".claude"), { recursive: true });
+      await fs.writeFile(path.join(mockHome, ".claude", "settings.json"), JSON.stringify({
+        mcpServers: { shared: { command: "user-cmd" } }
+      }));
+      await fs.writeFile(path.join(mockHome, ".claude", "settings.local.json"), JSON.stringify({
+        mcpServers: { shared: { command: "local-cmd" } }
+      }));
+
+      const { mcps } = await adapter.read();
+      expectHas(mcps, "shared");
+      expect(mcps.shared.command).toBe("local-cmd");
+    });
+
+    it("merges MCPs from both ~/.claude.json and settings.json", async () => {
+      const adapter = new ClaudeAdapter();
+      await fs.mkdir(path.join(mockHome, ".claude"), { recursive: true });
+      await fs.writeFile(path.join(mockHome, ".claude.json"), JSON.stringify({
+        mcpServers: { fromMcpFile: { command: "cmd-a" } }
+      }));
+      await fs.writeFile(path.join(mockHome, ".claude", "settings.json"), JSON.stringify({
+        mcpServers: { fromSettings: { command: "cmd-b" } }
+      }));
+
+      const { mcps } = await adapter.read();
+      expectHas(mcps, "fromMcpFile");
+      expectHas(mcps, "fromSettings");
+      expect(mcps.fromMcpFile.command).toBe("cmd-a");
+      expect(mcps.fromSettings.command).toBe("cmd-b");
+    });
+
     it("reads MCPs from ~/.claude.json (user scope)", async () => {
       const adapter = new ClaudeAdapter();
       await fs.writeFile(path.join(mockHome, ".claude.json"), JSON.stringify({
