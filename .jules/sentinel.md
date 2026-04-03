@@ -1,0 +1,4 @@
+## 2025-04-03 - [CRITICAL] Path Traversal in Configuration Adapters
+**Vulnerability:** User-provided keys (e.g., agent names, skill names) in `config.json` were used directly in `path.join()` across multiple adapters (`claude.ts` and `cursor.ts`). If a key contained traversal sequences like `../../`, files could be written outside intended `.claude` or `.cursor` directories.
+**Learning:** Even internal configuration structures must be treated as untrusted input if they are used to perform OS-level actions like file system writes, especially in sync tools that merge configs from multiple sources.
+**Prevention:** Always sanitize dynamically constructed file system paths from object keys or names using `path.basename()` before passing them to `path.join()` or `fs` functions.
