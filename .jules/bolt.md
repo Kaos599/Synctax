@@ -1,0 +1,3 @@
+## 2025-01-20 - Parallelize sequential I/O in commands
+**Learning:** Sequential `await` loops for independent file system and adapter I/O operations (like config reads/writes, adapter detections) can drastically slow down CLI execution speed. This is particularly relevant when iterating over multiple adapters.
+**Action:** Always use `Promise.all` to parallelize independent I/O operations across adapters to improve execution speed. Maintain sequential output processing by awaiting the `Promise.all` results and then iterating over them synchronously.
