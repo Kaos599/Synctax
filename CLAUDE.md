@@ -104,7 +104,7 @@ src/
       StatusBar.tsx             # Mode indicator, status line, keyboard hints, clock
       ConfirmModal.tsx          # Confirmation view
       HelpOverlay.tsx           # Keyboard reference view
-      CommandPalette.tsx        # Searchable command palette with TextInput
+      CommandPalette.tsx        # Searchable command palette with ↑↓ navigation and scrolling viewport
       SourceSelector.tsx        # Adapter picker with @inkjs/ui Select
       ThemeSelector.tsx         # Theme picker with @inkjs/ui Select (16 themes)
       RunningView.tsx           # Execution spinner + result summary

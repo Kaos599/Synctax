@@ -41,6 +41,17 @@ The TUI activates automatically when both stdin/stdout are TTY and the terminal 
 | `Shift+Tab` | Move focus to previous panel |
 | `q` or `Ctrl-C` | Quit |
 
+### Command Palette (`/`)
+
+| Key | Action |
+|-----|--------|
+| `↑` / `↓` | Navigate through commands (wraps around) |
+| `Enter` | Confirm highlighted command |
+| `Esc` | Go back to dashboard |
+| Type | Filter commands by name, ID, or preview |
+
+The palette displays up to 12 commands at a time with a scrolling viewport. When there are more commands above or below, indicators show how many are hidden. A position counter (`3/22`) is shown in the footer.
+
 ### All Sub-Views (Confirm, Help, Palette, Source, Theme)
 
 | Key | Action |
@@ -116,7 +127,7 @@ The TUI uses **view switching** — each mode replaces the content area entirely
 | **Running** | Enter on confirm | Spinner + live output capture |
 | **Result** | Action completes | Success/error summary |
 | **Help** | `h` or `?` | Full keyboard reference |
-| **Palette** | `/` | Searchable command filter with TextInput |
+| **Palette** | `/` | Searchable command list with ↑↓ navigation and scrolling viewport |
 | **Source** | `s` | Adapter selector using @inkjs/ui Select |
 | **Theme** | `t` | Theme picker using @inkjs/ui Select |
 
@@ -129,7 +140,7 @@ src/tui/
   theme.ts                16-theme design system with Proxy-based runtime switching
   entry.ts                No-arg routing (fullscreen vs fallback)
   data.ts                 Dashboard data hydration from ConfigManager
-  actions.ts              12 action definitions + command dispatch
+  actions.ts              22 action definitions (12 hotkey + 10 palette-only) + command dispatch
   executor.ts             Guarded output capture for in-TUI execution
   state.ts                Pure key reducer (used by tests)
   runtime-context.ts      Runtime context type for action execution
