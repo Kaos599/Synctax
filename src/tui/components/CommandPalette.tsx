@@ -63,11 +63,14 @@ export function CommandPalette({ onSelect, onCancel }: CommandPaletteProps) {
         ) : (
           filtered.slice(0, 12).map((action, i) => (
             <Box key={action.id}>
-              <Box width={4}>
+              <Box width={5}>
                 <Text color={i === 0 ? colors.info : colors.textMuted}>
                   {i === 0 ? chars.arrow : " "}
                 </Text>
-                <Text color={colors.hotkey}>[{action.hotkey}]</Text>
+                {action.hotkey
+                  ? <Text color={colors.hotkey}>[{action.hotkey}]</Text>
+                  : <Text color={colors.textMuted}>   </Text>
+                }
               </Box>
               <Box width={14}>
                 <Text color={i === 0 ? colors.text : colors.textSecondary} bold={i === 0}>

@@ -1,3 +1,4 @@
+import os from "os";
 import type { TuiFocus } from "./ink-types.js";
 import * as commands from "../commands.js";
 import type { TuiRuntimeContext } from "./runtime-context.js";
@@ -187,7 +188,8 @@ const TUI_HOTKEY_DEFINITIONS: ReadonlyArray<TuiActionDefinition> = [
     hint: "Exports to ~/.synctax/export.json. For a custom path, run from CLI: synctax export <file>",
     focus: "actions",
     async execute() {
-      await commands.exportCommand("~/.synctax/export.json");
+      const synctaxHome = process.env.SYNCTAX_HOME || os.homedir();
+      await commands.exportCommand(`${synctaxHome}/.synctax/export.json`);
     },
   },
 ];
