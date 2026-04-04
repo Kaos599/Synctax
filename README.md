@@ -6,10 +6,10 @@
 <p align="center">Configure once. Sync your MCP servers, agents, skills, and permissions to every AI tool you use.</p>
 
 <p align="center">
-  <img alt="version" src="https://img.shields.io/badge/version-0.1.0-brightgreen" />
-  <img alt="license" src="https://img.shields.io/badge/license-MIT-blue" />
+  <a href="https://github.com/Kaos599/Synctax/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/Kaos599/Synctax/actions/workflows/ci.yml/badge.svg" /></a>
+  <img alt="version" src="https://img.shields.io/github/package-json/v/Kaos599/Synctax?color=brightgreen" />
+  <img alt="license" src="https://img.shields.io/github/license/Kaos599/Synctax?color=blue" />
   <img alt="runtime" src="https://img.shields.io/badge/runtime-bun-orange" />
-  <img alt="tests" src="https://img.shields.io/badge/tests-444%20passing-purple" />
   <img alt="clients" src="https://img.shields.io/badge/clients-9%20supported-lightgrey" />
 </p>
 
