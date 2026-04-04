@@ -2,6 +2,8 @@ import fs from "fs/promises";
 import path from "path";
 import type { ClientAdapter, McpServer, Agent, Skill, Permissions, Models, Prompts, Credentials, ResourceScope } from "../types.js";
 import { firstExistingPath, homeDir, zedSettingsCandidates } from "../platform-paths.js";
+import { atomicWriteFile } from "../fs-utils.js";
+import { toArray } from "../coerce.js";
 
 function stripScope<T extends { scope?: ResourceScope }>(item: T): Omit<T, "scope"> {
   const { scope: _scope, ...rest } = item;
@@ -43,7 +45,7 @@ export class ZedAdapter implements ClientAdapter {
       const parsed = JSON.parse(data);
       const mcpServers = parsed.context_servers || {};
       for (const [key, val] of Object.entries<any>(mcpServers)) {
-        result.mcps[key] = { command: val.command, args: val.args, env: val.env };
+        result.mcps[key] = { command: val.command, args: toArray(val.args), env: val.env };
       }
     } catch (e: any) {}
 
@@ -58,11 +60,11 @@ export class ZedAdapter implements ClientAdapter {
     let existing: any = {};
     try { existing = JSON.parse(await fs.readFile(configPath, "utf-8")); } catch (e) {}
 
-    existing.context_servers = {};
+    existing.context_servers = existing.context_servers || {};
     for (const [key, value] of Object.entries(resources.mcps || {})) {
       existing.context_servers[key] = stripScope(value);
     }
-    await fs.writeFile(configPath, JSON.stringify(existing, null, 2), "utf-8");
+    await atomicWriteFile(configPath, JSON.stringify(existing, null, 2));
   }
 
   getMemoryFileName(): string { return ".rules"; }
@@ -70,6 +72,6 @@ export class ZedAdapter implements ClientAdapter {
     try { return await fs.readFile(path.join(projectDir, this.getMemoryFileName()), "utf-8"); } catch { return null; }
   }
   async writeMemory(projectDir: string, content: string): Promise<void> {
-    await fs.writeFile(path.join(projectDir, this.getMemoryFileName()), content, "utf-8");
+    await atomicWriteFile(path.join(projectDir, this.getMemoryFileName()), content);
   }
 }

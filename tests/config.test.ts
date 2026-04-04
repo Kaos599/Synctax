@@ -3,6 +3,7 @@ import { ConfigManager } from "../src/config.js";
 import fs from "fs/promises";
 import path from "path";
 import os from "os";
+import { createConfig, createResources } from "./test-helpers.js";
 
 describe("ConfigManager", () => {
   let mockHome: string;
@@ -26,14 +27,14 @@ describe("ConfigManager", () => {
 
   it("writes and reads config properly", async () => {
     const manager = new ConfigManager();
-    await manager.write({
+    await manager.write(createConfig({
       version: 1,
       source: "claude",
       clients: {
         "claude": { enabled: true },
       },
-      resources: { mcps: {} },
-    });
+      resources: createResources({ mcps: {} }),
+    }));
 
     const config = await manager.read();
     expect(config.source).toBe("claude");
@@ -44,12 +45,12 @@ describe("ConfigManager", () => {
     const manager = new ConfigManager();
     expect(await manager.getTheme()).toBe("rebel");
 
-    await manager.write({
+    await manager.write(createConfig({
       version: 1,
       theme: "cyber",
       clients: {},
-      resources: { mcps: {} },
-    });
+      resources: createResources({ mcps: {} }),
+    }));
 
     expect(await manager.getTheme()).toBe("cyber");
   });
@@ -58,7 +59,7 @@ describe("ConfigManager", () => {
     const manager = new ConfigManager();
     const configDir = path.join(mockHome, ".synctax");
     await fs.mkdir(configDir, { recursive: true });
-    await manager.write({ version: 1, clients: {}, resources: { mcps: {} } });
+    await manager.write(createConfig({ version: 1, clients: {}, resources: createResources({ mcps: {} }) }));
 
     for (let i = 0; i < 15; i++) {
       const ts = `2026-01-${String(i + 1).padStart(2, "0")}T00-00-00-000Z`;
@@ -76,7 +77,7 @@ describe("ConfigManager", () => {
     const manager = new ConfigManager();
     const configDir = path.join(mockHome, ".synctax");
     await fs.mkdir(configDir, { recursive: true });
-    await manager.write({ version: 1, clients: {}, resources: { mcps: {} } });
+    await manager.write(createConfig({ version: 1, clients: {}, resources: createResources({ mcps: {} }) }));
 
     for (let i = 0; i < 3; i++) {
       const ts = `2026-01-0${i + 1}T00-00-00-000Z`;
@@ -100,7 +101,7 @@ describe("ConfigManager", () => {
     const manager = new ConfigManager();
     const configDir = path.join(mockHome, ".synctax");
     await fs.mkdir(configDir, { recursive: true });
-    await manager.write({ version: 1, clients: {}, resources: { mcps: {} } });
+    await manager.write(createConfig({ version: 1, clients: {}, resources: createResources({ mcps: {} }) }));
 
     for (let i = 0; i < 12; i++) {
       const ts = `2026-01-${String(i + 1).padStart(2, "0")}T00-00-00-000Z`;
@@ -117,7 +118,7 @@ describe("ConfigManager", () => {
     const manager = new ConfigManager();
     const configDir = path.join(mockHome, ".synctax");
     await fs.mkdir(configDir, { recursive: true });
-    await manager.write({ version: 1, clients: {}, resources: { mcps: {} } });
+    await manager.write(createConfig({ version: 1, clients: {}, resources: createResources({ mcps: {} }) }));
 
     await fs.writeFile(path.join(configDir, "config.json.2026-01-01T00-00-00-000Z.bak"), "{}");
     await fs.writeFile(path.join(configDir, "other-file.txt"), "keep me");

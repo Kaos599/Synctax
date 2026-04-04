@@ -5,6 +5,7 @@ import { GithubCopilotAdapter } from "../src/adapters/github-copilot.js";
 import fs from "fs/promises";
 import path from "path";
 import os from "os";
+import { expectDefined } from "./test-helpers.js";
 
 describe("New Adapters (Cline, Zed, Github Copilot)", () => {
   let mockHome: string;
@@ -40,8 +41,23 @@ describe("New Adapters (Cline, Zed, Github Copilot)", () => {
     await fs.writeFile(userPath, JSON.stringify({ mcpServers: { shared: { command: "user-cmd" } } }));
 
     const { mcps } = await adapter.read();
-    expect(mcps["shared"].command).toBe("user-cmd");
-    expect(mcps["shared"].scope).toBe("user");
+    const shared = expectDefined(mcps["shared"], "Expected shared MCP to exist");
+    expect(shared.command).toBe("user-cmd");
+    expect(shared.scope).toBe("user");
+  });
+
+  it("ClineAdapter preserves explicit false network approval from higher precedence config", async () => {
+    const adapter = new ClineAdapter();
+    const globalConfigPath = path.join(mockHome, ".cline", "config.json");
+    const userConfigPath = path.join(mockHome, ".config", "cline", "config.json");
+
+    await fs.mkdir(path.dirname(globalConfigPath), { recursive: true });
+    await fs.mkdir(path.dirname(userConfigPath), { recursive: true });
+    await fs.writeFile(globalConfigPath, JSON.stringify({ autoApproveNetwork: true }));
+    await fs.writeFile(userConfigPath, JSON.stringify({ autoApproveNetwork: false }));
+
+    const { permissions } = await adapter.read();
+    expect(permissions?.networkAllow).toBe(false);
   });
 
   it("ZedAdapter handles context_servers", async () => {

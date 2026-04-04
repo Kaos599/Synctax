@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { watchCommand } from "../src/commands.js";
+import { createWatchSyncScheduler, watchCommand } from "../src/commands.js";
 import { ConfigManager } from "../src/config.js";
 import fs from "fs/promises";
 import path from "path";
@@ -17,6 +17,7 @@ describe("Watch Daemon Mode", () => {
   });
 
   afterEach(async () => {
+    vi.useRealTimers();
     await fs.rm(mockHome, { recursive: true, force: true });
     delete process.env.SYNCTAX_HOME;
     vi.clearAllMocks();
@@ -42,17 +43,57 @@ describe("Watch Daemon Mode", () => {
     consoleSpy.mockRestore();
   });
 
-  it("triggers sync upon file modification", async () => {
-    const consoleSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+  it("debounces rapid change notifications into one sync run", async () => {
+    vi.useFakeTimers();
+    const runSync = vi.fn(async () => {});
+    const scheduler = createWatchSyncScheduler(runSync, 500);
 
-    // We cannot easily mock ESM chokidar methods without throwing namespace errors,
-    // so we will test that our watchCommand doesn't fail when invoked,
-    // and that the chokidar setup includes standard debouncing options.
-    const watchCode = (await fs.readFile("src/commands/sync.ts", "utf8")).split("watchCommand")[1];
-    expect(watchCode).toContain("stabilityThreshold");
-    expect(watchCode).toContain("clearTimeout");
-    expect(watchCode).toContain("setTimeout");
+    scheduler.schedule();
+    scheduler.schedule();
+    scheduler.schedule();
 
-    consoleSpy.mockRestore();
+    vi.advanceTimersByTime(499);
+    expect(runSync).not.toHaveBeenCalled();
+
+    vi.advanceTimersByTime(1);
+    await Promise.resolve();
+    expect(runSync).toHaveBeenCalledTimes(1);
+
+    scheduler.dispose();
+  });
+
+  it("queues a single rerun when a change arrives during in-flight sync", async () => {
+    vi.useFakeTimers();
+
+    let releaseFirstRun: (() => void) | undefined;
+    const firstRunDone = new Promise<void>((resolve) => {
+      releaseFirstRun = resolve;
+    });
+
+    const runSync = vi.fn(async () => {
+      if (runSync.mock.calls.length === 1) {
+        await firstRunDone;
+      }
+    });
+
+    const scheduler = createWatchSyncScheduler(runSync, 500);
+
+    scheduler.schedule();
+    vi.advanceTimersByTime(500);
+    await Promise.resolve();
+    expect(runSync).toHaveBeenCalledTimes(1);
+
+    scheduler.schedule();
+    scheduler.schedule();
+    vi.advanceTimersByTime(500);
+    await Promise.resolve();
+    expect(runSync).toHaveBeenCalledTimes(1);
+
+    releaseFirstRun?.();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(runSync).toHaveBeenCalledTimes(2);
+
+    scheduler.dispose();
   });
 });

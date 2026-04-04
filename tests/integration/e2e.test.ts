@@ -85,6 +85,10 @@ describe("E2E Configuration Sync across Clients", () => {
       })
     );
 
+    // Pre-create OpenCode user config path so the adapter can write to it
+    await fs.mkdir(path.join(tmpDir, ".config", "opencode"), { recursive: true });
+    await fs.writeFile(path.join(tmpDir, ".config", "opencode", "config.json"), "{}");
+
     // 3. Pull from Cursor
     await pullCommand({ from: "cursor", merge: true });
 
@@ -98,20 +102,36 @@ describe("E2E Configuration Sync across Clients", () => {
     await syncCommand({});
 
     // 5. Verify OpenCode received the configuration
-    // OpenCode adapter falls back to .config/opencode/config.json if no specific project or user exists
-    let opencodeConf: any;
-    try {
-      opencodeConf = JSON.parse(await fs.readFile(path.join(tmpDir, ".config", "opencode", "config.json"), "utf-8"));
-    } catch {
-      opencodeConf = JSON.parse(await fs.readFile(path.join(tmpDir, "opencode.json"), "utf-8"));
+    // OpenCode adapter writes user-scoped MCPs to ~/.config/opencode/config.json
+    // or opencode.json depending on candidates
+    const parsedConfigs: any[] = [];
+    const candidates = [
+      path.join(tmpDir, ".config", "opencode", "config.json"),
+      path.join(tmpDir, "opencode.json"),
+      path.join(tmpDir, ".opencode", "config.json"),
+    ];
+    for (const c of candidates) {
+      try {
+        parsedConfigs.push(JSON.parse(await fs.readFile(c, "utf-8")));
+      } catch { /* try next */ }
     }
-    
-    expect(opencodeConf).toBeDefined();
-    expect(opencodeConf.mcp["cursor-db"]).toBeDefined();
-    expect(opencodeConf.mcp["cursor-db"].command).toBe("npx");
-    
-    expect(opencodeConf.agents["Cursor Assistant"]).toBeDefined();
-    expect(opencodeConf.agents["Cursor Assistant"].system_message).toBe("You are helpful.");
+    expect(parsedConfigs.length).toBeGreaterThan(0);
+
+    const merged = parsedConfigs.reduce((acc, cfg) => {
+      if (cfg.mcp && typeof cfg.mcp === "object") {
+        acc.mcp = { ...acc.mcp, ...cfg.mcp };
+      }
+      if (cfg.agent && typeof cfg.agent === "object") {
+        acc.agent = { ...acc.agent, ...cfg.agent };
+      }
+      return acc;
+    }, { mcp: {} as Record<string, any>, agent: {} as Record<string, any> });
+
+    // After sync, MCPs should be in the OpenCode config
+    expect(merged.mcp["cursor-db"]).toBeDefined();
+    expect(merged.mcp["cursor-db"].command).toEqual(["npx", "-y", "@modelcontextprotocol/server-postgres"]);
+
+    expect(merged.agent["Cursor Assistant"]?.prompt).toBe("You are helpful.");
 
     consoleLogSpy.mockRestore();
   });

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { isSafeResourceName } from "./resource-name.js";
 
 export const ResourceScopeSchema = z.enum(["global", "user", "project", "local"]);
 export type ResourceScope = z.infer<typeof ResourceScopeSchema>;
@@ -59,6 +60,31 @@ export const SkillSchema = z.object({
 });
 export type Skill = z.infer<typeof SkillSchema>;
 
+function defaultPermissions() {
+  return {
+    allowedPaths: [],
+    deniedPaths: [],
+    allowedCommands: [],
+    deniedCommands: [],
+    networkAllow: false,
+    allow: [],
+    deny: [],
+    ask: [],
+    allowedUrls: [],
+    deniedUrls: [],
+    trustedFolders: [],
+  };
+}
+
+function defaultResources() {
+  return {
+    mcps: {},
+    agents: {},
+    skills: {},
+    permissions: defaultPermissions(),
+  };
+}
+
 export const PermissionsSchema = z.object({
   // Legacy fields (backward compat with existing configs)
   allowedPaths: z.array(z.string()).default([]),
@@ -112,14 +138,29 @@ export const ConfigSchema = z.object({
     default: {}
   }),
   resources: z.object({
-    mcps: z.record(z.string(), McpServerSchema).default({}),
-    agents: z.record(z.string(), AgentSchema).default({}),
-    skills: z.record(z.string(), SkillSchema).default({}),
-    permissions: PermissionsSchema.default({}),
+    mcps: z
+      .record(z.string(), McpServerSchema)
+      .refine((records) => Object.keys(records).every((key) => isSafeResourceName(key)), {
+        message: "Invalid MCP key",
+      })
+      .default({}),
+    agents: z
+      .record(z.string(), AgentSchema)
+      .refine((records) => Object.keys(records).every((key) => isSafeResourceName(key)), {
+        message: "Invalid agent key",
+      })
+      .default({}),
+    skills: z
+      .record(z.string(), SkillSchema)
+      .refine((records) => Object.keys(records).every((key) => isSafeResourceName(key)), {
+        message: "Invalid skill key",
+      })
+      .default({}),
+    permissions: PermissionsSchema.default(defaultPermissions),
     models: ModelsSchema.optional(),
     prompts: PromptsSchema.optional(),
     credentials: CredentialsSchema.optional(),
-  }).default({}),
+  }).default(defaultResources),
 });
 export type Config = z.infer<typeof ConfigSchema>;
 

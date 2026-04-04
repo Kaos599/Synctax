@@ -1,7 +1,9 @@
 import fs from "fs/promises";
 import path from "path";
 import os from "os";
-import { Config, ConfigSchema } from "./types.js";
+import { ConfigSchema } from "./types.js";
+import type { Config } from "./types.js";
+import { atomicWriteFile } from "./fs-utils.js";
 
 export class ConfigManager {
   private configPath: string;
@@ -34,9 +36,9 @@ export class ConfigManager {
   }
 
   async write(config: Config): Promise<void> {
-    await this.ensureConfigDir();
     const validated = ConfigSchema.parse(config);
-    await fs.writeFile(this.configPath, JSON.stringify(validated, null, 2), "utf-8");
+    await this.ensureConfigDir();
+    await atomicWriteFile(this.configPath, JSON.stringify(validated, null, 2));
   }
 
   async backup(): Promise<void> {
@@ -84,6 +86,6 @@ export class ConfigManager {
 
   async getTheme(): Promise<string> {
     const config = await this.read();
-    return config.theme || "pixel";
+    return config.theme || "rebel";
   }
 }

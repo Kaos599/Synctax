@@ -205,6 +205,7 @@ export function opencodeConfigCandidates(h = homeDir()): ScopedCandidate[] {
 
 export function antigravityConfigCandidates(h = homeDir()): ScopedCandidate[] {
   const out: ScopedCandidate[] = [
+    { path: path.join(h, ".gemini", "antigravity", "mcp_config.json"), scope: "user", label: "gemini-antigravity" },
     { path: path.join(h, ".antigravity", "config.json"), scope: "global", label: "legacy antigravity config" },
     { path: path.join(h, ".antigravity_tools", "gui_config.json"), scope: "user", label: "antigravity tools config" },
   ];

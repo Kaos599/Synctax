@@ -1,6 +1,8 @@
 import { describe, it, expect } from "vitest";
 import { splitByScope, toConfigScope } from "../src/scopes.js";
 
+type ScopeRecord = { name: string; scope?: "global" | "user" | "project" | "local" };
+
 describe("toConfigScope", () => {
   it("maps 'local' to 'local'", () => {
     expect(toConfigScope("local")).toBe("local");
@@ -25,7 +27,7 @@ describe("toConfigScope", () => {
 
 describe("splitByScope", () => {
   it("splits resources into 4 buckets", () => {
-    const records = {
+    const records: Record<string, ScopeRecord> = {
       a: { name: "A", scope: "global" as const },
       b: { name: "B", scope: "user" as const },
       c: { name: "C", scope: "project" as const },
@@ -39,7 +41,7 @@ describe("splitByScope", () => {
   });
 
   it("defaults unscoped items to global", () => {
-    const records = {
+    const records: Record<string, ScopeRecord> = {
       a: { name: "A" },
       b: { name: "B", scope: undefined },
     };

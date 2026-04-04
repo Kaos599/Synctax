@@ -6,6 +6,7 @@ import { AntigravityAdapter } from "../src/adapters/antigravity.js";
 import fs from "fs/promises";
 import path from "path";
 import os from "os";
+import { expectDefined } from "./test-helpers.js";
 
 describe("Skills Domain", () => {
   let mockHome: string;
@@ -33,8 +34,9 @@ describe("Skills Domain", () => {
 
     const data = await adapter.read();
     expect(data.skills["Refactor"]).toBeDefined();
-    expect(data.skills["Refactor"].content).toBe("Refactor the selected code.");
-    expect(data.skills["Refactor"].trigger).toBe("/refactor");
+    const refactorSkill = expectDefined(data.skills["Refactor"], "Expected Refactor skill");
+    expect(refactorSkill.content).toBe("Refactor the selected code.");
+    expect(refactorSkill.trigger).toBe("/refactor");
 
     await adapter.write({
       mcps: {},
@@ -76,10 +78,10 @@ describe("Skills Domain", () => {
     expect(cmdFile).toContain("Review this code");
 
     const data = await adapter.read();
-    expect(data.skills["review"].content).toBe("Review this code");
+    expect(expectDefined(data.skills["review"], "Expected review skill").content).toBe("Review this code");
   });
 
-  it("OpenCodeAdapter reads and writes inline skills in config.json", async () => {
+  it("OpenCodeAdapter reads and writes directory-based SKILL.md files (v2)", async () => {
     const adapter = new OpenCodeAdapter();
     await adapter.write({
       mcps: {},
@@ -89,12 +91,14 @@ describe("Skills Domain", () => {
       }
     });
 
-    const configStr = await fs.readFile(path.join(mockHome, ".config", "opencode", "config.json"), "utf-8");
-    const config = JSON.parse(configStr);
-    expect(config.skills["format"].content).toBe("Format my code");
+    // v2: skills are written as SKILL.md in directories, not JSON
+    const skillPath = path.join(mockHome, ".config", "opencode", "skills", "format", "SKILL.md");
+    const skillContent = await fs.readFile(skillPath, "utf-8");
+    expect(skillContent).toContain("name: format");
+    expect(skillContent).toContain("Format my code");
 
     const data = await adapter.read();
-    expect(data.skills["format"].content).toBe("Format my code");
+    expect(expectDefined(data.skills["format"], "Expected format skill").content).toBe("Format my code");
   });
 
 
@@ -114,7 +118,7 @@ describe("Skills Domain", () => {
 
     const data = await adapter.read();
     expect(data.skills["modern-skill"]).toBeDefined();
-    expect(data.skills["modern-skill"].name).toBe("Modern");
+    expect(expectDefined(data.skills["modern-skill"], "Expected modern-skill").name).toBe("Modern");
     expect(data.skills["A"]).toBeDefined();
     expect(data.skills["B"]).toBeDefined();
     expect(data.skills["C"]).toBeDefined();

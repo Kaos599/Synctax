@@ -52,12 +52,12 @@ export function mergePermissions(p1: any, p2: any) {
     ask: Array.from(ask),
     allowedUrls: Array.from(allowedUrls),
     deniedUrls: Array.from(deniedUrls),
-    // trustedFolders is additive (union) — not deny-wins, because there is no
-    // "denied folders" counterpart. Conservative behavior: folders must be trusted
-    // by BOTH sides to survive merge (intersection).
-    trustedFolders: (p1.trustedFolders || []).filter(
-      (f: string) => !(p2.trustedFolders?.length) || (p2.trustedFolders || []).includes(f)
-    ),
+    // trustedFolders: intersection semantics (conservative).
+    // Both sides must trust a folder for it to survive merge.
+    // If either side has no trustedFolders field at all (undefined), skip intersection for that side.
+    trustedFolders: p1.trustedFolders === undefined ? (p2.trustedFolders || [])
+      : p2.trustedFolders === undefined ? (p1.trustedFolders || [])
+      : (p1.trustedFolders || []).filter((f: string) => (p2.trustedFolders || []).includes(f)),
   };
 }
 
@@ -85,4 +85,35 @@ export async function applyProfileFilter(resources: any, profile: any) {
   filterGroup(filtered.skills);
 
   return filtered;
+}
+
+export function resolveProfile(profiles: Record<string, any> | undefined, name: string) {
+  if (!profiles || !profiles[name]) {
+    throw new Error(`Active profile "${name}" not found.`);
+  }
+
+  const walk = (current: string, chain: string[]): any => {
+    if (chain.includes(current)) {
+      throw new Error(`Circular profile extends detected: ${[...chain, current].join(" -> ")}`);
+    }
+
+    const profile = profiles[current];
+    if (!profile) {
+      const parent = chain[chain.length - 1] || name;
+      throw new Error(
+        `Profile "${parent}" extends missing profile "${current}". Chain: ${[...chain, current].join(" -> ")}`,
+      );
+    }
+
+    const nextChain = [...chain, current];
+    const base = profile.extends ? walk(profile.extends, nextChain) : {};
+
+    return {
+      include: profile.include ?? base.include,
+      exclude: profile.exclude ?? base.exclude,
+      extends: profile.extends,
+    };
+  };
+
+  return walk(name, []);
 }

@@ -1,132 +1,262 @@
-# synctax
+<p align="center">
+  <img src="assets/banner.svg" alt="Synctax" width="480">
+</p>
 
-Universal Sync for the Agentic Developer Stack.
+<p align="center"><strong>Universal Sync for the Agentic Developer Stack</strong></p>
+<p align="center">Configure once. Sync your MCP servers, agents, skills, and permissions to every AI tool you use.</p>
 
-`synctax` is a cross-platform CLI tool that synchronizes the full agentic developer configuration—MCP servers, agents, skills, memory files, permissions, model preferences, and prompts—across every AI-powered IDE and CLI client on your machine.
+<p align="center">
+  <a href="https://github.com/Kaos599/Synctax/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/Kaos599/Synctax/actions/workflows/ci.yml/badge.svg" /></a>
+  <img alt="version" src="https://img.shields.io/github/package-json/v/Kaos599/Synctax?color=brightgreen" />
+  <img alt="license" src="https://img.shields.io/github/license/Kaos599/Synctax?color=blue" />
+  <img alt="runtime" src="https://img.shields.io/badge/runtime-bun-orange" />
+  <img alt="clients" src="https://img.shields.io/badge/clients-9%20supported-lightgrey" />
+</p>
 
-### Running the CLI
-
-The `synctax` command is **not** on your PATH until you accept the setup step during **`synctax init`** (interactive prompt) or run **`synctax init --yes`** (non-interactive). That writes `~/.synctax/bin` and updates your user PATH (Windows: user `Path` + `synctax.cmd`; macOS/Linux: shell rc and on Linux optionally `~/.config/environment.d/60-synctax.conf`). Open a **new** terminal afterward.
-
-| Method | Example |
-|--------|---------|
-| Bun (direct) | `bun ./bin/synctax.ts init` — answer the PATH prompt, or use `--yes` / `--no-path-prompt` |
-| Bun script | `bun run synctax -- init` |
-| Non-interactive PATH install | `bun ./bin/synctax.ts init --force --yes` |
-| Skip PATH entirely | `bun ./bin/synctax.ts init --no-path-prompt` |
-| Global (Bun) | `bun link --global` in the repo, then `synctax` in a new shell (requires Bun’s global bin on `PATH`) |
-
-Master config lives at `%USERPROFILE%\.synctax\config.json` (or `$env:SYNCTAX_HOME` if set).
-
-**Windows: `synctax` not found?** The command is **`synctax`** (not “syntax”). Cursor/VS Code’s integrated terminal often keeps the PATH from when the app started—use **Developer: Reload Window**, fully restart the editor, or open **Windows Terminal** and run `synctax` there. In any PowerShell you can merge the latest user PATH into the current session:
-
-`$env:Path = [System.Environment]::GetEnvironmentVariable('Path','User') + ';' + [System.Environment]::GetEnvironmentVariable('Path','Machine')`
+<p align="center"><code>synctax sync</code> — one command, every AI tool in sync.</p>
 
 ---
 
-## 🚀 Features (v1.6)
+## Why Synctax
 
-- **Interactive CLI Palette (`synctax`)**: Running `synctax` with no arguments now launches a beautiful, searchable, interactive command prompt complete with hover descriptions and cascading contextual questions (e.g. asking which client to pull from dynamically) using `@inquirer/prompts`.
-- **Universal Support**: Native adapters for Claude Code, Cursor, OpenCode, Antigravity, Cline, Github Copilot, Github Copilot CLI, Gemini CLI, and Zed.
-- **Watch Daemon (`synctax watch`)**: Run `synctax` silently in the background! Any changes detected in your `~/.synctax/config.json` are instantly pushed to all your installed clients safely.
-- **Intelligence Dashboard (`synctax info`)**: A gorgeous tabular interface displaying exactly which AI clients are installed and what resources (MCPs, Agents, Skills) they currently possess.
-- **Themed Environments**: The global default theme is now the stunning `rebel` DOS font. You can temporarily override it anytime using the `--theme <name>` flag on any run.
-- **Advanced File Parsing**: We don't just stop at `.md` files. Adapters fluidly pick up `.agent` and `.claude` extensions seamlessly.
-- **Merge-Conservative Security**: Automatically ensures your network and file path deny-lists override permissive rules when pulling team configurations.
+Every AI coding tool stores configuration in its own proprietary format. Claude Code reads `~/.claude/settings.json`. Cursor uses `~/.cursor/mcp.json`. Zed has `~/.config/zed/settings.json`. Cline, OpenCode, GitHub Copilot, and Gemini CLI each have their own layouts, their own field names, and their own ideas about where agents and skills belong.
 
-### Scope-aware sync behavior
+Add one MCP server and you are editing four JSON files by hand. Rename an agent and you are hunting through six different directories. Forget to update one client and your tools are silently out of sync for weeks.
 
-Synctax now tracks where each read resource came from (`global`, `user`, `project`) and applies strict overwrite order when syncing:
+Synctax eliminates this. One master config at `~/.synctax/config.json`. One command to push it everywhere. Every resource — MCP servers, agents, skills, permissions, model preferences, prompts, memory files — translated into each client's native format automatically.
 
-- `global` < `user` < `project`  
-- Resource writes are routed to the matching destination scope for each client
-- Project-specific resources (for clients that support them) are written to workspace paths where available
+---
 
-| Client | MCP precedence | Agent precedence | Skill precedence |
-|---|---|---|---|
-| Claude / Cursor / Zed | global | N/A | N/A |
-| Cline | user > global | N/A | N/A |
-| OpenCode | project > user | project > user | project > user |
-| Antigravity | user > global | user > global | user > global |
-| Github Copilot | project > user | N/A | N/A |
-| Github Copilot CLI | project > user | project > user | project > user |
-| Gemini CLI | project > user | N/A | N/A |
+## Install
 
-## 🛠️ CLI Commands
+**Prerequisites:** [Bun](https://bun.sh) v1.0+
+
+```bash
+git clone https://github.com/Kaos599/synctax.git
+cd synctax
+bun install
+bun ./bin/synctax.ts init
+bun ./bin/synctax.ts sync
+```
+
+After `init` completes its optional PATH setup, you can use the short form everywhere:
+
+```bash
+synctax init
+synctax sync
+```
+
+---
+
+## Quick Start
+
+```bash
+# 1. Initialize master config and enable your installed clients
+synctax init
+
+# 2. Pull your existing config from whichever client you use most
+synctax pull --from cursor
+
+# 3. Add a new MCP server to master config
+synctax add mcp my-db --command npx --args "-y" "@modelcontextprotocol/server-postgres" --env DB_URL=\$MY_DB_URL
+
+# 4. Check for issues before writing
+synctax doctor
+
+# 5. Push everything to all enabled clients
+synctax sync
+```
+
+---
+
+## Commands
+
+### Core
 
 | Command | Description |
-|---|---|
-| `synctax init` | Scaffolds config, detects clients, banner; then prompts to add `~/.synctax/bin` to PATH (default **Y**). Flags: `--yes` / `-y` (install without asking), `--no-path-prompt` (skip PATH changes). |
-| `synctax info` | Displays a styled CLI table outlining your AI ecosystem's active capabilities. |
-| `synctax export <file>` | Exports the entire master configuration to a JSON file (includes credentials). |
-| `synctax import <file>` | Imports the entire master configuration from a JSON file. Prompts if clients are missing. |
-| `synctax status` | Displays the current health of MCPs, Agents, Skills, and checks for missing API Keys/Env Vars. |
-| `synctax watch` | Spawns a local `chokidar` daemon that listens to your master config and syncs upon saves. |
-| `synctax sync` | Manually push the master configuration down to all your clients. |
-| `synctax pull --from <client>` | Invert the flow: rip a client's specific JSON configuration back into the master state. |
-| `synctax memory-sync` | Mirrors context files (`CLAUDE.md`, `.cursorrules`, `AGENTS.md`) across your current working directory. |
-| `synctax profile publish <name>` | Securely export your setup (API keys and credentials are automatically stripped!). |
+|---------|-------------|
+| `synctax sync` | Pulls from your source client, shows a per-client diff, asks for confirmation, then writes to every enabled client atomically. Rolls back all clients on failure. Run this after any change to master config. |
+| `synctax pull --from <client>` | Imports a specific client's live config into master. Use this when you've added an MCP directly in Cursor or Claude Code and want master to reflect it. |
+| `synctax diff [client]` | Compares master against each client's live config and shows exactly what has been added, removed, or modified — without writing anything. Safe to run at any time. |
+| `synctax watch` | Starts a background daemon that watches `~/.synctax/config.json` and auto-syncs on every save (500ms debounce). Useful when editing master config directly. |
+| `synctax memory-sync` | Copies your source client's memory/context file (e.g. `CLAUDE.md`) to all other enabled clients in the current project directory. |
+
+### Inspection
+
+| Command | Description |
+|---------|-------------|
+| `synctax status` | Health overview across all clients — shows sync state, resource counts, and env var status at a glance. |
+| `synctax doctor [--deep]` | Diagnoses common issues: missing clients, broken config paths, invalid env vars. With `--deep`, also verifies each MCP command exists on PATH. |
+| `synctax validate` | Runs Zod schema validation on master config, checks env var references can resolve, and confirms required binaries are reachable before syncing. |
+
+### Config Management
+
+| Command | Description |
+|---------|-------------|
+| `synctax add <type> <name>` | Adds an MCP server, agent, or skill to master config interactively or via flags. |
+| `synctax remove [type] [name]` | Removes a resource. Use `-i` for interactive selection. |
+| `synctax move <type> <name>` | Changes the scope of a resource (`--to-global`, `--to-local`, `--to-project`). |
+
+### Profiles
+
+| Command | Description |
+|---------|-------------|
+| `synctax profile create <name>` | Creates a named profile with `--include` / `--exclude` resource filters. Each profile gets its own `.env` file for secrets. |
+| `synctax profile use <name>` | Switches to a profile and immediately syncs — swaps env context and filters, then pushes to all clients. |
+| `synctax profile list` | Lists all profiles with their filters and marks the active one. |
+| `synctax profile diff <name>` | Dry-run preview of what would change if you switched to this profile, without switching. |
+| `synctax profile pull <url>` | Downloads and imports a shared profile from a URL. Credentials are never included. |
+| `synctax profile publish <name>` | Exports a profile to a shareable JSON file with credentials automatically stripped. |
+
+<details>
+<summary>Safety &amp; backup commands</summary>
+
+| Command | Description |
+|---------|-------------|
+| `synctax backup` | Archives each enabled client's current native config files into a timestamped zip at `~/.synctax/backups/`. Run before risky changes. |
+| `synctax restore [--from <ts>]` | Restores master config from a backup. Uses most recent by default; pass a timestamp for a specific point in time. |
+| `synctax export <file>` | Exports the full master config to a portable JSON file (credentials stripped). |
+| `synctax import <file>` | Imports a master config from a JSON file. |
+| `synctax link` / `synctax unlink` | Creates symlinks so all client instruction files point to one canonical file, or restores them as regular files. |
+
+</details>
+
+### Sync Flags
+
+```bash
+synctax sync --dry-run        # Preview changes without writing
+synctax sync --yes            # Skip confirmation (for scripts, CI)
+synctax sync --strict-env     # Fail if env vars can't resolve
+synctax sync --interactive    # Select which resources to sync
+```
 
 ---
 
-## Memory Bank Structure
+## Supported Clients
 
-The Memory Bank consists of required core files and optional context files, all in Markdown format. Files build upon each other in a clear hierarchy inside `docs/memory-bank/`:
+| Client | MCP | Agents | Skills | Memory File |
+|--------|-----|--------|--------|-------------|
+| Claude Code | ✅ | ✅ | ✅ | `CLAUDE.md` |
+| Cursor | ✅ | ✅ | ✅ | `.cursorrules` |
+| GitHub Copilot | ✅ | ✅ | ✅ | `.github/copilot-instructions.md` |
+| GitHub Copilot CLI | ✅ | ✅ | ✅ | `.github/copilot-instructions.md` |
+| OpenCode | ✅ | ✅ | ✅ | `AGENTS.md` |
+| Antigravity | ✅ | ✅ | ✅ | `.antigravityrules` |
+| Cline | ✅ | — | — | `.clinerules` |
+| Zed | ✅ | — | — | `.rules` |
+| Gemini CLI | — | — | — | `.geminirules` |
 
-```mermaid
-flowchart TD
-    PB[projectbrief.md] --> PC[productContext.md]
-    PB --> SP[systemPatterns.md]
-    PB --> TC[techContext.md]
+---
 
-    PC --> AC[activeContext.md]
-    SP --> AC
-    TC --> AC
+## How Sync Works
 
-    AC --> P[progress.md]
+```
+synctax sync
+       │
+       ├─ 1. Pull from source client
+       │       Read live config → merge into master (deny-wins for permissions)
+       │
+       ├─ 2. Apply active profile filters
+       │       include/exclude lists trim the resource set
+       │
+       ├─ 3. Resolve env vault
+       │       $VAR references → real values from ~/.synctax/envs/<profile>.env
+       │
+       ├─ 4. Show diff preview per client
+       │       added / removed / modified resources listed before any write
+       │
+       ├─ 5. Confirm: "Apply these changes? [y/N]"
+       │
+       └─ 6. Atomic write to all enabled clients
+               temp-file → rename · file lock · rollback on failure
 ```
 
-### Core Files (Required)
-1. `projectbrief.md` - Foundation document that shapes all other files
-2. `productContext.md` - Why this project exists and problems it solves
-3. `activeContext.md` - Current work focus and next steps
-4. `systemPatterns.md` - System architecture and Test-Driven patterns
-5. `techContext.md` - Technologies used (Bun, Vitest, Chokidar, cli-table3)
-6. `progress.md` - What works and what is left to build
+**Safety guarantees:**
 
-## Documentation Updates
+- Every client config is read before being written — Synctax fields are overlaid, not overwritten.
+- All writes go to a temp file first, then renamed atomically. A crash mid-write leaves the original intact.
+- If any client write fails, all clients that already received changes in this run are rolled back.
+- Permission merges use deny-wins logic: if a path appears in both allow and deny lists, it is denied.
 
-Memory Bank updates occur when:
-1. Discovering new project patterns (e.g. `chokidar` ESM module resolutions)
-2. After implementing significant feature batches
-3. When user requests with **update memory bank** (MUST review ALL files)
-4. When context needs clarification
+---
 
-```mermaid
-flowchart TD
-    Start[Update Process]
+## Env Vault
 
-    subgraph Process
-        P1[Review ALL Files]
-        P2[Document Current State]
-        P3[Clarify Next Steps]
-        P4[Update .cursor/rules]
+Secrets never live in master config. Use `$VAR` references in config and store real values in a per-profile `.env` file that stays local.
 
-        P1 --> P2 --> P3 --> P4
-    end
-
-    Start --> Process
+```json
+// ~/.synctax/config.json — safe to commit or share
+{
+  "mcps": {
+    "my-db": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-postgres"],
+      "env": { "DB_URL": "$MY_DB_URL" }
+    }
+  }
+}
 ```
 
-Note: When triggered by **update memory bank**, I MUST review every memory bank file, even if some don't require updates. Focus particularly on activeContext.md and progress.md as they track current state.
+```bash
+# ~/.synctax/envs/default.env — stays local, never exported
+MY_DB_URL=postgres://user:pass@prod.db.internal:5432/app
+```
 
-## Project Intelligence (.cursor/rules)
+When syncing, `$MY_DB_URL` is resolved to the real value before writing to each client. The reference string is what gets synced; the secret is what gets injected at write time.
 
-The `.cursor/rules` file is my learning journal for each project. It captures important patterns, preferences, and project intelligence that help me work more effectively.
+---
 
-### What to Capture
-- Strict usage of RED-Green Test-Driven Development (TDD).
-- Environment mock safeguards (`process.cwd` vs `SYNCTAX_HOME`).
-- Tool usage patterns and syntax expectations.
-| `synctax export <file>` | Exports the entire master configuration to a JSON file (includes credentials). |
-| `synctax import <file>` | Imports the entire master configuration from a JSON file. Prompts if clients are missing. |
+## Fullscreen TUI
+
+Run `synctax` with no arguments to open the fullscreen dashboard.
+
+- Live status panel: connected clients, MCP counts, agent counts, drift indicators
+- Quick actions grid: bind common commands to number keys (1–9, 0)
+- Command palette: fuzzy-search all commands with `/` or `p`
+- Source selector: pick which client to pull from interactively
+- Diagnostics panel: warnings and config issues surfaced in real time
+- 16 built-in themes: `synctax`, `catppuccin`, `dracula`, `nord`, `tokyo-night`, `gruvbox`, `one-dark`, `solarized`, `rose-pine`, `monokai`, `cyberpunk`, `sunset`, `ocean`, `forest`, `ember`, `aurora` — press `t` to cycle
+
+---
+
+## Profiles
+
+Profiles are named resource filters that let you maintain different sync configurations for different contexts — work vs. personal, frontend vs. backend, client A vs. client B — without maintaining separate master configs. Each profile has its own `.env` file so secrets are scoped too.
+
+```bash
+# Create a work profile that only includes work-related MCPs and agents
+synctax profile create work --include my-db,github,jira-agent,code-reviewer
+
+# Switch to it (syncs immediately with the filtered resource set)
+synctax profile use work
+
+# Preview what switching to personal would change before committing
+synctax profile diff personal
+```
+
+---
+
+## Development
+
+```bash
+# Run all tests
+bun run test
+
+# Type-check (strict, no emit)
+bun run typecheck
+
+# Lint
+bun run lint
+
+# Run a single test file
+bunx vitest run tests/adapters.test.ts
+
+# Run the CLI directly
+bun ./bin/synctax.ts <command>
+```
+
+---
+
+## License
+
+MIT

@@ -31,5 +31,13 @@ Welcome to the Synctax documentation. Synctax is a cross-platform CLI tool built
   The tech stack, testing constraints (TDD), mocking requirements, and environment quirks.
 - [Changelog & Progress (changelog_and_progress.md)](./changelog_and_progress.md)
   Completed milestones, current active context, and future v2.0 roadmap.
+- [Fullscreen TUI Guide (fullscreen-tui.md)](./fullscreen-tui.md)
+  How to run fullscreen TUI directly, keyboard controls, architecture touchpoints, and test commands.
+- [Roadmap Overview (roadmap/README.md)](./roadmap/README.md)
+  Phase-by-phase roadmap status and links to each phase document.
+- [Phase 3 Core Features (roadmap/phase-3-core-features.md)](./roadmap/phase-3-core-features.md)
+  Current branch status for diff/validate/rollback/link/doctor deep/add-from-url and verification notes.
+- [Phase 3 Smoke Checklist (qa/2026-03-25-phase3-smoke-checklist.md)](./qa/2026-03-25-phase3-smoke-checklist.md)
+  Manual smoke commands and expected outcomes for the Phase 3 feature set.
 
 Please navigate to the specific documents to learn more about the internals of Synctax.

@@ -8,6 +8,7 @@ import { adapters } from "../src/adapters/index.js";
 import fs from "fs/promises";
 import path from "path";
 import os from "os";
+import { createConfig, createPermissions, createResources, expectDefined } from "./test-helpers.js";
 
 describe("TDD Sanity Checks for Copilot Flags", () => {
   let mockHome: string;
@@ -22,7 +23,7 @@ describe("TDD Sanity Checks for Copilot Flags", () => {
   afterEach(async () => {
     await fs.rm(mockHome, { recursive: true, force: true });
     delete process.env.SYNCTAX_HOME;
-    vi.clearAllMocks();
+    vi.restoreAllMocks();
   });
 
   it("sanity: initCommand sets up base config correctly", async () => {
@@ -41,19 +42,22 @@ describe("TDD Sanity Checks for Copilot Flags", () => {
 
   it("sanity: moveCommand locates and updates scopes safely", async () => {
     const consoleSpy = vi.spyOn(console, "log").mockImplementation(() => {});
-    await manager.write({
-      version: 1, source: "mock",
+    await manager.write(createConfig({
+      version: 1,
+      source: "mock",
       clients: {},
-      resources: {
+      resources: createResources({
         mcps: { "test-mcp": { command: "test", scope: "local" } },
-        agents: {}, skills: {}, permissions: { allowedPaths: [], deniedPaths: [], allowedCommands: [], deniedCommands: [], networkAllow: false }
-      }
-    } as any);
+        agents: {},
+        skills: {},
+        permissions: createPermissions(),
+      }),
+    }));
 
     await moveCommand("mcp", "test-mcp", { toGlobal: true });
 
     const config = await manager.read();
-    expect(config.resources.mcps["test-mcp"].scope).toBe("global");
+    expect(expectDefined(config.resources.mcps["test-mcp"], "Expected test-mcp to exist").scope).toBe("global");
     consoleSpy.mockRestore();
   });
 
@@ -62,11 +66,12 @@ describe("TDD Sanity Checks for Copilot Flags", () => {
     const cwdSpy = vi.spyOn(process, "cwd").mockReturnValue(mockHome);
     const cwd = process.cwd();
 
-    await manager.write({
-      version: 1, source: "claude",
+    await manager.write(createConfig({
+      version: 1,
+      source: "claude",
       clients: { "cursor": { enabled: true } },
-      resources: { mcps: {}, agents: {}, skills: {}, permissions: { allowedPaths: [], deniedPaths: [], allowedCommands: [], deniedCommands: [], networkAllow: false } }
-    } as any);
+      resources: createResources({ mcps: {}, agents: {}, skills: {}, permissions: createPermissions() }),
+    }));
 
     // Mock a local CLAUDE.md file
     const sourceAdapter = new ClaudeAdapter();
@@ -127,11 +132,12 @@ describe("TDD Sanity Checks for Copilot Flags", () => {
     const cwdSpy = vi.spyOn(process, "cwd").mockReturnValue(mockHome);
     const originalExitCode = process.exitCode;
 
-    await manager.write({
-      version: 1, source: "claude",
+    await manager.write(createConfig({
+      version: 1,
+      source: "claude",
       clients: { "cursor": { enabled: true } },
-      resources: { mcps: {}, agents: {}, skills: {}, permissions: { allowedPaths: [], deniedPaths: [], allowedCommands: [], deniedCommands: [], networkAllow: false } }
-    } as any);
+      resources: createResources({ mcps: {}, agents: {}, skills: {}, permissions: createPermissions() }),
+    }));
 
     // Do NOT create CLAUDE.md — source is missing
     await memorySyncCommand({ source: "claude" });
@@ -149,11 +155,12 @@ describe("TDD Sanity Checks for Copilot Flags", () => {
     const consoleSpy = vi.spyOn(console, "log").mockImplementation(() => {});
     const cwdSpy = vi.spyOn(process, "cwd").mockReturnValue(mockHome);
 
-    await manager.write({
-      version: 1, source: "claude",
+    await manager.write(createConfig({
+      version: 1,
+      source: "claude",
       clients: { "cursor": { enabled: true } },
-      resources: { mcps: {}, agents: {}, skills: {}, permissions: { allowedPaths: [], deniedPaths: [], allowedCommands: [], deniedCommands: [], networkAllow: false } }
-    } as any);
+      resources: createResources({ mcps: {}, agents: {}, skills: {}, permissions: createPermissions() }),
+    }));
 
     // Create source file
     const fs = await import("fs/promises");
@@ -175,11 +182,12 @@ describe("TDD Sanity Checks for Copilot Flags", () => {
   it("sanity: doctorCommand executes full cycle without crashing", async () => {
     const consoleSpy = vi.spyOn(console, "log").mockImplementation(() => {});
 
-    await manager.write({
-      version: 1, source: "claude",
+    await manager.write(createConfig({
+      version: 1,
+      source: "claude",
       clients: { "claude": { enabled: true } },
-      resources: { mcps: {}, agents: {}, skills: {}, permissions: { allowedPaths: [], deniedPaths: [], allowedCommands: [], deniedCommands: [], networkAllow: false } }
-    } as any);
+      resources: createResources({ mcps: {}, agents: {}, skills: {}, permissions: createPermissions() }),
+    }));
 
     // Provide the config so doctor passes
     await fs.mkdir(path.join(mockHome, ".claude"));

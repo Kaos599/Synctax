@@ -1,8 +1,11 @@
 import fs from "fs/promises";
 import path from "path";
-import { ClientAdapter, McpServer, Agent, Skill, Permissions, Models, Prompts, Credentials, ResourceScope } from "../types.js";
-import { ConfigScope, homeDir, xdgStyleConfigCandidates, firstExistingScopedPath, firstExistingPath } from "../platform-paths.js";
+import type { ClientAdapter, McpServer, Agent, Skill, Permissions, Models, Prompts, Credentials, ResourceScope } from "../types.js";
+import { homeDir, xdgStyleConfigCandidates, firstExistingScopedPath, firstExistingPath } from "../platform-paths.js";
+import type { ConfigScope } from "../platform-paths.js";
 import { splitByScope } from "../scopes.js";
+import { atomicWriteFile } from "../fs-utils.js";
+import { toArray } from "../coerce.js";
 
 function scopeWeight(scope: ConfigScope): number {
   if (scope === "global") return 0;
@@ -19,18 +22,34 @@ function mergeMcpServers(parsed: Record<string, any>, into: Record<string, McpSe
   const mcpServers = parsed.mcpServers || {};
   for (const [key, val] of Object.entries<any>(mcpServers)) {
     if (val && typeof val === "object" && typeof val.command === "string") {
-      into[key] = { command: val.command, args: val.args, env: val.env, scope };
+      into[key] = { command: val.command, args: toArray(val.args), env: val.env, scope };
     }
   }
 }
 
 function mergeConfig(parsed: any, permissions: Permissions, models: Models) {
   if (!parsed || typeof parsed !== "object") return;
-  if (parsed.autoApproveNetwork === true) permissions.networkAllow = true;
+  if (typeof parsed.autoApproveNetwork === "boolean") permissions.networkAllow = parsed.autoApproveNetwork;
   if (Array.isArray(parsed.autoApproveCommands)) {
     permissions.allowedCommands = parsed.autoApproveCommands;
   }
   if (typeof parsed.model === "string") models.defaultModel = parsed.model;
+}
+
+function defaultPermissions(): Permissions {
+  return {
+    allowedPaths: [],
+    deniedPaths: [],
+    allowedCommands: [],
+    deniedCommands: [],
+    networkAllow: false,
+    allow: [],
+    deny: [],
+    ask: [],
+    allowedUrls: [],
+    deniedUrls: [],
+    trustedFolders: [],
+  };
 }
 
 export class ClineAdapter implements ClientAdapter {
@@ -70,7 +89,7 @@ export class ClineAdapter implements ClientAdapter {
       mcps: {} as Record<string, McpServer>,
       agents: {} as Record<string, Agent>,
       skills: {} as Record<string, Skill>,
-      permissions: { allowedPaths: [], deniedPaths: [], allowedCommands: [], deniedCommands: [], networkAllow: false } as Permissions,
+      permissions: defaultPermissions(),
       models: {} as Models,
       prompts: {} as Prompts
     };
@@ -119,7 +138,10 @@ export class ClineAdapter implements ClientAdapter {
       ...candidates.filter((entry) => entry.scope !== scope),
     ];
     const found = await firstExistingScopedPath(prioritized);
-    return found?.path ?? candidates[0]?.path;
+    const fallback = candidates[0]?.path;
+    if (found?.path) return found.path;
+    if (fallback) return fallback;
+    throw new Error("No config path candidates available for Cline adapter");
   }
 
   private async writeMcpSettings(configPath: string, mcps: Record<string, McpServer>): Promise<void> {
@@ -138,7 +160,7 @@ export class ClineAdapter implements ClientAdapter {
       existing.mcpServers[key] = stripScope(value);
     }
 
-    await fs.writeFile(configPath, JSON.stringify(existing, null, 2), "utf-8");
+    await atomicWriteFile(configPath, JSON.stringify(existing, null, 2));
   }
 
   private async writeConfig(configPath: string, permissions?: Permissions, models?: Models): Promise<void> {
@@ -162,7 +184,7 @@ export class ClineAdapter implements ClientAdapter {
       existing.model = models.defaultModel;
     }
 
-    await fs.writeFile(configPath, JSON.stringify(existing, null, 2), "utf-8");
+    await atomicWriteFile(configPath, JSON.stringify(existing, null, 2));
   }
 
   getMemoryFileName(): string { return ".clinerules"; }
@@ -174,6 +196,6 @@ export class ClineAdapter implements ClientAdapter {
     }
   }
   async writeMemory(projectDir: string, content: string): Promise<void> {
-    await fs.writeFile(path.join(projectDir, this.getMemoryFileName()), content, "utf-8");
+    await atomicWriteFile(path.join(projectDir, this.getMemoryFileName()), content);
   }
 }

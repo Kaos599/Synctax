@@ -17,7 +17,7 @@ const headerColors = [
 
 export function createTable(opts: SynctaxTableOptions): Table.Table {
   const styledHeaders = opts.headers.map((h, i) => {
-    const colorFn = headerColors[i % headerColors.length]!;
+    const colorFn = headerColors[i % headerColors.length] ?? ((v: string) => v);
     return colorFn(h);
   });
 
@@ -30,7 +30,12 @@ export function createTable(opts: SynctaxTableOptions): Table.Table {
   };
 
   if (opts.colAligns) tableOpts.colAligns = opts.colAligns;
-  if (opts.compact) tableOpts.style!.compact = opts.compact;
+  if (opts.compact) {
+    tableOpts.style = {
+      ...(tableOpts.style || {}),
+      compact: opts.compact,
+    };
+  }
 
   return new Table(tableOpts);
 }
