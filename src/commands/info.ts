@@ -216,47 +216,47 @@ export async function statusCommand() {
     ui.success("All required environment variables and credentials appear to be set.", { indent: 2 });
   }
 
-  // 3. Sync status
+  // 3. Sync status — parallel reads across all enabled clients
   console.log(ui.format.info("\n  Client Sync Status:"));
-  let clientsChecked = 0;
-  for (const [id, clientConf] of Object.entries(config.clients)) {
-    if (!clientConf.enabled) continue;
-    const adapter = adapters[id];
-    if (!adapter) continue;
-    clientsChecked++;
 
-    const spin = ui.spinner(`Checking ${adapter.name}...`);
-    try {
-      const data = await adapter.read();
-      const supportedDomains =
-        (hasOwnKey(DRIFT_DOMAIN_OVERRIDES, id) ? DRIFT_DOMAIN_OVERRIDES[id] : undefined) ?? ALL_DRIFT_DOMAINS;
-      const driftDetails: string[] = [];
+  const enabledClients = Object.entries(config.clients)
+    .filter(([id, clientConf]) => clientConf.enabled && adapters[id])
+    .map(([id]) => [id, adapters[id]!] as const);
 
-      if (supportedDomains.includes("mcps")) {
-        driftDetails.push(...collectDriftDetails("MCP", mcps, data.mcps || {}));
-      }
-      if (supportedDomains.includes("agents")) {
-        driftDetails.push(...collectDriftDetails("Agent", agents, data.agents || {}));
-      }
-      if (supportedDomains.includes("skills")) {
-        driftDetails.push(...collectDriftDetails("Skill", skills, data.skills || {}));
-      }
-
-      const inSync = driftDetails.length === 0;
-
-      if (inSync) {
-        spin.succeed(`${adapter.name}: In Sync`);
-      } else {
-        spin.warn(`${adapter.name}: Out of Sync (${driftDetails.length} issues)`);
-        driftDetails.forEach(d => ui.dim(`      - ${d}`));
-      }
-    } catch (e: any) {
-      spin.fail(`${adapter.name}: Error reading config (${e.message})`);
-    }
-  }
-
-  if (clientsChecked === 0) {
+  if (enabledClients.length === 0) {
     ui.dim("    No clients enabled.");
+  } else {
+    const spin = ui.spinner(`Checking ${enabledClients.length} client${enabledClients.length !== 1 ? "s" : ""}...`);
+
+    const results = await Promise.all(
+      enabledClients.map(async ([id, adapter]) => {
+        try {
+          const data = await adapter.read();
+          const supportedDomains =
+            (hasOwnKey(DRIFT_DOMAIN_OVERRIDES, id) ? DRIFT_DOMAIN_OVERRIDES[id] : undefined) ?? ALL_DRIFT_DOMAINS;
+          const driftDetails: string[] = [];
+          if (supportedDomains.includes("mcps")) driftDetails.push(...collectDriftDetails("MCP", mcps, data.mcps || {}));
+          if (supportedDomains.includes("agents")) driftDetails.push(...collectDriftDetails("Agent", agents, data.agents || {}));
+          if (supportedDomains.includes("skills")) driftDetails.push(...collectDriftDetails("Skill", skills, data.skills || {}));
+          return { adapter, inSync: driftDetails.length === 0, driftDetails, error: null as string | null };
+        } catch (e: any) {
+          return { adapter, inSync: false, driftDetails: [] as string[], error: e.message as string };
+        }
+      })
+    );
+
+    spin.stop();
+
+    for (const result of results) {
+      if (result.error) {
+        ui.error(`${result.adapter.name}: Error reading config (${result.error})`, { indent: 2 });
+      } else if (result.inSync) {
+        ui.success(`${result.adapter.name}: In Sync`, { indent: 2 });
+      } else {
+        ui.warn(`${result.adapter.name}: Out of Sync (${result.driftDetails.length} issues)`, { indent: 2 });
+        result.driftDetails.forEach(d => ui.dim(`      - ${d}`));
+      }
+    }
   }
 
   console.log(ui.format.summary(timer.elapsed(), "status check complete"));
@@ -281,47 +281,65 @@ export async function doctorCommand(options: any): Promise<boolean> {
   try {
     const config = await configManager.read();
 
-    // Check missing clients
-    for (const [id, clientConf] of Object.entries(config.clients)) {
-      if (!clientConf.enabled) continue;
-      const adapter = adapters[id];
-      if (!adapter) {
+    // Flag any enabled clients with missing adapters
+    const clientEntries = Object.entries(config.clients).filter(([, c]) => c.enabled);
+    for (const [id] of clientEntries) {
+      if (!adapters[id]) {
         ui.error(`Adapter missing for enabled client: ${id}`);
         healthy = false;
-        continue;
       }
+    }
 
-      const spin = ui.spinner(`Checking ${adapter.name}...`);
-      const detected = await adapter.detect();
-      if (!detected) {
-        spin.warn(`Enabled client ${adapter.name} config not found on disk.`);
-        healthy = false;
-      } else {
-        spin.succeed(`Client ${adapter.name} config found.`);
-      }
-      }
+    // Parallel detect across all valid adapters
+    const validClients = clientEntries
+      .filter(([id]) => !!adapters[id])
+      .map(([id]) => adapters[id]!);
 
-      if (options?.deep) {
-        const mcpResources = config.resources.mcps || {};
-        for (const [name, server] of Object.entries(mcpResources)) {
-          const commandExists = await commandExistsOnPath(server.command);
-          if (!commandExists) {
-            ui.error(`MCP "${name}" command not found on PATH: ${server.command}`);
-            healthy = false;
+    if (validClients.length > 0) {
+      const spin = ui.spinner(`Checking ${validClients.length} client${validClients.length !== 1 ? "s" : ""}...`);
+
+      const detectResults = await Promise.all(
+        validClients.map(async (adapter) => ({ adapter, detected: await adapter.detect() }))
+      );
+
+      spin.stop();
+
+      for (const { adapter, detected } of detectResults) {
+        if (!detected) {
+          ui.warn(`Enabled client ${adapter.name} config not found on disk.`);
+          healthy = false;
+        } else {
+          ui.success(`Client ${adapter.name} config found.`);
+        }
+      }
+    }
+
+    if (options?.deep) {
+      const mcpResources = config.resources.mcps || {};
+      const deepResults = await Promise.all(
+        Object.entries(mcpResources).map(async ([name, server]) => {
+          const issues: string[] = [];
+          if (!(await commandExistsOnPath(server.command))) {
+            issues.push(`MCP "${name}" command not found on PATH: ${server.command}`);
           }
-
           if (server.env) {
             for (const envValue of Object.values(server.env)) {
               const envName = getRequiredEnvVarName(envValue);
-              if (!envName) continue;
-              if (!process.env[envName]) {
-                ui.error(`MCP "${name}" requires missing env var: ${envName}`);
-                healthy = false;
+              if (envName && !process.env[envName]) {
+                issues.push(`MCP "${name}" requires missing env var: ${envName}`);
               }
             }
           }
+          return issues;
+        })
+      );
+      for (const issues of deepResults) {
+        for (const issue of issues) {
+          ui.error(issue);
+          healthy = false;
         }
       }
+    }
 
   } catch (e: any) {
     ui.error(`Config schema error: ${e.message}`);
@@ -352,31 +370,36 @@ export async function infoCommand() {
     headers: ["Client", "Installed", "MCPs", "Agents", "Skills"],
   });
 
-  for (const [id, adapter] of Object.entries(adapters)) {
-    const installed = await adapter.detect();
-    let mcpCount = 0;
-    let agentCount = 0;
-    let skillCount = 0;
+  const adapterRows = await Promise.all(
+    Object.entries(adapters).map(async ([id, adapter]) => {
+      const installed = await adapter.detect();
+      let mcpCount = 0;
+      let agentCount = 0;
+      let skillCount = 0;
 
-    if (installed) {
-      try {
-        const data = await adapter.read();
-        mcpCount = Object.keys(data.mcps || {}).length;
-        agentCount = Object.keys(data.agents || {}).length;
-        skillCount = Object.keys(data.skills || {}).length;
-      } catch (e) {
-        // If config is broken, we just show 0
+      if (installed) {
+        try {
+          const data = await adapter.read();
+          mcpCount = Object.keys(data.mcps || {}).length;
+          agentCount = Object.keys(data.agents || {}).length;
+          skillCount = Object.keys(data.skills || {}).length;
+        } catch {
+          // If config is broken, we just show 0
+        }
       }
-    }
 
-    const isActive = config.clients[id]?.enabled;
+      const isActive = config.clients[id]?.enabled;
+      return { adapter, installed, mcpCount, agentCount, skillCount, isActive };
+    })
+  );
 
+  for (const { adapter, installed, mcpCount, agentCount, skillCount, isActive } of adapterRows) {
     table.push([
       isActive ? ui.semantic.highlight(adapter.name) : ui.semantic.muted(adapter.name),
       installed ? ui.semantic.success("Yes") : ui.semantic.error("No"),
       `${mcpCount} MCP${mcpCount !== 1 ? "s" : ""}`,
       `${agentCount} Agent${agentCount !== 1 ? "s" : ""}`,
-      `${skillCount} Skill${skillCount !== 1 ? "s" : ""}`
+      `${skillCount} Skill${skillCount !== 1 ? "s" : ""}`,
     ]);
   }
 
