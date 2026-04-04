@@ -17,6 +17,7 @@ const rebelBanner = `
              ░░██████
               ░░░░░░
 `;
+export const REBEL_BANNER_LINES = rebelBanner.trim().split("\n");
 
 const GAP = "    ";
 

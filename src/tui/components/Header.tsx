@@ -1,6 +1,7 @@
 import React from "react";
-import { Box, Text } from "ink";
+import { Box, Text, useStdout } from "ink";
 import { colors, chars, palette } from "../theme.js";
+import { REBEL_BANNER_LINES } from "../../banner.js";
 
 export interface HeaderProps {
   version: string;
@@ -19,10 +20,6 @@ function HealthBadge({ health }: { health: "OK" | "WARN" | "FAIL" }) {
   );
 }
 
-/**
- * Compact ASCII art wordmark — 3 lines tall, gradient colored.
- * Uses block characters for a chunky, modern look.
- */
 const WORDMARK_LINES = [
   " ███████╗██╗   ██╗███╗   ██╗ ██████╗████████╗ █████╗ ██╗  ██╗",
   " ██╔════╝╚██╗ ██╔╝████╗  ██║██╔════╝╚══██╔══╝██╔══██╗╚██╗██╔╝",
@@ -33,30 +30,32 @@ const WORDMARK_LINES = [
 ];
 
 function getGradient() {
-  return [
-    palette.accent,
-    palette.brand,
-    palette.info,
-    palette.accent,
-    palette.brand,
-    palette.info,
-  ];
+  return [palette.accent, palette.brand, palette.info, palette.accent, palette.brand, palette.info];
 }
 
 export function Header({ version, profile, source, health }: HeaderProps) {
+  const { stdout } = useStdout();
+  const cols = stdout?.columns ?? 120;
+  const rows = stdout?.rows ?? 36;
+  const showRebel = cols >= 82 && rows >= 32;
+
   return (
     <Box flexDirection="column" paddingX={1}>
-      {/* ASCII art wordmark */}
-      {WORDMARK_LINES.map((line, i) => {
-        const gradient = getGradient();
-        return (
-          <Text key={`wm-${i}`} color={gradient[i % gradient.length]} bold>
-            {line}
-          </Text>
-        );
-      })}
+      {showRebel
+        ? REBEL_BANNER_LINES.map((line, i) => (
+            <Text key={`rb-${i}`} color={palette.brand} bold>
+              {line}
+            </Text>
+          ))
+        : WORDMARK_LINES.map((line, i) => {
+            const gradient = getGradient();
+            return (
+              <Text key={`wm-${i}`} color={gradient[i % gradient.length]} bold>
+                {line}
+              </Text>
+            );
+          })}
 
-      {/* Info line below wordmark */}
       <Box marginTop={0}>
         <Text color={colors.textMuted}>  v{version}</Text>
         <Text color={colors.textMuted}> {chars.dot} </Text>
