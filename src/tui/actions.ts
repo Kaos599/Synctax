@@ -20,14 +20,19 @@ export interface TuiAction {
   description: string;
   hint?: string;
   focus: TuiFocus;
+  cliOnly?: boolean;
 }
 
 interface TuiActionDefinition extends TuiAction {
   execute(ctx: TuiRuntimeContext): Promise<void>;
 }
 
+interface TuiHotkeyActionDefinition extends Omit<TuiActionDefinition, "hotkey"> {
+  hotkey: TuiActionHotkey;
+}
+
 /** Actions with assigned hotkeys — shown in the QuickActions grid */
-const TUI_HOTKEY_DEFINITIONS: ReadonlyArray<TuiActionDefinition> = [
+const TUI_HOTKEY_DEFINITIONS: ReadonlyArray<TuiHotkeyActionDefinition> = [
   {
     id: "sync",
     hotkey: "1",
@@ -205,6 +210,7 @@ const TUI_PALETTE_DEFINITIONS: ReadonlyArray<TuiActionDefinition> = [
     description: "Imports a master configuration from a JSON file, replacing your current config.",
     hint: "Requires a file path. Run from CLI: synctax import <file>",
     focus: "actions",
+    cliOnly: true,
     async execute() {
       throw new Error("This command requires a file path. Run from CLI: synctax import <file>");
     },
@@ -218,6 +224,7 @@ const TUI_PALETTE_DEFINITIONS: ReadonlyArray<TuiActionDefinition> = [
     description: "Add an MCP server, agent, or skill to your master config.",
     hint: "Requires arguments. Run from CLI: synctax add mcp <name> --command <cmd>",
     focus: "actions",
+    cliOnly: true,
     async execute() {
       throw new Error("This command requires arguments. Run from CLI: synctax add mcp <name> --command <cmd>");
     },
@@ -232,7 +239,7 @@ const TUI_PALETTE_DEFINITIONS: ReadonlyArray<TuiActionDefinition> = [
     hint: "Requires arguments. Run from CLI: synctax remove mcp <name>",
     focus: "actions",
     async execute() {
-      throw new Error("This command requires arguments. Run from CLI: synctax remove mcp <name>");
+      throw new Error("Should be handled by TUI picker flow");
     },
   },
   {
@@ -244,6 +251,7 @@ const TUI_PALETTE_DEFINITIONS: ReadonlyArray<TuiActionDefinition> = [
     description: "Move a resource between scopes (global, user, project, local).",
     hint: "Requires arguments. Run from CLI: synctax move mcp <name> --to-global",
     focus: "actions",
+    cliOnly: true,
     async execute() {
       throw new Error("This command requires arguments. Run from CLI: synctax move mcp <name> --to-global");
     },
@@ -294,7 +302,7 @@ const TUI_PALETTE_DEFINITIONS: ReadonlyArray<TuiActionDefinition> = [
     hint: "Requires a profile name. Run from CLI: synctax profile use <name>",
     focus: "actions",
     async execute() {
-      throw new Error("This command requires a profile name. Run from CLI: synctax profile use <name>");
+      throw new Error("Should be handled by TUI picker flow");
     },
   },
   {
@@ -306,6 +314,7 @@ const TUI_PALETTE_DEFINITIONS: ReadonlyArray<TuiActionDefinition> = [
     description: "Creates a named filter profile with --include / --exclude resource lists. Each profile gets its own .env file.",
     hint: "Requires a profile name. Run from CLI: synctax profile create <name> --include <resources>",
     focus: "actions",
+    cliOnly: true,
     async execute() {
       throw new Error("This command requires a profile name. Run from CLI: synctax profile create <name>");
     },
@@ -320,7 +329,7 @@ const TUI_PALETTE_DEFINITIONS: ReadonlyArray<TuiActionDefinition> = [
     hint: "Requires a profile name. Run from CLI: synctax profile diff <name>",
     focus: "actions",
     async execute() {
-      throw new Error("This command requires a profile name. Run from CLI: synctax profile diff <name>");
+      throw new Error("Should be handled by TUI picker flow");
     },
   },
 ];
@@ -335,7 +344,7 @@ const ACTION_DEFINITION_BY_ID = Object.fromEntries(
 export type TuiHotkeyAction = TuiAction & { hotkey: TuiActionHotkey };
 
 /** Hotkey actions only — used by QuickActions grid */
-export const TUI_ACTIONS: ReadonlyArray<TuiHotkeyAction> = TUI_HOTKEY_DEFINITIONS.map(({ execute: _execute, ...action }) => action) as ReadonlyArray<TuiHotkeyAction>;
+export const TUI_ACTIONS: ReadonlyArray<TuiHotkeyAction> = TUI_HOTKEY_DEFINITIONS.map(({ execute: _execute, ...action }) => action);
 
 export function getActionByHotkey(key: string): TuiHotkeyAction | undefined {
   return TUI_ACTIONS.find((action) => action.hotkey === key);

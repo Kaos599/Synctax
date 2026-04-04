@@ -1,12 +1,12 @@
 import type { TuiAction } from "./actions.js";
 
 export type TuiHealth = "OK" | "WARN" | "FAIL";
-export type TuiMode = "dashboard" | "confirm" | "running" | "result" | "help" | "palette" | "source" | "theme";
+export type TuiMode = "dashboard" | "confirm" | "running" | "result" | "help" | "palette" | "source" | "theme" | "profile-pick" | "remove-pick";
 export type TuiFocus = "overview" | "quickstart" | "actions" | "diagnostics" | "features";
 
 export type TuiPendingAction = Pick<
   TuiAction,
-  "id" | "hotkey" | "label" | "commandPreview" | "confirmTitle" | "confirmRisk" | "description" | "hint"
+  "id" | "hotkey" | "label" | "commandPreview" | "confirmTitle" | "confirmRisk" | "description" | "hint" | "cliOnly"
 >;
 
 export interface TuiFrameData {
@@ -21,4 +21,6 @@ export interface TuiFrameData {
   driftClients: number;
   lastSync: string;
   warnings: string[];
+  profileNames: string[];
+  resourceNames: { mcps: string[]; agents: string[]; skills: string[] };
 }

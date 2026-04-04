@@ -36,6 +36,8 @@ describe("no-arg entry", () => {
       driftClients: 0,
       lastSync: "unknown",
       warnings: [],
+      profileNames: ["default"],
+      resourceNames: { mcps: [], agents: [], skills: [] },
     };
 
     const runSpy = vi.spyOn(inkApp, "runInkTui").mockResolvedValue(undefined);

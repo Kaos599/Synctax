@@ -18,6 +18,8 @@ function ModeIndicator({ mode }: { mode: TuiMode }) {
     palette: { label: "SEARCH", color: colors.info },
     source: { label: "SOURCE", color: colors.brand },
     theme: { label: "THEME", color: colors.brandBright },
+    "profile-pick": { label: "PROFILE", color: colors.brand },
+    "remove-pick": { label: "REMOVE", color: colors.warning },
   };
 
   const cfg = modeConfig[mode];

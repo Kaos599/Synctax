@@ -48,5 +48,11 @@ export async function loadTuiFrameData(): Promise<TuiFrameData> {
     driftClients: 0,
     lastSync: "unknown",
     warnings,
+    profileNames: Object.keys(config.profiles),
+    resourceNames: {
+      mcps: Object.keys(config.resources.mcps),
+      agents: Object.keys(config.resources.agents),
+      skills: Object.keys(config.resources.skills),
+    },
   };
 }

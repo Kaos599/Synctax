@@ -13,11 +13,14 @@ import { CommandPalette } from "./CommandPalette.js";
 import { RunningView, ResultView } from "./RunningView.js";
 import { SourceSelector } from "./SourceSelector.js";
 import { ThemeSelector } from "./ThemeSelector.js";
+import { ProfileSelector } from "./ProfileSelector.js";
+import { RemoveSelector } from "./RemoveSelector.js";
 import { Toast } from "./Toast.js";
 import type { ToastProps } from "./Toast.js";
 import { getActionByHotkey, runActionById } from "../actions.js";
 import { runGuardedAction } from "../executor.js";
 import { ConfigManager } from "../../config.js";
+import * as commands from "../../commands.js";
 import { getAdapter, type AdapterId } from "../../adapters/index.js";
 import type { TuiFrameData, TuiMode, TuiFocus, TuiPendingAction } from "../ink-types.js";
 import type { TuiAction } from "../actions.js";
@@ -44,6 +47,7 @@ export function App({ data, executeAction }: AppProps) {
   const [toast, setToast] = useState<ToastProps | null>(null);
   const [currentSource, setCurrentSource] = useState(data.source);
   const [currentTheme, setCurrentTheme] = useState(data.theme || "synctax");
+  const [profilePickAction, setProfilePickAction] = useState<"profile-use" | "profile-diff" | undefined>();
 
   const resolvedSource = getAdapter(currentSource) ? (currentSource as AdapterId) : undefined;
   const invalidSource = currentSource && !resolvedSource ? currentSource : undefined;
@@ -96,6 +100,36 @@ export function App({ data, executeAction }: AppProps) {
   );
 
   const selectAction = useCallback((action: TuiAction | TuiPendingAction) => {
+    // CLI-only actions: skip confirm, show guidance directly
+    if (action.cliOnly) {
+      setLastActionLabel(action.label);
+      setLastResult({
+        actionId: action.id,
+        ok: true,
+        output: [action.hint || `Run from CLI: ${action.commandPreview}`],
+        elapsedMs: 0,
+      });
+      setMode("result");
+      setStatusLine(`${action.label} requires CLI arguments`);
+      return;
+    }
+
+    // Profile picker actions: go to profile selector
+    if (action.id === "profile-use" || action.id === "profile-diff") {
+      setProfilePickAction(action.id);
+      setMode("profile-pick");
+      setStatusLine("Select a profile — Esc to cancel");
+      return;
+    }
+
+    // Remove action: go to resource picker
+    if (action.id === "remove") {
+      setMode("remove-pick");
+      setStatusLine("Select resource to remove — Esc to cancel");
+      return;
+    }
+
+    // Standard confirm flow
     const source = currentSource || "claude";
     const interpolate = (s: string) => s.replace(/<client>/g, source);
     const preview = interpolate(action.commandPreview);
@@ -108,6 +142,7 @@ export function App({ data, executeAction }: AppProps) {
       confirmRisk: action.confirmRisk,
       description: action.description,
       hint: action.hint,
+      cliOnly: action.cliOnly,
     });
     setMode("confirm");
     setStatusLine(`Would run: ${preview}`);
@@ -212,7 +247,7 @@ export function App({ data, executeAction }: AppProps) {
         return;
       }
     }
-  }, { isActive: mode !== "palette" && mode !== "source" && mode !== "theme" });
+  }, { isActive: mode !== "palette" && mode !== "source" && mode !== "theme" && mode !== "profile-pick" && mode !== "remove-pick" });
 
   const termWidth = stdout?.columns ?? 120;
   const termHeight = stdout?.rows ?? 36;
@@ -323,6 +358,77 @@ export function App({ data, executeAction }: AppProps) {
                 setToast({ message: `Failed: ${msg}`, type: "error" });
               }
               goHome();
+            })();
+          }}
+          onCancel={goHome}
+        />
+      </Shell>
+    );
+  }
+
+  if (mode === "profile-pick") {
+    return (
+      <Shell w={termWidth} h={termHeight} data={data} source={currentSource} mode={mode} status={statusLine}>
+        <ProfileSelector
+          profiles={data.profileNames}
+          activeProfile={data.profile}
+          actionLabel={profilePickAction === "profile-use" ? "Switch Profile" : "Preview Profile Diff"}
+          onSelect={(name) => {
+            void (async () => {
+              setMode("running");
+              const label = profilePickAction === "profile-use" ? "profile use" : "profile diff";
+              setLastActionLabel(label);
+              setRunOutput([]);
+              setStatusLine(`Running ${label}...`);
+
+              const result = await runGuardedAction(profilePickAction ?? "profile-use", async () => {
+                if (profilePickAction === "profile-use") {
+                  await commands.profileUseCommand(name, {});
+                } else {
+                  await commands.profileDiffCommand(name, {});
+                }
+              });
+
+              setRunOutput(result.output);
+              setLastResult(result);
+              setMode("result");
+              const statusMsg = result.ok
+                ? `Completed ${label}`
+                : `Failed ${label}: ${result.error ?? "unknown error"}`;
+              setStatusLine(statusMsg);
+              setToast({ message: statusMsg, type: result.ok ? "success" : "error" });
+            })();
+          }}
+          onCancel={goHome}
+        />
+      </Shell>
+    );
+  }
+
+  if (mode === "remove-pick") {
+    return (
+      <Shell w={termWidth} h={termHeight} data={data} source={currentSource} mode={mode} status={statusLine}>
+        <RemoveSelector
+          resourceNames={data.resourceNames}
+          onSelect={(domain, name) => {
+            void (async () => {
+              setMode("running");
+              setLastActionLabel(`remove ${domain}`);
+              setRunOutput([]);
+              setStatusLine(`Removing ${domain} "${name}"...`);
+
+              const result = await runGuardedAction("remove", async () => {
+                await commands.removeCommand(domain, name, {});
+              });
+
+              setRunOutput(result.output);
+              setLastResult(result);
+              setMode("result");
+              const statusMsg = result.ok
+                ? `Removed ${domain} "${name}"`
+                : `Failed: ${result.error ?? "unknown error"}`;
+              setStatusLine(statusMsg);
+              setToast({ message: statusMsg, type: result.ok ? "success" : "error" });
             })();
           }}
           onCancel={goHome}
