@@ -65,6 +65,8 @@ export function reduceTuiKey(state: TuiFrameState, key: string): TuiReducerResul
           commandPreview: action.commandPreview,
           confirmTitle: action.confirmTitle,
           confirmRisk: action.confirmRisk,
+          description: action.description,
+          hint: action.hint,
         },
         statusLine: `Would run: ${action.commandPreview}`,
       },

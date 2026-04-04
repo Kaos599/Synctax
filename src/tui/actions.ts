@@ -14,6 +14,8 @@ export interface TuiAction {
   commandPreview: string;
   confirmTitle: string;
   confirmRisk: "low" | "medium";
+  description: string;
+  hint?: string;
   focus: TuiFocus;
 }
 
@@ -29,6 +31,7 @@ const TUI_ACTION_DEFINITIONS: ReadonlyArray<TuiActionDefinition> = [
     commandPreview: "synctax sync",
     confirmTitle: "Push master config to all enabled clients?",
     confirmRisk: "medium",
+    description: "Writes your master config to all enabled clients. Each client's existing config is overwritten atomically. A snapshot is taken first — run synctax restore to undo.",
     focus: "actions",
     async execute() {
       await commands.syncCommand({});
@@ -39,8 +42,10 @@ const TUI_ACTION_DEFINITIONS: ReadonlyArray<TuiActionDefinition> = [
     hotkey: "2",
     label: "pull",
     commandPreview: "synctax pull --from <client>",
-    confirmTitle: "Pull and merge client config into master?",
+    confirmTitle: "Pull and merge <client> config into master?",
     confirmRisk: "medium",
+    description: "Reads your source client's live config and merges it into master. Use this after making changes directly in a client like Cursor or Claude Code.",
+    hint: "Pulling from your current source. Press [s] on the dashboard to change it.",
     focus: "actions",
     async execute(ctx) {
       if (ctx.invalidSource) {
@@ -56,6 +61,7 @@ const TUI_ACTION_DEFINITIONS: ReadonlyArray<TuiActionDefinition> = [
     commandPreview: "synctax diff",
     confirmTitle: "Show drift between master and clients?",
     confirmRisk: "low",
+    description: "Compares your master config against each enabled client's live config. Lists added, removed, and modified MCPs, agents, and skills. Nothing is written to disk.",
     focus: "actions",
     async execute() {
       await commands.diffCommand(undefined, {});
@@ -68,6 +74,7 @@ const TUI_ACTION_DEFINITIONS: ReadonlyArray<TuiActionDefinition> = [
     commandPreview: "synctax validate",
     confirmTitle: "Run config validation checks?",
     confirmRisk: "low",
+    description: "Runs Zod schema validation on master config, checks env var references can resolve, and confirms required binaries exist on PATH.",
     focus: "actions",
     async execute() {
       await commands.validateCommand({});
@@ -80,6 +87,7 @@ const TUI_ACTION_DEFINITIONS: ReadonlyArray<TuiActionDefinition> = [
     commandPreview: "synctax doctor --deep",
     confirmTitle: "Run deep diagnostic checks?",
     confirmRisk: "low",
+    description: "Diagnoses common issues: missing clients, broken config paths, invalid env vars. Deep mode also verifies each MCP command is reachable on PATH.",
     focus: "actions",
     async execute() {
       await commands.doctorCommand({ deep: true });
@@ -92,6 +100,7 @@ const TUI_ACTION_DEFINITIONS: ReadonlyArray<TuiActionDefinition> = [
     commandPreview: "synctax backup",
     confirmTitle: "Create a backup of all client configs?",
     confirmRisk: "medium",
+    description: "Archives each enabled client's current native config files into a timestamped zip bundle at ~/.synctax/backups/. Run before risky changes.",
     focus: "actions",
     async execute() {
       await commands.backupCommand({});
@@ -104,6 +113,7 @@ const TUI_ACTION_DEFINITIONS: ReadonlyArray<TuiActionDefinition> = [
     commandPreview: "synctax profile list",
     confirmTitle: "List all profiles?",
     confirmRisk: "low",
+    description: "Lists all named profiles with their include/exclude filters and marks the currently active one.",
     focus: "actions",
     async execute() {
       await commands.profileListCommand({});
@@ -116,6 +126,7 @@ const TUI_ACTION_DEFINITIONS: ReadonlyArray<TuiActionDefinition> = [
     commandPreview: "synctax status",
     confirmTitle: "Show current sync status?",
     confirmRisk: "low",
+    description: "Shows a health overview across all clients: sync state, resource counts, and env var status at a glance.",
     focus: "actions",
     async execute() {
       await commands.statusCommand();
@@ -125,9 +136,11 @@ const TUI_ACTION_DEFINITIONS: ReadonlyArray<TuiActionDefinition> = [
     id: "memory-sync",
     hotkey: "9",
     label: "mem-sync",
-    commandPreview: "synctax memory-sync",
-    confirmTitle: "Sync memory/context files across clients?",
+    commandPreview: "synctax memory-sync --source <client>",
+    confirmTitle: "Sync memory/context files from <client> to all other clients?",
     confirmRisk: "medium",
+    description: "Copies the memory/context file from your source client (e.g. CLAUDE.md) to all other enabled clients in the current project directory.",
+    hint: "Copies from your current source. Press [s] on the dashboard to change it.",
     focus: "actions",
     async execute(ctx) {
       await commands.memorySyncCommand({ source: ctx.source });
@@ -140,6 +153,7 @@ const TUI_ACTION_DEFINITIONS: ReadonlyArray<TuiActionDefinition> = [
     commandPreview: "synctax watch",
     confirmTitle: "Start background auto-sync daemon?",
     confirmRisk: "medium",
+    description: "Starts a background daemon that watches ~/.synctax/config.json and auto-syncs to all clients on every save (500ms debounce).",
     focus: "actions",
     async execute() {
       await commands.watchCommand({});
@@ -152,6 +166,7 @@ const TUI_ACTION_DEFINITIONS: ReadonlyArray<TuiActionDefinition> = [
     commandPreview: "synctax link",
     confirmTitle: "Link client instruction files?",
     confirmRisk: "medium",
+    description: "Creates symlinks so each client's instruction file (CLAUDE.md, .cursorrules, etc.) points to a single shared canonical file.",
     focus: "actions",
     async execute() {
       await commands.linkCommand();
@@ -164,6 +179,7 @@ const TUI_ACTION_DEFINITIONS: ReadonlyArray<TuiActionDefinition> = [
     commandPreview: "synctax info",
     confirmTitle: "Show system intelligence table?",
     confirmRisk: "low",
+    description: "Displays a table showing which clients are installed and how many MCPs, agents, and skills each one has configured.",
     focus: "actions",
     async execute() {
       await commands.infoCommand();

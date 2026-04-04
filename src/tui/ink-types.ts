@@ -6,7 +6,7 @@ export type TuiFocus = "overview" | "quickstart" | "actions" | "diagnostics" | "
 
 export type TuiPendingAction = Pick<
   TuiAction,
-  "id" | "hotkey" | "label" | "commandPreview" | "confirmTitle" | "confirmRisk"
+  "id" | "hotkey" | "label" | "commandPreview" | "confirmTitle" | "confirmRisk" | "description" | "hint"
 >;
 
 export interface TuiFrameData {

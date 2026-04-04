@@ -5,26 +5,26 @@ import type { TuiPendingAction } from "../ink-types.js";
 
 export interface ConfirmViewProps {
   action: TuiPendingAction;
+  enabledClients: number;
+  resourceCounts: { mcps: number; agents: number; skills: number };
 }
 
-/**
- * Full-screen confirmation view — replaces dashboard content entirely.
- * No overlay, no z-index — just a clean dedicated view.
- */
-export function ConfirmView({ action }: ConfirmViewProps) {
+export function ConfirmView({ action, enabledClients, resourceCounts }: ConfirmViewProps) {
   const riskColor = action.confirmRisk === "medium" ? colors.warning : colors.success;
+  const borderColor = action.confirmRisk === "medium" ? colors.warning : colors.success;
+  const affectedLabel = action.confirmRisk === "low" ? "will check" : "will update";
+  const { mcps, agents, skills } = resourceCounts;
 
   return (
     <Box flexDirection="column" paddingX={2} paddingY={1} flexGrow={1} justifyContent="center">
-      {/* Confirm box */}
       <Box
         flexDirection="column"
         borderStyle="double"
-        borderColor={colors.warning}
+        borderColor={borderColor}
         paddingX={3}
         paddingY={1}
         alignSelf="center"
-        minWidth={50}
+        minWidth={54}
       >
         {/* Title */}
         <Box marginBottom={1}>
@@ -40,19 +40,47 @@ export function ConfirmView({ action }: ConfirmViewProps) {
           </Text>
         </Box>
 
+        {/* Description */}
+        <Box marginBottom={1} flexDirection="row">
+          <Text color={colors.border}>│ </Text>
+          <Text color={colors.textMuted}>{action.description}</Text>
+        </Box>
+
+        {/* Affected preview */}
+        <Box marginBottom={1} flexDirection="column">
+          <Box flexDirection="row">
+            <Text color={colors.textSecondary}>{affectedLabel}  </Text>
+            <Text color={colors.brand} bold>{chars.filledCircle} {enabledClients} client{enabledClients !== 1 ? "s" : ""}</Text>
+          </Box>
+          <Box paddingLeft={12}>
+            <Text color={colors.textMuted}>
+              {mcps} MCP{mcps !== 1 ? "s" : ""} {chars.dot} {agents} agent{agents !== 1 ? "s" : ""} {chars.dot} {skills} skill{skills !== 1 ? "s" : ""}
+            </Text>
+          </Box>
+        </Box>
+
         {/* Details */}
-        <Box>
-          <Text color={colors.textSecondary}>Command  </Text>
-          <Text color={colors.info} bold>{action.commandPreview}</Text>
+        <Box flexDirection="column" marginBottom={1}>
+          <Box flexDirection="row">
+            <Text color={colors.textSecondary}>command  </Text>
+            <Text color={colors.info} bold>{action.commandPreview}</Text>
+          </Box>
+          <Box flexDirection="row">
+            <Text color={colors.textSecondary}>risk     </Text>
+            <Text color={riskColor} bold>{action.confirmRisk}</Text>
+          </Box>
         </Box>
-        <Box marginBottom={1}>
-          <Text color={colors.textSecondary}>Risk     </Text>
-          <Text color={riskColor} bold>{action.confirmRisk}</Text>
-        </Box>
+
+        {/* Hint */}
+        {action.hint ? (
+          <Box marginBottom={1}>
+            <Text color={colors.textMuted} italic>💡 {action.hint}</Text>
+          </Box>
+        ) : null}
 
         {/* Divider */}
         <Box marginBottom={1}>
-          <Text color={colors.border} wrap="truncate">{"─".repeat(44)}</Text>
+          <Text color={colors.border} wrap="truncate">{"─".repeat(48)}</Text>
         </Box>
 
         {/* Actions */}

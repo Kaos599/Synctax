@@ -96,17 +96,22 @@ export function App({ data, executeAction }: AppProps) {
   );
 
   const selectAction = useCallback((action: TuiAction | TuiPendingAction) => {
+    const source = currentSource || "claude";
+    const interpolate = (s: string) => s.replace(/<client>/g, source);
+    const preview = interpolate(action.commandPreview);
     setPendingAction({
       id: action.id,
       hotkey: action.hotkey,
       label: action.label,
-      commandPreview: action.commandPreview,
-      confirmTitle: action.confirmTitle,
+      commandPreview: preview,
+      confirmTitle: interpolate(action.confirmTitle),
       confirmRisk: action.confirmRisk,
+      description: action.description,
+      hint: action.hint,
     });
     setMode("confirm");
-    setStatusLine(`Would run: ${action.commandPreview}`);
-  }, []);
+    setStatusLine(`Would run: ${preview}`);
+  }, [currentSource]);
 
   // ── Main input handler (disabled for modes that handle their own input) ──
   useInput((input, key) => {
@@ -242,7 +247,11 @@ export function App({ data, executeAction }: AppProps) {
   if (mode === "confirm" && pendingAction) {
     return (
       <Shell w={termWidth} h={termHeight} data={data} source={currentSource} mode={mode} status={statusLine}>
-        <ConfirmView action={pendingAction} />
+        <ConfirmView
+          action={pendingAction}
+          enabledClients={data.enabledClients}
+          resourceCounts={data.resourceCounts}
+        />
       </Shell>
     );
   }
