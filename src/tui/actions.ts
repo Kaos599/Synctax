@@ -4,12 +4,14 @@ import type { TuiRuntimeContext } from "./runtime-context.js";
 
 export type TuiActionId =
   | "sync" | "pull" | "profile" | "diff" | "validate" | "backup"
-  | "doctor" | "watch" | "memory-sync" | "status" | "info" | "link";
+  | "doctor" | "watch" | "memory-sync" | "status" | "restore" | "export"
+  | "import" | "add" | "remove" | "move" | "unlink" | "link" | "info"
+  | "profile-use" | "profile-create" | "profile-diff";
 export type TuiActionHotkey = "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9" | "0" | "!" | "@";
 
 export interface TuiAction {
   id: TuiActionId;
-  hotkey: TuiActionHotkey;
+  hotkey?: TuiActionHotkey;
   label: string;
   commandPreview: string;
   confirmTitle: string;
@@ -23,7 +25,8 @@ interface TuiActionDefinition extends TuiAction {
   execute(ctx: TuiRuntimeContext): Promise<void>;
 }
 
-const TUI_ACTION_DEFINITIONS: ReadonlyArray<TuiActionDefinition> = [
+/** Actions with assigned hotkeys — shown in the QuickActions grid */
+const TUI_HOTKEY_DEFINITIONS: ReadonlyArray<TuiActionDefinition> = [
   {
     id: "sync",
     hotkey: "1",
@@ -160,8 +163,103 @@ const TUI_ACTION_DEFINITIONS: ReadonlyArray<TuiActionDefinition> = [
     },
   },
   {
-    id: "link",
+    id: "restore",
     hotkey: "!",
+    label: "restore",
+    commandPreview: "synctax restore",
+    confirmTitle: "Restore master config from latest backup?",
+    confirmRisk: "medium",
+    description: "Restores your master config from the most recent backup snapshot. A full sync is triggered after restore to propagate changes.",
+    hint: "Uses the latest backup. For a specific timestamp, run from CLI: synctax restore --from <ts>",
+    focus: "actions",
+    async execute() {
+      await commands.restoreCommand({});
+    },
+  },
+  {
+    id: "export",
+    hotkey: "@",
+    label: "export",
+    commandPreview: "synctax export ~/.synctax/export.json",
+    confirmTitle: "Export master config to ~/.synctax/export.json?",
+    confirmRisk: "low",
+    description: "Exports the full master configuration to a portable JSON file. Credentials are automatically stripped for safety.",
+    hint: "Exports to ~/.synctax/export.json. For a custom path, run from CLI: synctax export <file>",
+    focus: "actions",
+    async execute() {
+      await commands.exportCommand("~/.synctax/export.json");
+    },
+  },
+];
+
+/** Palette-only actions — no hotkey, accessible via command palette (/) */
+const TUI_PALETTE_DEFINITIONS: ReadonlyArray<TuiActionDefinition> = [
+  {
+    id: "import",
+    label: "import",
+    commandPreview: "synctax import <file>",
+    confirmTitle: "Import master config from a file?",
+    confirmRisk: "medium",
+    description: "Imports a master configuration from a JSON file, replacing your current config.",
+    hint: "Requires a file path. Run from CLI: synctax import <file>",
+    focus: "actions",
+    async execute() {
+      throw new Error("This command requires a file path. Run from CLI: synctax import <file>");
+    },
+  },
+  {
+    id: "add",
+    label: "add",
+    commandPreview: "synctax add <type> <name>",
+    confirmTitle: "Add a resource?",
+    confirmRisk: "medium",
+    description: "Add an MCP server, agent, or skill to your master config.",
+    hint: "Requires arguments. Run from CLI: synctax add mcp <name> --command <cmd>",
+    focus: "actions",
+    async execute() {
+      throw new Error("This command requires arguments. Run from CLI: synctax add mcp <name> --command <cmd>");
+    },
+  },
+  {
+    id: "remove",
+    label: "remove",
+    commandPreview: "synctax remove <type> <name>",
+    confirmTitle: "Remove a resource?",
+    confirmRisk: "medium",
+    description: "Remove an MCP server, agent, or skill from your master config.",
+    hint: "Requires arguments. Run from CLI: synctax remove mcp <name>",
+    focus: "actions",
+    async execute() {
+      throw new Error("This command requires arguments. Run from CLI: synctax remove mcp <name>");
+    },
+  },
+  {
+    id: "move",
+    label: "move",
+    commandPreview: "synctax move <type> <name>",
+    confirmTitle: "Change scope of a resource?",
+    confirmRisk: "medium",
+    description: "Move a resource between scopes (global, user, project, local).",
+    hint: "Requires arguments. Run from CLI: synctax move mcp <name> --to-global",
+    focus: "actions",
+    async execute() {
+      throw new Error("This command requires arguments. Run from CLI: synctax move mcp <name> --to-global");
+    },
+  },
+  {
+    id: "unlink",
+    label: "unlink",
+    commandPreview: "synctax unlink",
+    confirmTitle: "Replace linked instruction symlinks with regular files?",
+    confirmRisk: "medium",
+    description: "Replaces any symlinked client instruction files (CLAUDE.md, .cursorrules, etc.) with standalone copies.",
+    focus: "actions",
+    async execute() {
+      await commands.unlinkCommand();
+    },
+  },
+  {
+    id: "link",
     label: "link",
     commandPreview: "synctax link",
     confirmTitle: "Link client instruction files?",
@@ -174,7 +272,6 @@ const TUI_ACTION_DEFINITIONS: ReadonlyArray<TuiActionDefinition> = [
   },
   {
     id: "info",
-    hotkey: "@",
     label: "info",
     commandPreview: "synctax info",
     confirmTitle: "Show system intelligence table?",
@@ -185,15 +282,60 @@ const TUI_ACTION_DEFINITIONS: ReadonlyArray<TuiActionDefinition> = [
       await commands.infoCommand();
     },
   },
+  {
+    id: "profile-use",
+    label: "profile use",
+    commandPreview: "synctax profile use <name>",
+    confirmTitle: "Switch to a profile?",
+    confirmRisk: "medium",
+    description: "Switches to a named profile and immediately syncs — swaps env context and include/exclude filters.",
+    hint: "Requires a profile name. Run from CLI: synctax profile use <name>",
+    focus: "actions",
+    async execute() {
+      throw new Error("This command requires a profile name. Run from CLI: synctax profile use <name>");
+    },
+  },
+  {
+    id: "profile-create",
+    label: "profile create",
+    commandPreview: "synctax profile create <name>",
+    confirmTitle: "Create a new profile?",
+    confirmRisk: "low",
+    description: "Creates a named filter profile with --include / --exclude resource lists. Each profile gets its own .env file.",
+    hint: "Requires a profile name. Run from CLI: synctax profile create <name> --include <resources>",
+    focus: "actions",
+    async execute() {
+      throw new Error("This command requires a profile name. Run from CLI: synctax profile create <name>");
+    },
+  },
+  {
+    id: "profile-diff",
+    label: "profile diff",
+    commandPreview: "synctax profile diff <name>",
+    confirmTitle: "Preview profile resource filter?",
+    confirmRisk: "low",
+    description: "Dry-run preview of what would change if you switched to this profile, without actually switching.",
+    hint: "Requires a profile name. Run from CLI: synctax profile diff <name>",
+    focus: "actions",
+    async execute() {
+      throw new Error("This command requires a profile name. Run from CLI: synctax profile diff <name>");
+    },
+  },
 ];
 
+const ALL_DEFINITIONS: ReadonlyArray<TuiActionDefinition> = [...TUI_HOTKEY_DEFINITIONS, ...TUI_PALETTE_DEFINITIONS];
+
 const ACTION_DEFINITION_BY_ID = Object.fromEntries(
-  TUI_ACTION_DEFINITIONS.map((action) => [action.id, action]),
+  ALL_DEFINITIONS.map((action) => [action.id, action]),
 ) as Readonly<Record<TuiActionId, TuiActionDefinition>>;
 
-export const TUI_ACTIONS: ReadonlyArray<TuiAction> = TUI_ACTION_DEFINITIONS.map(({ execute: _execute, ...action }) => action);
+/** A TuiAction that is guaranteed to have a hotkey assigned */
+export type TuiHotkeyAction = TuiAction & { hotkey: TuiActionHotkey };
 
-export function getActionByHotkey(key: string): TuiAction | undefined {
+/** Hotkey actions only — used by QuickActions grid */
+export const TUI_ACTIONS: ReadonlyArray<TuiHotkeyAction> = TUI_HOTKEY_DEFINITIONS.map(({ execute: _execute, ...action }) => action) as ReadonlyArray<TuiHotkeyAction>;
+
+export function getActionByHotkey(key: string): TuiHotkeyAction | undefined {
   return TUI_ACTIONS.find((action) => action.hotkey === key);
 }
 
@@ -201,7 +343,7 @@ export async function runActionById(id: TuiActionId, ctx: TuiRuntimeContext): Pr
   await ACTION_DEFINITION_BY_ID[id].execute(ctx);
 }
 
-/** All action definitions for command palette search */
+/** All action definitions — hotkey + palette — for command palette search */
 export function getAllActions(): ReadonlyArray<TuiAction> {
-  return TUI_ACTIONS;
+  return ALL_DEFINITIONS.map(({ execute: _execute, ...action }) => action);
 }
