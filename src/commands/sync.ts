@@ -38,20 +38,30 @@ export async function syncCommand(options: { dryRun?: boolean, interactive?: boo
     await configManager.backup();
   }
 
-  for (const [id, clientConf] of Object.entries(config.clients)) {
-    if (!clientConf.enabled) continue;
+  const clientsToSync = Object.entries(config.clients)
+    .filter(([id, clientConf]) => clientConf.enabled && adapters[id])
+    .map(([id]) => adapters[id]);
 
-    const adapter = adapters[id];
-    if (!adapter) continue;
-
-    if (options.dryRun) {
+  if (options.dryRun) {
+    for (const adapter of clientsToSync) {
       ui.dryRun(`Would write to ${adapter.name}`);
-    } else {
+    }
+  } else {
+    // ⚡ Bolt: Parallelized writes to improve sync performance across multiple adapters
+    const results = await Promise.all(clientsToSync.map(async (adapter) => {
       try {
         await adapter.write(resources);
-        ui.success(`Synced ${adapter.name}`);
+        return { adapter, success: true };
       } catch (e: any) {
-        ui.error(`Failed to sync ${adapter.name}: ${e.message}`);
+        return { adapter, success: false, error: e.message };
+      }
+    }));
+
+    for (const result of results) {
+      if (result.success) {
+        ui.success(`Synced ${result.adapter.name}`);
+      } else {
+        ui.error(`Failed to sync ${result.adapter.name}: ${result.error}`);
       }
     }
   }
@@ -86,23 +96,32 @@ export async function memorySyncCommand(options: { source?: string, dryRun?: boo
   let succeeded = 0;
   let failed = 0;
 
-  for (const [id, clientConf] of Object.entries(config.clients)) {
-    if (!clientConf.enabled || id === sourceId) continue;
+  const targetsToSync = Object.entries(config.clients)
+    .filter(([id, clientConf]) => clientConf.enabled && id !== sourceId && adapters[id])
+    .map(([id]) => adapters[id]);
 
-    const adapter = adapters[id];
-    if (!adapter) continue;
-
-    const targetFileName = adapter.getMemoryFileName();
-    if (options.dryRun) {
-      ui.dryRun(`Would sync ${sourceFileName} -> ${targetFileName}`);
+  if (options.dryRun) {
+    for (const adapter of targetsToSync) {
+      ui.dryRun(`Would sync ${sourceFileName} -> ${adapter.getMemoryFileName()}`);
       succeeded++;
-    } else {
+    }
+  } else {
+    // ⚡ Bolt: Parallelized memory file syncing to eliminate sequential IO bottlenecks
+    const results = await Promise.all(targetsToSync.map(async (adapter) => {
       try {
         await adapter.writeMemory(cwd, sourceContent);
-        ui.success(`Synced to ${targetFileName}`);
-        succeeded++;
+        return { adapter, success: true };
       } catch (e: any) {
-        ui.error(`Failed to sync to ${targetFileName}: ${e.message}`);
+        return { adapter, success: false, error: e.message };
+      }
+    }));
+
+    for (const result of results) {
+      if (result.success) {
+        ui.success(`Synced to ${result.adapter.getMemoryFileName()}`);
+        succeeded++;
+      } else {
+        ui.error(`Failed to sync to ${result.adapter.getMemoryFileName()}: ${result.error}`);
         failed++;
       }
     }
