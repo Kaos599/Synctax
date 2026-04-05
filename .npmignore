@@ -1,0 +1,41 @@
+# Source — not needed at runtime (the built dist/ bundle includes everything)
+src/
+bin/
+tests/
+scripts/
+stubs/
+docs/
+
+# TypeScript config
+tsconfig.json
+tsconfig*.json
+
+# Linting
+eslint.config.*
+.eslintrc*
+.eslintignore
+
+# Test runner
+vitest.config.*
+
+# Bun lockfile
+bun.lock
+bun.lockb
+
+# Backup archives
+*.zip
+
+# Local development
+.env
+.env.*
+synctax-backup-*
+
+# Editor / IDE
+.vscode/
+.cursor/
+.opencode/
+.idea/
+
+# OS artifacts
+.DS_Store
+Thumbs.db

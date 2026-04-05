@@ -77,16 +77,16 @@ const TUI_HOTKEY_DEFINITIONS: ReadonlyArray<TuiHotkeyActionDefinition> = [
     },
   },
   {
-    id: "validate",
+    id: "info",
     hotkey: "4",
-    label: "validate",
-    commandPreview: "synctax validate",
-    confirmTitle: "Run config validation checks?",
+    label: "info",
+    commandPreview: "synctax info",
+    confirmTitle: "Show system intelligence table?",
     confirmRisk: "low",
-    description: "Runs Zod schema validation on master config, checks env var references can resolve, and confirms required binaries exist on PATH.",
+    description: "Displays a table showing which clients are installed and how many MCPs, agents, and skills each one has configured.",
     focus: "actions",
     async execute() {
-      await commands.validateCommand({});
+      await commands.infoCommand();
     },
   },
   {
@@ -281,15 +281,15 @@ const TUI_PALETTE_DEFINITIONS: ReadonlyArray<TuiActionDefinition> = [
     },
   },
   {
-    id: "info",
-    label: "info",
-    commandPreview: "synctax info",
-    confirmTitle: "Show system intelligence table?",
+    id: "validate",
+    label: "validate",
+    commandPreview: "synctax validate",
+    confirmTitle: "Run config validation checks?",
     confirmRisk: "low",
-    description: "Displays a table showing which clients are installed and how many MCPs, agents, and skills each one has configured.",
+    description: "Runs Zod schema validation on master config, checks env var references can resolve, and confirms required binaries exist on PATH.",
     focus: "actions",
     async execute() {
-      await commands.infoCommand();
+      await commands.validateCommand({});
     },
   },
   {

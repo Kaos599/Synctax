@@ -1,20 +1,47 @@
 {
   "name": "synctax",
-  "module": "index.ts",
+  "version": "2.0.0",
+  "description": "Universal config sync for the agentic developer stack — sync MCP servers, agents, skills, and permissions across 9 AI clients from a single source of truth.",
   "type": "module",
-  "private": true,
-  "devDependencies": {
-    "@types/bun": "latest",
-    "@types/js-yaml": "^4.0.9",
-    "@types/node": "^25.3.5",
-    "@types/react": "^19.2.14",
-    "@typescript-eslint/eslint-plugin": "^8.46.3",
-    "@typescript-eslint/parser": "^8.46.3",
-    "eslint": "^9.37.0",
-    "vitest": "^4.0.18"
+  "license": "MIT",
+  "author": "Kaos599",
+  "keywords": [
+    "mcp",
+    "ai",
+    "cli",
+    "sync",
+    "cursor",
+    "claude",
+    "copilot",
+    "zed",
+    "opencode",
+    "developer-tools",
+    "config",
+    "agents",
+    "agentic"
+  ],
+  "engines": {
+    "node": ">=18"
   },
-  "peerDependencies": {
-    "typescript": "^5"
+  "files": [
+    "dist/",
+    "README.md",
+    "CHANGELOG.md"
+  ],
+  "bin": {
+    "synctax": "./dist/synctax.js"
+  },
+  "scripts": {
+    "build": "bun scripts/build.ts",
+    "prepublishOnly": "bun run build && bun run test",
+    "check": "bun run typecheck && bun run lint && bun run test",
+    "check:strict": "bun run typecheck && bun run lint:strict && bun run test",
+    "lint": "bunx eslint . --ext .ts",
+    "lint:strict": "bunx eslint . --ext .ts --max-warnings=0",
+    "lint:fix": "bunx eslint . --ext .ts --fix",
+    "test": "vitest run",
+    "typecheck": "bunx tsc --noEmit",
+    "synctax": "bun ./bin/synctax.ts"
   },
   "dependencies": {
     "@inkjs/ui": "^2.0.0",
@@ -29,17 +56,14 @@
     "react": "^19.2.4",
     "zod": "^4.3.6"
   },
-  "bin": {
-    "synctax": "./bin/synctax.ts"
-  },
-  "scripts": {
-    "check": "bun run typecheck && bun run lint && bun run test",
-    "check:strict": "bun run typecheck && bun run lint:strict && bun run test",
-    "lint": "bunx eslint . --ext .ts",
-    "lint:strict": "bunx eslint . --ext .ts --max-warnings=0",
-    "lint:fix": "bunx eslint . --ext .ts --fix",
-    "test": "vitest run",
-    "typecheck": "bunx tsc --noEmit",
-    "synctax": "bun ./bin/synctax.ts"
+  "devDependencies": {
+    "@types/bun": "latest",
+    "@types/js-yaml": "^4.0.9",
+    "@types/node": "^25.3.5",
+    "@types/react": "^19.2.14",
+    "@typescript-eslint/eslint-plugin": "^8.46.3",
+    "@typescript-eslint/parser": "^8.46.3",
+    "eslint": "^9.37.0",
+    "vitest": "^4.0.18"
   }
 }

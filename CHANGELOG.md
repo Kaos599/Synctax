@@ -1,0 +1,64 @@
+# Changelog
+
+All notable changes to Synctax are documented here.
+
+Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
+Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+---
+
+## [2.0.0] — 2026-04-05
+
+### Initial Release
+
+**Synctax** — Universal Sync for the Agentic Developer Stack.
+
+#### Core Sync Engine
+- `synctax sync` — atomic push to all enabled clients with pre-sync snapshots and rollback on failure
+- `synctax pull --from <client>` — import a client's live config into master config
+- `synctax watch` — background daemon that auto-syncs on `~/.synctax/config.json` save (500ms debounce)
+- `synctax memory-sync` — copy source client's context/memory file to all other enabled clients
+- `--dry-run`, `--yes`, `--strict-env`, `--interactive` flags on sync
+
+#### Inspection & Diagnostics
+- `synctax status` — health overview: drift state, resource counts, env var resolution
+- `synctax diff [client]` — preview changes without writing; `--json` for machine-readable output
+- `synctax doctor [--deep]` — diagnose missing clients, broken paths, invalid env vars; `--deep` verifies MCP binary existence
+- `synctax validate` — schema validation, env var resolution, required PATH binary check
+
+#### Config Management
+- `synctax add <type> <name>` — add MCP server, agent, or skill interactively or via flags; `--from <url>` to import from URL/gist
+- `synctax remove [type] [name]` — remove a resource (interactive with `-i`)
+- `synctax move <type> <name>` — move resource between scopes (`--to-global`, `--to-local`, `--to-project`)
+
+#### Profile System
+- `synctax profile create <name>` — create a named resource filter profile
+- `synctax profile use <name>` — switch active profile and sync immediately
+- `synctax profile list` — list profiles with active marker
+- `synctax profile diff <name>` — preview changes before switching profiles
+- `synctax profile pull <url>` — import a profile from a URL
+- `synctax profile publish <name>` — export shareable profile (credentials automatically stripped)
+
+#### Backup & Portability
+- `synctax backup [--rollup]` — per-client zip backups; `--rollup` creates a combined archive
+- `synctax restore [--from <timestamp>]` — restore master config from backup
+- `synctax export <file>` — export master config to JSON (credentials stripped)
+- `synctax import <file>` — import master config from JSON
+- `synctax link` / `synctax unlink` — symlink memory/instruction files to a single source
+
+#### Interactive Fullscreen TUI
+- `synctax` (no args) — fullscreen dashboard with live status, diagnostics, quick actions, command palette
+- 16 built-in color themes: synctax, catppuccin, dracula, nord, tokyo-night, gruvbox, one-dark, solarized, rose-pine, monokai, cyberpunk, sunset, ocean, forest, ember, aurora
+- Keyboard-driven: number keys for quick actions, `/` for command palette, `t` for theme switcher, `?` for help
+
+#### 9 Supported Clients
+Claude Code, Cursor, GitHub Copilot (VS Code), GitHub Copilot CLI, OpenCode, Cline, Zed, Antigravity, Gemini CLI
+
+#### Security
+- Deny-wins permission merge: deny lists always override allow lists
+- Credentials never exported (stripped from all `export` / `profile publish` outputs)
+- Per-profile `.env` files (0600 permissions, never synced or published)
+- Path-traversal protection on all file operations
+- Atomic temp-file writes with rename for crash safety
+
+[2.0.0]: https://github.com/Kaos599/synctax/releases/tag/v2.0.0

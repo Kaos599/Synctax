@@ -7,9 +7,9 @@
 
 <p align="center">
   <a href="https://github.com/Kaos599/Synctax/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/Kaos599/Synctax/actions/workflows/ci.yml/badge.svg" /></a>
-  <img alt="version" src="https://img.shields.io/github/package-json/v/Kaos599/Synctax?color=brightgreen" />
+  <a href="https://www.npmjs.com/package/synctax"><img alt="npm" src="https://img.shields.io/npm/v/synctax?color=brightgreen" /></a>
   <img alt="license" src="https://img.shields.io/github/license/Kaos599/Synctax?color=blue" />
-  <img alt="runtime" src="https://img.shields.io/badge/runtime-bun-orange" />
+  <img alt="runtime" src="https://img.shields.io/badge/node-%E2%89%A518-brightgreen" />
   <img alt="clients" src="https://img.shields.io/badge/clients-9%20supported-lightgrey" />
 </p>
 
@@ -29,21 +29,24 @@ Synctax eliminates this. One master config at `~/.synctax/config.json`. One comm
 
 ## Install
 
-**Prerequisites:** [Bun](https://bun.sh) v1.0+
-
 ```bash
-git clone https://github.com/Kaos599/synctax.git
-cd synctax
-bun install
-bun ./bin/synctax.ts init
-bun ./bin/synctax.ts sync
+npm install -g synctax
 ```
 
-After `init` completes its optional PATH setup, you can use the short form everywhere:
+Works with npm, pnpm, yarn, or Bun:
+
+```bash
+pnpm add -g synctax
+yarn global add synctax
+bun add -g synctax
+```
+
+**Requires Node.js ≥18.** No other runtime needed — Synctax is a self-contained bundle.
+
+Then initialize:
 
 ```bash
 synctax init
-synctax sync
 ```
 
 ---
@@ -138,10 +141,10 @@ synctax sync --interactive    # Select which resources to sync
 |--------|-----|--------|--------|-------------|
 | Claude Code | ✅ | ✅ | ✅ | `CLAUDE.md` |
 | Cursor | ✅ | ✅ | ✅ | `.cursorrules` |
-| GitHub Copilot | ✅ | ✅ | ✅ | `.github/copilot-instructions.md` |
-| GitHub Copilot CLI | ✅ | ✅ | ✅ | `.github/copilot-instructions.md` |
 | OpenCode | ✅ | ✅ | ✅ | `AGENTS.md` |
 | Antigravity | ✅ | ✅ | ✅ | `.antigravityrules` |
+| GitHub Copilot (VS Code) | ✅ | — | — | `.github/copilot-instructions.md` |
+| GitHub Copilot CLI | — | — | ✅ | `.github/copilot-instructions.md` |
 | Cline | ✅ | — | — | `.clinerules` |
 | Zed | ✅ | — | — | `.rules` |
 | Gemini CLI | — | — | — | `.geminirules` |
@@ -238,7 +241,16 @@ synctax profile diff personal
 
 ## Development
 
+**Prerequisites for contributing:** [Bun](https://bun.sh) v1.0+
+
 ```bash
+git clone https://github.com/Kaos599/synctax.git
+cd synctax
+bun install
+
+# Run the CLI directly from source
+bun ./bin/synctax.ts <command>
+
 # Run all tests
 bun run test
 
@@ -251,8 +263,8 @@ bun run lint
 # Run a single test file
 bunx vitest run tests/adapters.test.ts
 
-# Run the CLI directly
-bun ./bin/synctax.ts <command>
+# Build the Node.js bundle (what gets published to npm)
+bun run build
 ```
 
 ---
