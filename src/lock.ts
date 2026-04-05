@@ -20,6 +20,7 @@ async function isStale(lockPath: string): Promise<boolean> {
     const content = await fs.readFile(lockPath, "utf-8");
     const info: LockInfo = JSON.parse(content);
     const lockTime = new Date(info.timestamp).getTime();
+    if (Number.isNaN(lockTime)) return true;
     return Date.now() - lockTime > STALE_THRESHOLD_MS;
   } catch {
     return true;

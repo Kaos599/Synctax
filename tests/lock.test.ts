@@ -55,4 +55,19 @@ describe("acquireLock", () => {
     expect(content.command).toBe("reclaim");
     await lock.release();
   });
+
+  it("treats a lock with invalid (NaN) timestamp as stale", async () => {
+    const lockPath = path.join(mockHome, ".synctax", "sync.lock");
+    const invalidInfo = {
+      pid: 99999,
+      timestamp: "not-a-valid-date",
+      command: "broken",
+    };
+    await fs.writeFile(lockPath, JSON.stringify(invalidInfo), "utf-8");
+
+    const lock = await acquireLock("reclaim");
+    const content = JSON.parse(await fs.readFile(lockPath, "utf-8"));
+    expect(content.command).toBe("reclaim");
+    await lock.release();
+  });
 });
