@@ -5,7 +5,8 @@ import os from "os";
 import { ConfigManager } from "../src/config.js";
 import { linkCommand, unlinkCommand } from "../src/commands/link.js";
 
-describe("link/unlink commands", () => {
+// Symlink creation requires Developer Mode or elevated privileges on Windows
+describe.skipIf(process.platform === "win32")("link/unlink commands", () => {
   let mockHome: string;
   let projectDir: string;
   let previousCwd: string;

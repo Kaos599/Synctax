@@ -1,6 +1,21 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { format, success, error, warn, info, header, dim, dryRun, gap } from "../../src/ui/output.js";
 
+function withUnicode(fn: () => void): void {
+  const prevAscii = process.env["SYNCTAX_ASCII"];
+  const prevTerm = process.env["TERM"];
+  delete process.env["SYNCTAX_ASCII"];
+  process.env["TERM"] = "xterm-256color";
+  try {
+    fn();
+  } finally {
+    if (prevAscii === undefined) delete process.env["SYNCTAX_ASCII"];
+    else process.env["SYNCTAX_ASCII"] = prevAscii;
+    if (prevTerm === undefined) delete process.env["TERM"];
+    else process.env["TERM"] = prevTerm;
+  }
+}
+
 describe("UI Output", () => {
   afterEach(() => {
     vi.restoreAllMocks();
@@ -8,21 +23,27 @@ describe("UI Output", () => {
 
   describe("format functions return strings", () => {
     it("format.success includes checkmark and message", () => {
-      const result = format.success("Synced");
-      expect(result).toContain("✓");
-      expect(result).toContain("Synced");
+      withUnicode(() => {
+        const result = format.success("Synced");
+        expect(result).toContain("✓");
+        expect(result).toContain("Synced");
+      });
     });
 
     it("format.error includes X mark and message", () => {
-      const result = format.error("Failed");
-      expect(result).toContain("✗");
-      expect(result).toContain("Failed");
+      withUnicode(() => {
+        const result = format.error("Failed");
+        expect(result).toContain("✗");
+        expect(result).toContain("Failed");
+      });
     });
 
     it("format.warn includes warning symbol", () => {
-      const result = format.warn("Careful");
-      expect(result).toContain("⚠");
-      expect(result).toContain("Careful");
+      withUnicode(() => {
+        const result = format.warn("Careful");
+        expect(result).toContain("⚠");
+        expect(result).toContain("Careful");
+      });
     });
 
     it("format.info contains message", () => {

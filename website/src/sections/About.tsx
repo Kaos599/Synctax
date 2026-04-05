@@ -47,13 +47,6 @@ export const About = () => {
               GitHub
               <span className="absolute -bottom-px left-0 w-0 h-px bg-[#00FF00] transition-all duration-200 group-hover:w-full" />
             </a>
-            <a
-              href="https://twitter.com/woah_hd"
-              className="text-[#aaa] hover:text-[#00FF00] transition-colors relative group"
-            >
-              Twitter / X
-              <span className="absolute -bottom-px left-0 w-0 h-px bg-[#00FF00] transition-all duration-200 group-hover:w-full" />
-            </a>
           </div>
         </div>
 

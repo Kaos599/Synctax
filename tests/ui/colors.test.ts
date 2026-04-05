@@ -30,11 +30,16 @@ describe("UI Colors", () => {
   });
 
   it("symbols are strings", () => {
-    expect(symbols.success).toBe("✓");
-    expect(symbols.error).toBe("✗");
-    expect(symbols.warning).toBe("⚠");
-    expect(symbols.info).toBe("○");
-    expect(symbols.arrow).toBe("→");
+    // Force unicode capability regardless of the test environment's terminal
+    withEnv("SYNCTAX_ASCII", undefined, () => {
+      withEnv("TERM", "xterm-256color", () => {
+        expect(symbols.success).toBe("✓");
+        expect(symbols.error).toBe("✗");
+        expect(symbols.warning).toBe("⚠");
+        expect(symbols.info).toBe("○");
+        expect(symbols.arrow).toBe("→");
+      });
+    });
   });
 
   it("symbols fall back to ASCII when SYNCTAX_ASCII is set", () => {

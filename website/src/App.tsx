@@ -91,18 +91,7 @@ function App() {
                       <span className="absolute -bottom-px left-0 w-0 h-px bg-[#00FF00] transition-all duration-200 group-hover:w-full" />
                     </a>
                   </div>
-                  <div className="flex items-start gap-4">
-                    <span className="text-[#333] w-24 shrink-0 uppercase tracking-widest">TWITTER</span>
-                    <a
-                      href="https://twitter.com/woah_hd"
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-[#aaa] hover:text-[#00FF00] transition-colors relative group"
-                    >
-                      @woah_hd
-                      <span className="absolute -bottom-px left-0 w-0 h-px bg-[#00FF00] transition-all duration-200 group-hover:w-full" />
-                    </a>
-                  </div>
+
                 </div>
 
                 {/* CTA */}
@@ -133,10 +122,10 @@ function App() {
 
                 <div className="grid grid-cols-2 gap-px bg-[#0a0a0a]">
                   {[
-                    { label: 'STARS', value: '2.1k' },
-                    { label: 'FORKS', value: '148' },
-                    { label: 'CONTRIBUTORS', value: '23' },
-                    { label: 'LICENSE', value: 'MIT' },
+                    { label: 'CLIENTS SUPPORTED', value: '9' },
+                    { label: 'STARS', value: '869' },
+                    { label: 'FORKS', value: '20' },
+                    { label: 'CONTRIBUTORS', value: '2' },
                   ].map(({ label, value }) => (
                     <div key={label} className="bg-black px-8 py-6 hover:bg-[#040404] transition-colors">
                       <div className="font-mono text-[9px] text-[#333] uppercase tracking-widest mb-2">{label}</div>
