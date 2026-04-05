@@ -67,10 +67,10 @@ Per-project context files (`CLAUDE.md`, `.cursorrules`, `AGENTS.md`, etc.) that 
 
 #### `synctax sync`
 
-Reads the master config, applies the active profile filter, previews what would change, asks for confirmation, then writes to every enabled client atomically. If any write fails, all changes are rolled back from pre-sync snapshots.
+Reads the master config, applies the active profile filter, analyzes enabled clients with staged progress counters, previews what would change, asks for confirmation, then writes to enabled clients with bounded parallelism. If any write fails, all synced clients are rolled back from pre-sync snapshots.
 
 ```
-synctax sync                  # interactive, shows diff before writing
+synctax sync                  # interactive, staged progress + diff before writing
 synctax sync --dry-run        # preview only, no writes
 synctax sync --yes            # skip confirmation prompt
 synctax sync --strict-env     # fail if any $VAR references are unresolved
@@ -78,6 +78,8 @@ synctax sync --interactive    # pick which resources to sync per-client
 ```
 
 **When to use:** after adding/updating any MCP server, agent, or skill. Also after switching profiles.
+
+**Runtime stages:** pull source -> resolve profile/env -> analyze clients -> backup -> write clients -> finalize.
 
 ---
 
@@ -365,7 +367,7 @@ Launches a fullscreen terminal dashboard with:
 synctax [command] [options]
 
 CORE SYNC
-  sync                     Push master config to all enabled clients
+  sync                     Push master config to enabled clients (staged progress)
     --dry-run              Preview changes without writing
     --yes                  Skip confirmation prompt
     --strict-env           Fail if any $VAR references are unresolved

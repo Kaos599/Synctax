@@ -9,6 +9,97 @@ import { requireInteractiveTTY } from "./_terminal.js";
 import { compareDomain, renderClientDiff, hasDiffChanges } from "../diff-utils.js";
 import type { ClientDiff } from "../diff-utils.js";
 import { acquireLock } from "../lock.js";
+import { mapWithConcurrency } from "../utils/async-pool.js";
+
+const TOTAL_SYNC_STAGES = 6;
+const ANALYZE_CONCURRENCY = 4;
+const WRITE_CONCURRENCY = 3;
+const ROLLBACK_CONCURRENCY = 3;
+
+type EnabledClient = { id: string; adapter: any };
+type ClientSnapshot = {
+  mcps: Record<string, unknown>;
+  agents: Record<string, unknown>;
+  skills: Record<string, unknown>;
+  permissions?: unknown;
+  models?: unknown;
+  prompts?: unknown;
+  credentials?: unknown;
+};
+
+type AnalyzeResult = {
+  id: string;
+  adapter: any;
+  snapshot?: ClientSnapshot;
+  diff?: ClientDiff;
+  error?: string;
+};
+
+type WriteResult = {
+  id: string;
+  name: string;
+  ok: boolean;
+  detail: string;
+};
+
+function stageLabel(stage: number, title: string): string {
+  return `Stage ${stage}/${TOTAL_SYNC_STAGES} ${title}`;
+}
+
+function toSnapshot(data: any): ClientSnapshot {
+  return {
+    mcps: data?.mcps || {},
+    agents: data?.agents || {},
+    skills: data?.skills || {},
+    permissions: data?.permissions,
+    models: data?.models,
+    prompts: data?.prompts,
+    credentials: data?.credentials,
+  };
+}
+
+function createPhaseReporter(stage: number, title: string, total: number) {
+  let done = 0;
+  let running = 0;
+  let failed = 0;
+  const interactive = ui.isInteractive();
+
+  const text = () => `${stageLabel(stage, title)} (${done}/${total} done/total, ${running} running, ${failed} failed)`;
+  const spin = ui.spinner(text());
+
+  const update = () => {
+    if (interactive) {
+      spin.text(text());
+      return;
+    }
+    ui.info(text(), { indent: 1 });
+  };
+
+  return {
+    startTask() {
+      running += 1;
+      update();
+    },
+    finishTask(ok: boolean) {
+      running = Math.max(0, running - 1);
+      done += 1;
+      if (!ok) failed += 1;
+      update();
+    },
+    complete(elapsed: string) {
+      const completionText = `${text()} in ${elapsed}`;
+      if (interactive) {
+        if (failed > 0) {
+          spin.warn(completionText);
+        } else {
+          spin.succeed(completionText);
+        }
+        return;
+      }
+      ui.info(completionText, { indent: 1 });
+    },
+  };
+}
 
 export async function syncCommand(options: { dryRun?: boolean, interactive?: boolean, yes?: boolean, strictEnv?: boolean }) {
   const timer = ui.startTimer();
@@ -42,7 +133,10 @@ async function syncCommandInner(
   console.log(ui.format.brandHeader(getVersion(), config.activeProfile));
   ui.header("Starting sync...");
 
-  // --- Client-first pull: if source is configured, pull from it first ---
+  const pullStageTimer = ui.startTimer();
+  ui.header(stageLabel(1, "Pull source"));
+
+  // Client-first pull: if source is configured, pull from it first.
   const sourceId = config.source;
   const sourceAdapter = sourceId ? adapters[sourceId] : undefined;
 
@@ -69,7 +163,13 @@ async function syncCommandInner(
       spin.fail(`Pull from ${sourceAdapter.name} failed: ${e.message}`);
       ui.warn("Continuing with current master config.");
     }
+  } else {
+    ui.dim("No source client configured; using current master config.");
   }
+  ui.dim(`${stageLabel(1, "Pull source")} completed in ${pullStageTimer.elapsed()}`, { indent: 1 });
+
+  const resolveStageTimer = ui.startTimer();
+  ui.header(stageLabel(2, "Resolve profile/env"));
 
   let resources: any;
   try {
@@ -113,6 +213,7 @@ async function syncCommandInner(
     ...resources,
     mcps: resolvedMcps,
   };
+  ui.dim(`${stageLabel(2, "Resolve profile/env")} completed in ${resolveStageTimer.elapsed()}`, { indent: 1 });
 
   if (options.interactive) {
     if (!requireInteractiveTTY("sync --interactive")) {
@@ -141,38 +242,80 @@ async function syncCommandInner(
     }
   }
 
-  // Build enabled clients list (excluding source — it's the authority)
-  const enabledClients: Array<{ id: string; adapter: any }> = [];
+  // Build enabled clients list (excluding source — it's the authority).
+  const enabledClients: EnabledClient[] = [];
   for (const [id, clientConf] of Object.entries(config.clients)) {
     if (!clientConf.enabled) continue;
-    if (id === sourceId) continue; // Source client is never written to
+    if (id === sourceId) continue;
     const adapter = adapters[id];
     if (!adapter) continue;
     enabledClients.push({ id, adapter });
   }
 
-  // --- Diff preview: show what will change before writing ---
-  if (!options.dryRun && enabledClients.length > 0) {
-    const clientDiffs: ClientDiff[] = [];
-    for (const { id, adapter } of enabledClients) {
-      try {
-        const data = await adapter.read();
-        const diff: ClientDiff = {
-          id,
-          name: adapter.name,
-          domains: {
-            mcps: compareDomain(resources.mcps || {}, data.mcps || {}),
-            agents: compareDomain(resources.agents || {}, data.agents || {}),
-            skills: compareDomain(resources.skills || {}, data.skills || {}),
-          },
-        };
-        clientDiffs.push(diff);
-      } catch {
-        // Can't diff — will attempt write anyway
-      }
-    }
+  const analyzeStageTimer = ui.startTimer();
+  ui.header(stageLabel(3, "Analyze clients"));
 
+  const analyzeResults: AnalyzeResult[] = [];
+  if (enabledClients.length > 0) {
+    const analyzeReporter = createPhaseReporter(3, "Analyze clients", enabledClients.length);
+    const analyzed = await mapWithConcurrency(
+      enabledClients,
+      Math.min(ANALYZE_CONCURRENCY, enabledClients.length),
+      async ({ id, adapter }) => {
+        analyzeReporter.startTask();
+        try {
+          const data = await adapter.read();
+          const snapshot = toSnapshot(data);
+          const diff: ClientDiff = {
+            id,
+            name: adapter.name,
+            domains: {
+              mcps: compareDomain(resources.mcps || {}, snapshot.mcps || {}),
+              agents: compareDomain(resources.agents || {}, snapshot.agents || {}),
+              skills: compareDomain(resources.skills || {}, snapshot.skills || {}),
+            },
+          };
+          analyzeReporter.finishTask(true);
+          return {
+            id,
+            adapter,
+            snapshot,
+            diff,
+          } satisfies AnalyzeResult;
+        } catch (e: any) {
+          analyzeReporter.finishTask(false);
+          return {
+            id,
+            adapter,
+            error: e?.message || "unknown error",
+          } satisfies AnalyzeResult;
+        }
+      },
+    );
+    analyzeReporter.complete(analyzeStageTimer.elapsed());
+    analyzeResults.push(...analyzed);
+  } else {
+    ui.dim("No enabled target clients to analyze.", { indent: 1 });
+    ui.dim(`${stageLabel(3, "Analyze clients")} completed in ${analyzeStageTimer.elapsed()}`, { indent: 1 });
+  }
+
+  const snapshots = new Map<string, ClientSnapshot>();
+  const clientDiffs: ClientDiff[] = [];
+  for (const result of analyzeResults) {
+    if (result.snapshot) {
+      snapshots.set(result.id, result.snapshot);
+    }
+    if (result.diff) {
+      clientDiffs.push(result.diff);
+    }
+    if (result.error) {
+      ui.warn(`Analyze failed for ${result.adapter.name}: ${result.error}. Sync will still attempt to write.`);
+    }
+  }
+
+  if (!options.dryRun && enabledClients.length > 0) {
     const hasChanges = clientDiffs.some(hasDiffChanges);
+    const hasAnalyzeFailures = analyzeResults.some((result) => !!result.error);
 
     if (hasChanges) {
       ui.header("Sync plan:");
@@ -183,10 +326,10 @@ async function syncCommandInner(
       }
       console.log("");
 
-      // Ask for confirmation unless --yes was passed
       if (!options.yes) {
         const isTTY = process.stdin.isTTY && !process.env.VITEST;
         if (isTTY) {
+          ui.dim("Waiting for confirmation. Use --yes to auto-approve in scripts.", { indent: 1 });
           const proceed = await confirm({
             message: "Apply these changes?",
             default: false,
@@ -198,7 +341,7 @@ async function syncCommandInner(
           }
         }
       }
-    } else {
+    } else if (!hasAnalyzeFailures) {
       ui.dim("All clients are already in sync.");
       console.log(ui.format.summary(timer.elapsed(), "0 changes needed"));
       return;
@@ -206,89 +349,138 @@ async function syncCommandInner(
   }
 
   if (!options.dryRun) {
+    const backupStageTimer = ui.startTimer();
+    ui.header(stageLabel(4, "Backup"));
     await configManager.backup();
+    ui.dim(`${stageLabel(4, "Backup")} completed in ${backupStageTimer.elapsed()}`, { indent: 1 });
   }
 
-  // Collect results for aligned output
-  const results: Array<{ name: string; ok: boolean; detail: string }> = [];
+  ui.header(stageLabel(5, "Write clients"));
+  const writeStageTimer = ui.startTimer();
+
+  const results: WriteResult[] = [];
   const mcpCount = Object.keys(resources.mcps || {}).length;
   const agentCount = Object.keys(resources.agents || {}).length;
   const skillCount = Object.keys(resources.skills || {}).length;
 
-  const snapshots = new Map<string, any>();
-  if (!options.dryRun) {
-    for (const { id, adapter } of enabledClients) {
-      try {
-        const snapshot = await adapter.read();
-        snapshots.set(id, {
-          mcps: snapshot?.mcps || {},
-          agents: snapshot?.agents || {},
-          skills: snapshot?.skills || {},
-          permissions: snapshot?.permissions,
-          models: snapshot?.models,
-          prompts: snapshot?.prompts,
-          credentials: snapshot?.credentials,
-        });
-      } catch (err: any) {
-        ui.warn(`Snapshot failed for ${adapter.name}: ${err?.message || "unknown error"}. Rollback for this client will be unavailable.`);
-      }
+  if (enabledClients.length > 0) {
+    const writeReporter = createPhaseReporter(5, "Write clients", enabledClients.length);
+    const writes = await mapWithConcurrency(
+      enabledClients,
+      Math.min(WRITE_CONCURRENCY, enabledClients.length),
+      async ({ id, adapter }) => {
+        writeReporter.startTask();
+        if (options.dryRun) {
+          writeReporter.finishTask(true);
+          return {
+            id,
+            name: adapter.name,
+            ok: true,
+            detail: "dry run",
+          } satisfies WriteResult;
+        }
+
+        try {
+          await adapter.write(resources);
+          const parts: string[] = [];
+          if (mcpCount > 0) parts.push(`${mcpCount} MCP${mcpCount !== 1 ? "s" : ""}`);
+          if (agentCount > 0) parts.push(`${agentCount} agent${agentCount !== 1 ? "s" : ""}`);
+          if (skillCount > 0) parts.push(`${skillCount} skill${skillCount !== 1 ? "s" : ""}`);
+          const detail = parts.length > 0 ? `${parts.join("  ")}  synced` : "synced";
+          writeReporter.finishTask(true);
+          return {
+            id,
+            name: adapter.name,
+            ok: true,
+            detail,
+          } satisfies WriteResult;
+        } catch (e: any) {
+          writeReporter.finishTask(false);
+          return {
+            id,
+            name: adapter.name,
+            ok: false,
+            detail: e?.message || "unknown error",
+          } satisfies WriteResult;
+        }
+      },
+    );
+    writeReporter.complete(writeStageTimer.elapsed());
+    results.push(...writes);
+  } else {
+    ui.dim("No enabled target clients to write.", { indent: 1 });
+    ui.dim(`${stageLabel(5, "Write clients")} completed in ${writeStageTimer.elapsed()}`, { indent: 1 });
+  }
+
+  for (const result of results) {
+    if (options.dryRun) {
+      ui.dryRun(`Would write to ${result.name}`);
+      continue;
+    }
+    if (result.ok) {
+      ui.success(`${result.name.padEnd(20)} ${result.detail}`);
+    } else {
+      ui.error(`${result.name.padEnd(20)} failed: ${result.detail}`);
     }
   }
 
-  const syncedClients: Array<{ id: string; name: string; adapter: any }> = [];
-  let writeFailed = false;
+  let writeFailed = results.some((result) => !result.ok);
+  if (writeFailed && !options.dryRun) {
+    const successfulClients = enabledClients.filter((client) => {
+      const result = results.find((entry) => entry.id === client.id);
+      return !!result?.ok;
+    });
 
-  for (const { id, adapter } of enabledClients) {
+    if (successfulClients.length > 0) {
+      const failedCount = results.filter((result) => !result.ok).length;
+      ui.warn(`Write failed on ${failedCount} client${failedCount !== 1 ? "s" : ""}. Starting rollback for ${successfulClients.length} client${successfulClients.length !== 1 ? "s" : ""}...`);
+    }
 
-    if (options.dryRun) {
-      ui.dryRun(`Would write to ${adapter.name}`);
-      results.push({ name: adapter.name, ok: true, detail: "dry run" });
-    } else {
-      const spin = ui.spinner(`Syncing to ${adapter.name}...`);
-      try {
-        await adapter.write(resources);
-        syncedClients.push({ id, name: adapter.name, adapter });
-        const parts: string[] = [];
-        if (mcpCount > 0) parts.push(`${mcpCount} MCP${mcpCount !== 1 ? "s" : ""}`);
-        if (agentCount > 0) parts.push(`${agentCount} agent${agentCount !== 1 ? "s" : ""}`);
-        if (skillCount > 0) parts.push(`${skillCount} skill${skillCount !== 1 ? "s" : ""}`);
-        const detail = parts.length > 0 ? parts.join("  ") + "  synced" : "synced";
-        spin.succeed(`${adapter.name.padEnd(20)} ${detail}`);
-        results.push({ name: adapter.name, ok: true, detail });
-      } catch (e: any) {
-        spin.fail(`${adapter.name.padEnd(20)} failed: ${e.message}`);
-        results.push({ name: adapter.name, ok: false, detail: e.message });
-        writeFailed = true;
+    let rollbackSucceeded = 0;
+    let rollbackFailed = 0;
 
-        if (syncedClients.length > 0) {
-          ui.warn(`Write failed on ${adapter.name}. Starting rollback for ${syncedClients.length} client${syncedClients.length !== 1 ? "s" : ""}...`);
+    const rollbackClients = [...successfulClients].reverse();
+    const rollbackResults = await mapWithConcurrency(
+      rollbackClients,
+      Math.min(ROLLBACK_CONCURRENCY, Math.max(1, rollbackClients.length)),
+      async (client) => {
+        const snapshot = snapshots.get(client.id);
+        if (!snapshot) {
+          return {
+            name: client.adapter.name,
+            ok: false,
+            message: "snapshot unavailable",
+          };
         }
 
-        let rollbackSucceeded = 0;
-        let rollbackFailed = 0;
-
-        for (const client of [...syncedClients].reverse()) {
-          const snapshot = snapshots.get(client.id);
-          if (!snapshot) {
-            rollbackFailed++;
-            ui.error(`Rollback failed for ${client.name}: snapshot unavailable`);
-            continue;
-          }
-
-          try {
-            await client.adapter.write(snapshot);
-            rollbackSucceeded++;
-          } catch (rollbackError: any) {
-            rollbackFailed++;
-            ui.error(`Rollback failed for ${client.name}: ${rollbackError.message}`);
-          }
+        try {
+          await client.adapter.write(snapshot);
+          return {
+            name: client.adapter.name,
+            ok: true,
+            message: "",
+          };
+        } catch (rollbackError: any) {
+          return {
+            name: client.adapter.name,
+            ok: false,
+            message: rollbackError?.message || "unknown error",
+          };
         }
+      },
+    );
 
-        if (syncedClients.length > 0) {
-          ui.warn(`Rollback complete: ${rollbackSucceeded} succeeded, ${rollbackFailed} failed`);
-        }
-        break;
+    for (const rollbackResult of rollbackResults) {
+      if (rollbackResult.ok) {
+        rollbackSucceeded += 1;
+      } else {
+        rollbackFailed += 1;
+        ui.error(`Rollback failed for ${rollbackResult.name}: ${rollbackResult.message}`);
       }
+    }
+
+    if (successfulClients.length > 0) {
+      ui.warn(`Rollback complete: ${rollbackSucceeded} succeeded, ${rollbackFailed} failed`);
     }
   }
 
@@ -296,11 +488,12 @@ async function syncCommandInner(
     process.exitCode = 1;
   }
 
-  const successCount = results.filter(r => r.ok).length;
-  const failCount = results.filter(r => !r.ok).length;
+  const successCount = results.filter((r) => r.ok).length;
+  const failCount = results.filter((r) => !r.ok).length;
   const summaryParts: string[] = [`${successCount} client${successCount !== 1 ? "s" : ""} synced`];
   if (failCount > 0) summaryParts.push(`${failCount} failed`);
 
+  ui.header(stageLabel(6, "Finalize"));
   if (writeFailed) {
     ui.header("Sync failed");
   } else {
