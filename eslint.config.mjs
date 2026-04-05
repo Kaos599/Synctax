@@ -11,7 +11,7 @@ export default [
     ignores: ["node_modules/**", "coverage/**", "dist/**", ".synctax/**"],
   },
   {
-    files: ["**/*.ts"],
+    files: ["**/*.{ts,tsx}"],
     languageOptions: {
       parser: tsParser,
       parserOptions: {

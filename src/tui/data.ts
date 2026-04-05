@@ -23,6 +23,7 @@ export async function loadTuiFrameData(): Promise<TuiFrameData> {
 
   if (normalizedSource && !Object.hasOwn(adapters, normalizedSource)) {
     warnings.push(`Configured source '${normalizedSource}' is not a valid adapter.`);
+    source = fallbackSource;
   }
 
   const enabledClients = Object.entries(config.clients).filter(
@@ -36,7 +37,7 @@ export async function loadTuiFrameData(): Promise<TuiFrameData> {
     version: getVersion(),
     profile: config.activeProfile || "default",
     source,
-    theme: config.theme || "synctax",
+    theme: config.theme ?? "rebel",
     health: warnings.length > 0 ? "WARN" : "OK",
     enabledClients,
     totalClients: adapterIds.length,

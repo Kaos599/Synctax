@@ -60,7 +60,7 @@ export async function acquireLock(
           await tryWrite();
         } catch {
           throw new Error(
-            "Another synctax process is running. If this is incorrect, delete ~/.synctax/sync.lock",
+            `Another synctax process is running. If this is incorrect, delete ${lockPath}`,
           );
         }
       } else {
@@ -71,7 +71,7 @@ export async function acquireLock(
           holder = `PID ${info.pid} (${info.command})`;
         } catch { /* ignore */ }
         throw new Error(
-          `Another synctax process is running (${holder}). Wait for it to finish or delete ~/.synctax/sync.lock`,
+          `Another synctax process is running (${holder}). Wait for it to finish or delete ${lockPath}`,
         );
       }
     } else {

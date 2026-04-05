@@ -14,7 +14,8 @@ export async function atomicWriteFile(
   const dir = path.dirname(targetPath);
   await fs.mkdir(dir, { recursive: true }).catch(() => {});
 
-  const tempPath = targetPath + ".synctax-tmp";
+  const tmpSuffix = `${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  const tempPath = `${targetPath}.synctax-tmp-${tmpSuffix}`;
   await fs.writeFile(tempPath, content, {
     encoding: "utf-8",
     mode: mode ?? 0o644,

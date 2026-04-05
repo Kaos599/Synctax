@@ -206,3 +206,12 @@ marimo/_static/
 marimo/_lsp/
 __marimo__/
 node_modules/
+
+# Synctax build output
+dist/
+
+# Synctax backup archives
+synctax-backup-*.zip
+
+# Local component drafts
+component_*.md
