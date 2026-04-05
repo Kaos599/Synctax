@@ -32,7 +32,7 @@ export const Hero = () => {
                 <Terminal size={18} />
             </button>
             <a 
-                href="https://github.com/Kaos599/Synctax"
+                href="https://github.com/kaos599/Synctax"
                 target="_blank"
                 rel="noopener noreferrer"
                 className="bg-transparent text-white px-8 py-4 font-bold font-mono tracking-widest hover:bg-[#333] transition-colors border border-white/30 flex items-center gap-3"

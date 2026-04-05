@@ -63,7 +63,7 @@ function App() {
                 <div className="flex flex-col gap-4 font-mono text-xs mb-10">
                   <div className="flex items-start gap-4">
                     <span className="text-[#333] w-24 shrink-0 uppercase tracking-widest">HANDLE</span>
-                    <span className="text-[#aaa]">@chaos599</span>
+                    <span className="text-[#aaa]">@kaos599</span>
                   </div>
                   <div className="flex items-start gap-4">
                     <span className="text-[#333] w-24 shrink-0 uppercase tracking-widest">ROLE</span>
@@ -82,12 +82,12 @@ function App() {
                   <div className="flex items-start gap-4">
                     <span className="text-[#333] w-24 shrink-0 uppercase tracking-widest">GITHUB</span>
                     <a
-                      href="https://github.com/chaos599"
+                      href="https://github.com/kaos599"
                       target="_blank"
                       rel="noopener noreferrer"
                       className="text-[#aaa] hover:text-[#00FF00] transition-colors relative group"
                     >
-                      github.com/chaos599
+                      github.com/kaos599
                       <span className="absolute -bottom-px left-0 w-0 h-px bg-[#00FF00] transition-all duration-200 group-hover:w-full" />
                     </a>
                   </div>
@@ -107,7 +107,7 @@ function App() {
 
                 {/* CTA */}
                 <a
-                  href="https://github.com/chaos599/synctax"
+                  href="https://github.com/kaos599/synctax"
                   target="_blank"
                   rel="noopener noreferrer"
                   className="inline-flex items-center gap-3 bg-[#00FF00] text-black font-mono font-bold text-xs tracking-widest px-8 py-4 hover:bg-white transition-colors duration-150"
