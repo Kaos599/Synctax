@@ -34,21 +34,21 @@ export const About = () => {
               "I have 9 AI tools. Now I have one config file. Game changer."
             </p>
             <p className="font-mono text-xs text-[#555]">
-              @devhd &mdash; Power user
+              @kaos599 &mdash; Power user
             </p>
           </div>
 
           {/* Links */}
           <div className="flex gap-8 font-mono text-xs font-bold uppercase tracking-widest">
             <a
-              href="https://github.com"
+              href="https://github.com/kaos599"
               className="text-[#aaa] hover:text-[#00FF00] transition-colors relative group"
             >
               GitHub
               <span className="absolute -bottom-px left-0 w-0 h-px bg-[#00FF00] transition-all duration-200 group-hover:w-full" />
             </a>
             <a
-              href="https://twitter.com"
+              href="https://twitter.com/woah_hd"
               className="text-[#aaa] hover:text-[#00FF00] transition-colors relative group"
             >
               Twitter / X
