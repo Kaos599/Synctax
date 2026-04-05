@@ -19,7 +19,7 @@ const SAFE_SCHEMA = yaml.JSON_SCHEMA;
 export function parseFrontmatter<T = Record<string, unknown>>(raw: string): FrontmatterResult<T> {
   // Must start with --- followed by newline
   if (!raw.startsWith("---\n") && !raw.startsWith("---\r\n")) {
-    return { data: {} as T, content: raw.trim() };
+    return { data: {} as T, content: raw };
   }
 
   // Find the closing --- (first occurrence after the opening ---)
@@ -51,7 +51,7 @@ export function parseFrontmatter<T = Record<string, unknown>>(raw: string): Fron
       yamlBlock = raw.slice(openLen, eofClose);
       bodyStart = raw.length;
     } else {
-      return { data: {} as T, content: raw.trim() };
+    return { data: {} as T, content: raw };
     }
   }
 

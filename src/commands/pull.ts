@@ -14,6 +14,7 @@ function normalizePullDomain(domain?: string): "mcp" | "agents" | "skills" | "pe
   if (!domain) return undefined;
   const normalized = domain.trim().toLowerCase();
   if (!PULL_DOMAINS.has(normalized)) return undefined;
+  if (normalized === "mcp" || normalized === "mcps") return "mcp";
   if (normalized === "agent") return "agents";
   if (normalized === "skill") return "skills";
   return normalized as "mcp" | "agents" | "skills" | "permissions" | "models" | "prompts";

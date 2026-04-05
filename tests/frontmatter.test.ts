@@ -88,6 +88,13 @@ Content.`;
     expect(result.content).toBe("Just plain content with no frontmatter.");
   });
 
+  it("preserves leading and trailing whitespace when no frontmatter found", () => {
+    const input = "\n  Content with leading whitespace.  \n";
+    const result = parseFrontmatter(input);
+    expect(result.data).toEqual({});
+    expect(result.content).toBe(input);
+  });
+
   it("handles empty frontmatter block", () => {
     const input = `---
 ---
