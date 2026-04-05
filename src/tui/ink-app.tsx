@@ -26,10 +26,9 @@ export async function runInkTui(options: InkTuiOptions): Promise<void> {
       },
     );
 
-    process.env.NODE_ENV = prevEnv;
-
     await instance.waitUntilExit();
   } finally {
+    process.env.NODE_ENV = prevEnv;
     // Restore cursor and leave alternate screen buffer on exit
     process.stdout.write("\x1b[?25h");   // Show cursor
     process.stdout.write("\x1b[?1049l"); // Leave alternate buffer

@@ -7,6 +7,21 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [2.0.1] — 2026-04-05
+
+### Fixed
+
+- **TUI data loader**: Invalid `source` in config now correctly falls back to the default adapter instead of remaining set to the invalid value, preventing downstream TUI failures
+- **TUI data loader**: Theme fallback now uses `"rebel"` to match the schema default in `src/types.ts` (was `"synctax"`, causing inconsistent defaults)
+- **TUI entrypoint**: `NODE_ENV` is now restored in the `finally` block after `waitUntilExit()`, ensuring it is always restored even if `render()` throws, and that it doesn't affect code running during the TUI lifetime
+- **Atomic writes**: Temp file now uses a unique name (`pid-timestamp-random` suffix) instead of a deterministic `.synctax-tmp` suffix, preventing stale file collisions from crashed writes under concurrent access
+- **Lock errors**: Error messages now interpolate the actual computed `lockPath` instead of hardcoding `~/.synctax/sync.lock`, which was misleading when `SYNCTAX_HOME` is set (e.g., in tests)
+- **ESLint config**: `.tsx` files (Ink/React TUI components) are now covered by the ESLint config alongside `.ts` files
+- **Module entry**: `index.ts` no longer emits an unconditional `console.log` side effect on import; replaced with `export {}`
+- **`synctax add`**: Scope flag resolution for `agent` and `skill` now mirrors MCP: `--global` → `"global"`, `--local` → `"local"`, neither → `"global"` (was: `agent`/`skill` ignored `--local` and defaulted to `"local"`, inconsistent with MCP)
+
+---
+
 ## [2.0.0] — 2026-04-05
 
 ### Initial Release

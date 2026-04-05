@@ -101,7 +101,7 @@ export async function addCommand(domain: string, name: string, options: any) {
       prompt: options.prompt || "",
       model: options.model,
       tools: options.tools ? options.tools.split(",") : undefined,
-      scope: options.global ? "global" : "local"
+      scope: options.global ? "global" : (options.local ? "local" : "global")
     };
   } else if (domain === "skill") {
     config.resources.skills[name] = {
@@ -109,7 +109,7 @@ export async function addCommand(domain: string, name: string, options: any) {
       description: options.description,
       trigger: options.trigger,
       content: options.content || "",
-      scope: options.global ? "global" : "local"
+      scope: options.global ? "global" : (options.local ? "local" : "global")
     };
   } else {
     ui.error(`Unsupported domain for add: ${domain}`);

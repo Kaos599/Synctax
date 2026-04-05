@@ -114,7 +114,7 @@ describe("tui data loader", () => {
     const data = await loadTuiFrameData();
 
     expect(data.version).toBe(getVersion());
-    expect(data.source).toBe("not-a-client");
+    expect(data.source).toBe("claude"); // falls back to fallbackSource when configured source is invalid
     expect(data.enabledClients).toBe(0);
     expect(data.health).toBe("WARN");
     expect(data.warnings).toContain("Configured source 'not-a-client' is not a valid adapter.");
@@ -205,7 +205,7 @@ describe("tui data loader", () => {
     expect(data.warnings).toEqual([]);
   });
 
-  it("treats source 'toString' as invalid and preserves it with warning", async () => {
+  it("treats source 'toString' as invalid, falls back to default, and emits warning", async () => {
     const manager = new ConfigManager();
     await manager.write({
       version: 1,
@@ -240,7 +240,7 @@ describe("tui data loader", () => {
 
     const data = await loadTuiFrameData();
 
-    expect(data.source).toBe("toString");
+    expect(data.source).toBe("claude"); // falls back to fallbackSource when configured source is invalid
     expect(data.health).toBe("WARN");
     expect(data.warnings).toContain("Configured source 'toString' is not a valid adapter.");
   });

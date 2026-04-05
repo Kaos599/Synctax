@@ -20,7 +20,6 @@ describe("Premium CLI - Version", () => {
   it("getVersion returns a semver string", async () => {
     const { getVersion } = await import("../src/version.js");
     const v = getVersion();
-    expect(v).toBe("2.0.0");
     expect(v).toMatch(/^\d+\.\d+\.\d+$/);
   });
 });
@@ -28,16 +27,20 @@ describe("Premium CLI - Version", () => {
 describe("Premium CLI - Brand Header", () => {
   it("format.brandHeader includes version and profile", async () => {
     const { format } = await import("../src/ui/output.js");
-    const header = format.brandHeader("2.0.0", "work");
+    const { getVersion } = await import("../src/version.js");
+    const v = getVersion();
+    const header = format.brandHeader(v, "work");
     expect(header).toContain("Synctax");
-    expect(header).toContain("v2.0.0");
+    expect(header).toContain(`v${v}`);
     expect(header).toContain("Profile: work");
   });
 
   it("format.brandHeader works without profile", async () => {
     const { format } = await import("../src/ui/output.js");
-    const header = format.brandHeader("2.0.0");
-    expect(header).toContain("v2.0.0");
+    const { getVersion } = await import("../src/version.js");
+    const v = getVersion();
+    const header = format.brandHeader(v);
+    expect(header).toContain(`v${v}`);
     expect(header).not.toContain("Profile:");
   });
 });
@@ -116,7 +119,8 @@ describe("Premium CLI - Command Brand Headers", () => {
 
     const allOutput = logSpy.mock.calls.map(c => c[0]).join("\n");
     expect(allOutput).toContain("Synctax");
-    expect(allOutput).toContain("v2.0.0");
+    const { getVersion } = await import("../src/version.js");
+    expect(allOutput).toContain(`v${getVersion()}`);
     expect(allOutput).toContain("test-profile");
     expect(allOutput).toContain("Done in");
   });
