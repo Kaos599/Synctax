@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Copy, Check } from 'lucide-react';
 
 interface TerminalBlockProps {
@@ -7,11 +7,28 @@ interface TerminalBlockProps {
 
 export const TerminalBlock = ({ code }: TerminalBlockProps) => {
   const [copied, setCopied] = useState(false);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const handleCopy = () => {
-    void navigator.clipboard.writeText(code);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+  useEffect(() => {
+    return () => {
+      if (timerRef.current) {
+        clearTimeout(timerRef.current);
+      }
+    };
+  }, []);
+
+  const handleCopy = async () => {
+    if (!navigator.clipboard || typeof navigator.clipboard.writeText !== 'function') {
+      return;
+    }
+
+    try {
+      await navigator.clipboard.writeText(code);
+      setCopied(true);
+      timerRef.current = setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // Ignore clipboard errors
+    }
   };
 
   return (

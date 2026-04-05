@@ -176,15 +176,20 @@ export const ScannerCardStream = ({
       const sr = scanX + sw / 2;
       let anyScanning = false;
 
-      cardLine.querySelectorAll<HTMLElement>('.fcard').forEach((wrapper, idx) => {
+      cardLine.querySelectorAll<HTMLElement>('.fcard').forEach((wrapper) => {
         const rect = wrapper.getBoundingClientRect();
         const norm = wrapper.querySelector<HTMLElement>('.fnorm')!;
         const asc = wrapper.querySelector<HTMLElement>('.fasc')!;
         const pre = asc.querySelector<HTMLElement>('pre')!;
+        const cardId = Number(wrapper.dataset.cardId);
         if (rect.left < sr && rect.right > sl) {
           anyScanning = true;
-          if (scanEffect === 'scramble' && wrapper.dataset.scanned !== 'true') {
-            runScramble(pre, idx);
+          if (
+            scanEffect === 'scramble' &&
+            wrapper.dataset.scanned !== 'true' &&
+            Number.isInteger(cardId)
+          ) {
+            runScramble(pre, cardId);
           }
           wrapper.dataset.scanned = 'true';
           const il = Math.max(sl - rect.left, 0);
@@ -259,6 +264,17 @@ export const ScannerCardStream = ({
       animFrameRef.current = requestAnimationFrame(animate);
     };
 
+    // Resize handler
+    const onResize = () => {
+      const newW = window.innerWidth;
+      renderer.setSize(newW, H);
+      camera.left = -newW / 2;
+      camera.right = newW / 2;
+      camera.updateProjectionMatrix();
+      sCanvas.width = newW;
+    };
+    window.addEventListener('resize', onResize);
+
     animFrameRef.current = requestAnimationFrame(animate);
 
     return () => {
@@ -269,6 +285,7 @@ export const ScannerCardStream = ({
       cardLine.removeEventListener('touchstart', onDown);
       window.removeEventListener('touchmove', onMove);
       window.removeEventListener('touchend', onUp);
+      window.removeEventListener('resize', onResize);
       renderer.dispose();
       geo.dispose();
       mat.dispose();
@@ -309,6 +326,7 @@ export const ScannerCardStream = ({
           {cards.map((card) => (
             <div
               key={card.id}
+              data-card-id={card.id}
               className="fcard relative shrink-0"
               style={{ width: 360, height: 240 }}
             >
