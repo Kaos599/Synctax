@@ -153,24 +153,30 @@ async function syncCommandInner(
 
   // --- Diff preview: show what will change before writing ---
   if (!options.dryRun && enabledClients.length > 0) {
-    const clientDiffs: ClientDiff[] = [];
-    for (const { id, adapter } of enabledClients) {
-      try {
-        const data = await adapter.read();
-        const diff: ClientDiff = {
-          id,
-          name: adapter.name,
-          domains: {
-            mcps: compareDomain(resources.mcps || {}, data.mcps || {}),
-            agents: compareDomain(resources.agents || {}, data.agents || {}),
-            skills: compareDomain(resources.skills || {}, data.skills || {}),
-          },
-        };
-        clientDiffs.push(diff);
-      } catch {
-        // Can't diff — will attempt write anyway
-      }
-    }
+    const diffResults = await Promise.all(
+      enabledClients.map(async ({ id, adapter }) => {
+        try {
+          const data = await adapter.read();
+          const diff: ClientDiff = {
+            id,
+            name: adapter.name,
+            domains: {
+              mcps: compareDomain(resources.mcps || {}, data.mcps || {}),
+              agents: compareDomain(resources.agents || {}, data.agents || {}),
+              skills: compareDomain(resources.skills || {}, data.skills || {}),
+            },
+          };
+          return { success: true, diff };
+        } catch {
+          // Can't diff — will attempt write anyway
+          return { success: false };
+        }
+      })
+    );
+
+    const clientDiffs: ClientDiff[] = diffResults
+      .filter((r): r is { success: true, diff: ClientDiff } => r.success)
+      .map(r => r.diff);
 
     const hasChanges = clientDiffs.some(hasDiffChanges);
 
@@ -217,20 +223,30 @@ async function syncCommandInner(
 
   const snapshots = new Map<string, any>();
   if (!options.dryRun) {
-    for (const { id, adapter } of enabledClients) {
-      try {
-        const snapshot = await adapter.read();
-        snapshots.set(id, {
-          mcps: snapshot?.mcps || {},
-          agents: snapshot?.agents || {},
-          skills: snapshot?.skills || {},
-          permissions: snapshot?.permissions,
-          models: snapshot?.models,
-          prompts: snapshot?.prompts,
-          credentials: snapshot?.credentials,
+    const snapshotResults = await Promise.all(
+      enabledClients.map(async ({ id, adapter }) => {
+        try {
+          const snapshot = await adapter.read();
+          return { id, adapter, success: true as const, snapshot };
+        } catch (err: any) {
+          return { id, adapter, success: false as const, error: err?.message || "unknown error" };
+        }
+      })
+    );
+
+    for (const result of snapshotResults) {
+      if (result.success) {
+        snapshots.set(result.id, {
+          mcps: result.snapshot?.mcps || {},
+          agents: result.snapshot?.agents || {},
+          skills: result.snapshot?.skills || {},
+          permissions: result.snapshot?.permissions,
+          models: result.snapshot?.models,
+          prompts: result.snapshot?.prompts,
+          credentials: result.snapshot?.credentials,
         });
-      } catch (err: any) {
-        ui.warn(`Snapshot failed for ${adapter.name}: ${err?.message || "unknown error"}. Rollback for this client will be unavailable.`);
+      } else {
+        ui.warn(`Snapshot failed for ${result.adapter.name}: ${result.error}. Rollback for this client will be unavailable.`);
       }
     }
   }
@@ -340,25 +356,37 @@ export async function memorySyncCommand(options: { source?: string, dryRun?: boo
   let succeeded = 0;
   let failed = 0;
 
-  for (const [id, clientConf] of Object.entries(config.clients)) {
-    if (!clientConf.enabled || id === sourceId) continue;
+  const validTargets = Object.entries(config.clients)
+    .filter(([id, clientConf]) => clientConf.enabled && id !== sourceId && adapters[id])
+    .map(([id]) => adapters[id]!);
 
-    const adapter = adapters[id];
-    if (!adapter) continue;
+  const syncResults = await Promise.all(
+    validTargets.map(async (adapter) => {
+      const targetFileName = adapter.getMemoryFileName();
+      if (options.dryRun) {
+        return { success: true as const, dryRun: true as const, targetFileName };
+      } else {
+        try {
+          await adapter.writeMemory(cwd, sourceContent);
+          return { success: true as const, dryRun: false as const, targetFileName };
+        } catch (e: any) {
+          return { success: false as const, targetFileName, error: e.message };
+        }
+      }
+    })
+  );
 
-    const targetFileName = adapter.getMemoryFileName();
-    if (options.dryRun) {
-      ui.dryRun(`Would sync ${sourceFileName} -> ${targetFileName}`);
+  for (const result of syncResults) {
+    if (result.success) {
+      if (result.dryRun) {
+        ui.dryRun(`Would sync ${sourceFileName} -> ${result.targetFileName}`);
+      } else {
+        ui.success(`Synced to ${result.targetFileName}`);
+      }
       succeeded++;
     } else {
-      try {
-        await adapter.writeMemory(cwd, sourceContent);
-        ui.success(`Synced to ${targetFileName}`);
-        succeeded++;
-      } catch (e: any) {
-        ui.error(`Failed to sync to ${targetFileName}: ${e.message}`);
-        failed++;
-      }
+      ui.error(`Failed to sync to ${result.targetFileName}: ${result.error}`);
+      failed++;
     }
   }
 
