@@ -94,13 +94,15 @@ describe("no-arg entry", () => {
 
     const restoreStdinTTY = setProcessProperty(process.stdin, "isTTY", true);
     const restoreStdoutTTY = setProcessProperty(process.stdout, "isTTY", true);
-    const restoreColumns = setProcessProperty(process.stdout, "columns", 91);
+    const restoreColumns = setProcessProperty(process.stdout, "columns", 79);
+    const restoreStderrColumns = setProcessProperty(process.stderr, "columns", 0);
     const restoreRows = setProcessProperty(process.stdout, "rows", 24);
 
     try {
       await startNoArgExperience("pixel");
     } finally {
       restoreRows();
+      restoreStderrColumns();
       restoreColumns();
       restoreStdoutTTY();
       restoreStdinTTY();
@@ -109,5 +111,47 @@ describe("no-arg entry", () => {
     expect(fallbackSpy).toHaveBeenCalledWith("pixel");
     expect(runSpy).not.toHaveBeenCalled();
     expect(loadSpy).not.toHaveBeenCalled();
+  });
+
+  it("uses stderr columns when stdout.columns is 0 (Windows npm install fix)", async () => {
+    const frameData = {
+      version: "0.1.0",
+      profile: "default",
+      source: "cursor",
+      theme: "synctax",
+      health: "OK" as const,
+      enabledClients: 1,
+      totalClients: 9,
+      resourceCounts: { mcps: 1, agents: 0, skills: 0 },
+      driftClients: 0,
+      lastSync: "unknown",
+      warnings: [],
+      profileNames: ["default"],
+      resourceNames: { mcps: [], agents: [], skills: [] },
+    };
+
+    const runSpy = vi.spyOn(inkApp, "runInkTui").mockResolvedValue(undefined);
+    const loadSpy = vi.spyOn(data, "loadTuiFrameData").mockResolvedValue(frameData);
+    const fallbackSpy = vi.spyOn(interactive, "startInteractiveMode").mockResolvedValue(undefined as never);
+
+    const restoreStdinTTY = setProcessProperty(process.stdin, "isTTY", true);
+    const restoreStdoutTTY = setProcessProperty(process.stdout, "isTTY", true);
+    const restoreColumns = setProcessProperty(process.stdout, "columns", 0);
+    const restoreStderrColumns = setProcessProperty(process.stderr, "columns", 120);
+    const restoreRows = setProcessProperty(process.stdout, "rows", 36);
+
+    try {
+      await startNoArgExperience();
+    } finally {
+      restoreRows();
+      restoreStderrColumns();
+      restoreColumns();
+      restoreStdoutTTY();
+      restoreStdinTTY();
+    }
+
+    expect(loadSpy).toHaveBeenCalledTimes(1);
+    expect(runSpy).toHaveBeenCalledWith({ data: frameData });
+    expect(fallbackSpy).not.toHaveBeenCalled();
   });
 });

@@ -47,7 +47,8 @@ describe("atomicWriteFile", () => {
 });
 
 describe("atomicWriteSecure", () => {
-  it("writes with mode 0o600", async () => {
+  // Windows does not enforce Unix file permission modes
+  it.skipIf(process.platform === "win32")("writes with mode 0o600", async () => {
     const target = path.join(tmpDir, "secret.env");
     await atomicWriteSecure(target, "SECRET=value");
     const stat = await fs.stat(target);
