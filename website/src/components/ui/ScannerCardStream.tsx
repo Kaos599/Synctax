@@ -139,11 +139,20 @@ export const ScannerCardStream = ({
     const state = streamState.current;
     const onDown = (e: MouseEvent | TouchEvent) => {
       state.isDragging = true;
-      state.lastMouseX = 'touches' in e ? e.touches[0].clientX : e.clientX;
+      if ('touches' in e) {
+        state.lastMouseX = e.touches[0] ? e.touches[0].clientX : 0;
+      } else {
+        state.lastMouseX = (e as MouseEvent).clientX;
+      }
     };
     const onMove = (e: MouseEvent | TouchEvent) => {
       if (!state.isDragging) return;
-      const x = 'touches' in e ? e.touches[0].clientX : e.clientX;
+      let x = 0;
+      if ('touches' in e) {
+        x = e.touches[0] ? e.touches[0].clientX : state.lastMouseX;
+      } else {
+        x = (e as MouseEvent).clientX;
+      }
       const dx = x - state.lastMouseX;
       state.velocity = Math.abs(dx) * 8;
       state.direction = dx < 0 ? -1 : 1;
@@ -217,12 +226,19 @@ export const ScannerCardStream = ({
 
       // Particles
       const time = now * 0.001;
-      for (let i = 0; i < N; i++) {
-        pos[i * 3] += vel[i] * 0.016;
-        if (pos[i * 3] > W / 2 + 60) pos[i * 3] = -W / 2 - 60;
-        pos[i * 3 + 1] += Math.sin(time + i * 0.12) * 0.4;
+      const positionAttr = geo.getAttribute('position');
+      if (positionAttr) {
+        const posArray = positionAttr.array as Float32Array;
+        for (let i = 0; i < N; i++) {
+          const i3 = i * 3;
+          const p = posArray[i3] ?? 0;
+          const v = vel[i] ?? 0;
+          posArray[i3] = p + (v * 0.016);
+          if ((posArray[i3] ?? 0) > W / 2 + 60) posArray[i3] = -W / 2 - 60;
+          posArray[i3 + 1] = (posArray[i3 + 1] ?? 0) + Math.sin(time + i * 0.12) * 0.4;
+        }
+        positionAttr.needsUpdate = true;
       }
-      geo.attributes.position.needsUpdate = true;
       renderer.render(scene, camera);
 
       // Scanner line particles
