@@ -8,7 +8,7 @@ const __dirname = path.dirname(__filename);
 
 export default [
   {
-    ignores: ["node_modules/**", "coverage/**", "dist/**", ".synctax/**"],
+    ignores: ["node_modules/**", "coverage/**", "dist/**", ".synctax/**", "website/**"],
   },
   {
     files: ["**/*.{ts,tsx}"],
