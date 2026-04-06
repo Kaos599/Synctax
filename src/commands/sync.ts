@@ -153,24 +153,28 @@ async function syncCommandInner(
 
   // --- Diff preview: show what will change before writing ---
   if (!options.dryRun && enabledClients.length > 0) {
-    const clientDiffs: ClientDiff[] = [];
-    for (const { id, adapter } of enabledClients) {
-      try {
-        const data = await adapter.read();
-        const diff: ClientDiff = {
-          id,
-          name: adapter.name,
-          domains: {
-            mcps: compareDomain(resources.mcps || {}, data.mcps || {}),
-            agents: compareDomain(resources.agents || {}, data.agents || {}),
-            skills: compareDomain(resources.skills || {}, data.skills || {}),
-          },
-        };
-        clientDiffs.push(diff);
-      } catch {
-        // Can't diff — will attempt write anyway
-      }
-    }
+    const diffResults = await Promise.all(
+      enabledClients.map(async ({ id, adapter }) => {
+        try {
+          const data = await adapter.read();
+          const diff: ClientDiff = {
+            id,
+            name: adapter.name,
+            domains: {
+              mcps: compareDomain(resources.mcps || {}, data.mcps || {}),
+              agents: compareDomain(resources.agents || {}, data.agents || {}),
+              skills: compareDomain(resources.skills || {}, data.skills || {}),
+            },
+          };
+          return diff;
+        } catch {
+          // Can't diff — will attempt write anyway
+          return null;
+        }
+      })
+    );
+
+    const clientDiffs = diffResults.filter((diff): diff is ClientDiff => diff !== null);
 
     const hasChanges = clientDiffs.some(hasDiffChanges);
 
@@ -217,22 +221,24 @@ async function syncCommandInner(
 
   const snapshots = new Map<string, any>();
   if (!options.dryRun) {
-    for (const { id, adapter } of enabledClients) {
-      try {
-        const snapshot = await adapter.read();
-        snapshots.set(id, {
-          mcps: snapshot?.mcps || {},
-          agents: snapshot?.agents || {},
-          skills: snapshot?.skills || {},
-          permissions: snapshot?.permissions,
-          models: snapshot?.models,
-          prompts: snapshot?.prompts,
-          credentials: snapshot?.credentials,
-        });
-      } catch (err: any) {
-        ui.warn(`Snapshot failed for ${adapter.name}: ${err?.message || "unknown error"}. Rollback for this client will be unavailable.`);
-      }
-    }
+    await Promise.all(
+      enabledClients.map(async ({ id, adapter }) => {
+        try {
+          const snapshot = await adapter.read();
+          snapshots.set(id, {
+            mcps: snapshot?.mcps || {},
+            agents: snapshot?.agents || {},
+            skills: snapshot?.skills || {},
+            permissions: snapshot?.permissions,
+            models: snapshot?.models,
+            prompts: snapshot?.prompts,
+            credentials: snapshot?.credentials,
+          });
+        } catch (err: any) {
+          ui.warn(`Snapshot failed for ${adapter.name}: ${err?.message || "unknown error"}. Rollback for this client will be unavailable.`);
+        }
+      })
+    );
   }
 
   const syncedClients: Array<{ id: string; name: string; adapter: any }> = [];
