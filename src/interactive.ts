@@ -63,7 +63,7 @@ const commandsList = [
 
 export async function startInteractiveMode(themeOverride?: string) {
   const configManager = new ConfigManager();
-  let theme = themeOverride || "rebel";
+  let theme = themeOverride || "synctax";
   let hasConfig = false;
   let profileName = "default";
   let mcpCount = 0;

@@ -6,6 +6,7 @@ import { adapters } from "../adapters/index.js";
 import { getConfigManager } from "./_shared.js";
 import { getVersion } from "../version.js";
 import { select } from "@inquirer/prompts";
+import { resolveClientId } from "../client-id.js";
 
 export async function initCommand(options: {
   detect?: boolean;
@@ -19,7 +20,7 @@ export async function initCommand(options: {
   const timer = ui.startTimer();
 
   if (!options.skipBanner) {
-    printBanner(options.theme || "rebel");
+    printBanner(options.theme || "synctax");
   }
   const configManager = getConfigManager();
 
@@ -43,10 +44,18 @@ export async function initCommand(options: {
     return;
   }
 
+  const sourceResolution = resolveClientId(options.source);
+  if (sourceResolution?.ambiguousIds && options.source && !adapters[options.source]) {
+    ui.error(`Ambiguous client alias "${options.source}". Use one of: ${sourceResolution.ambiguousIds.join(", ")}`);
+    process.exitCode = 1;
+    return;
+  }
+  const resolvedSource = sourceResolution?.canonicalId ?? options.source;
+
   const newConfig: Config = {
     version: 1,
-    source: options.source,
-    theme: options.theme || "rebel",
+    source: resolvedSource,
+    theme: options.theme || "synctax",
     activeProfile: "default",
     clients: {},
     profiles: { default: {} },

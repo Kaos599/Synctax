@@ -5,6 +5,7 @@ import { getVersion } from "../version.js";
 import { access } from "fs/promises";
 import { constants } from "fs";
 import path from "path";
+import { resolveClientId } from "../client-id.js";
 
 const ALL_DRIFT_DOMAINS = ["mcps", "agents", "skills"] as const;
 type DriftDomain = (typeof ALL_DRIFT_DOMAINS)[number];
@@ -219,9 +220,19 @@ export async function statusCommand() {
   // 3. Sync status — parallel reads across all enabled clients
   console.log(ui.format.info("\n  Client Sync Status:"));
 
-  const enabledClients = Object.entries(config.clients)
-    .filter(([id, clientConf]) => clientConf.enabled && adapters[id])
-    .map(([id]) => [id, adapters[id]!] as const);
+  const enabledClients: Array<[string, (typeof adapters)[string]]> = [];
+  const seenEnabledClientIds = new Set<string>();
+  for (const [id, clientConf] of Object.entries(config.clients)) {
+    if (!clientConf.enabled) continue;
+    const resolution = resolveClientId(id);
+    if (resolution?.ambiguousIds && !adapters[id]) continue;
+    const resolvedId = resolution?.canonicalId ?? id;
+    if (seenEnabledClientIds.has(resolvedId)) continue;
+    const adapter = adapters[resolvedId] ?? adapters[id];
+    if (!adapter) continue;
+    seenEnabledClientIds.add(resolvedId);
+    enabledClients.push([resolvedId, adapter]);
+  }
 
   if (enabledClients.length === 0) {
     ui.dim("    No clients enabled.");
@@ -283,17 +294,34 @@ export async function doctorCommand(options: any): Promise<boolean> {
 
     // Flag any enabled clients with missing adapters
     const clientEntries = Object.entries(config.clients).filter(([, c]) => c.enabled);
-    for (const [id] of clientEntries) {
-      if (!adapters[id]) {
-        ui.error(`Adapter missing for enabled client: ${id}`);
+    const resolvedClients = clientEntries.map(([id]) => {
+      const resolution = resolveClientId(id);
+      const resolvedId = resolution?.canonicalId ?? id;
+      const adapter = adapters[resolvedId] ?? adapters[id];
+      return { id, resolvedId, adapter, ambiguousIds: resolution?.ambiguousIds };
+    });
+
+    for (const client of resolvedClients) {
+      if (client.ambiguousIds && !client.adapter) {
+        ui.error(`Ambiguous enabled client alias: ${client.id} (${client.ambiguousIds.join(", ")})`);
+        healthy = false;
+        continue;
+      }
+      if (!client.adapter) {
+        ui.error(`Adapter missing for enabled client: ${client.id}`);
         healthy = false;
       }
     }
 
     // Parallel detect across all valid adapters
-    const validClients = clientEntries
-      .filter(([id]) => !!adapters[id])
-      .map(([id]) => adapters[id]!);
+    const validClients: Array<(typeof adapters)[string]> = [];
+    const seenValidClientIds = new Set<string>();
+    for (const client of resolvedClients) {
+      if (!client.adapter) continue;
+      if (seenValidClientIds.has(client.resolvedId)) continue;
+      seenValidClientIds.add(client.resolvedId);
+      validClients.push(client.adapter);
+    }
 
     if (validClients.length > 0) {
       const spin = ui.spinner(`Checking ${validClients.length} client${validClients.length !== 1 ? "s" : ""}...`);

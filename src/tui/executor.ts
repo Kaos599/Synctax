@@ -6,6 +6,10 @@ export interface GuardedActionResult {
   error?: string;
 }
 
+export interface GuardedActionOptions {
+  onOutput?: (output: string[]) => void;
+}
+
 function stringifyArgs(args: unknown[]): string {
   return args.map((arg) => String(arg)).join(" ");
 }
@@ -20,9 +24,25 @@ function stringifyChunk(chunk: unknown): string {
   return String(chunk);
 }
 
+const ANSI_ESCAPE_REGEX = /\u001b\[[0-9;?]*[ -/]*[@-~]/g;
+const MAX_CAPTURE_LINES = 1000;
+
+function normalizeLines(raw: string): string[] {
+  return raw
+    .replace(ANSI_ESCAPE_REGEX, "")
+    .replace(/\r/g, "\n")
+    .split("\n")
+    .map((line) => line.trimEnd())
+    .filter((line) => line.length > 0);
+}
+
 let captureInFlight = false;
 
-export async function runGuardedAction(actionId: string, handler: () => Promise<void>): Promise<GuardedActionResult> {
+export async function runGuardedAction(
+  actionId: string,
+  handler: () => Promise<void>,
+  options?: GuardedActionOptions,
+): Promise<GuardedActionResult> {
   if (captureInFlight) {
     return {
       actionId,
@@ -38,18 +58,39 @@ export async function runGuardedAction(actionId: string, handler: () => Promise<
   const originalLog = console.log;
   const originalError = console.error;
   const originalStderrWrite = process.stderr.write.bind(process.stderr);
+  const previousPlainOutputMode = process.env.SYNCTAX_TUI_PLAIN_OUTPUT;
   const startedAt = Date.now();
 
+  process.env.SYNCTAX_TUI_PLAIN_OUTPUT = "1";
+
+  const emitOutput = (raw: string) => {
+    const lines = normalizeLines(raw);
+    let changed = false;
+    for (const line of lines) {
+      if (line === output[output.length - 1]) {
+        continue;
+      }
+      output.push(line);
+      if (output.length > MAX_CAPTURE_LINES) {
+        output.splice(0, output.length - MAX_CAPTURE_LINES);
+      }
+      changed = true;
+    }
+    if (changed) {
+      options?.onOutput?.([...output]);
+    }
+  };
+
   console.log = (...args: unknown[]) => {
-    output.push(stringifyArgs(args));
+    emitOutput(stringifyArgs(args));
   };
 
   console.error = (...args: unknown[]) => {
-    output.push(stringifyArgs(args));
+    emitOutput(stringifyArgs(args));
   };
 
   process.stderr.write = ((chunk: unknown, ...args: unknown[]) => {
-    output.push(stringifyChunk(chunk));
+    emitOutput(stringifyChunk(chunk));
 
     const maybeCallback = args.find((arg) => typeof arg === "function");
     if (typeof maybeCallback === "function") {
@@ -79,6 +120,11 @@ export async function runGuardedAction(actionId: string, handler: () => Promise<
     console.log = originalLog;
     console.error = originalError;
     process.stderr.write = originalStderrWrite as typeof process.stderr.write;
+    if (previousPlainOutputMode === undefined) {
+      delete process.env.SYNCTAX_TUI_PLAIN_OUTPUT;
+    } else {
+      process.env.SYNCTAX_TUI_PLAIN_OUTPUT = previousPlainOutputMode;
+    }
     captureInFlight = false;
   }
 }

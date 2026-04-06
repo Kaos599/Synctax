@@ -121,6 +121,7 @@ describe("sync rollback", () => {
 
       const output = logSpy.mock.calls.map((call) => String(call[0])).join("\n");
       expect(output).toContain("Rollback complete: 2 succeeded, 0 failed");
+      expect(output).toContain("Rollback Client A completed in");
       expect(output).toContain("Sync failed");
       expect(output).not.toContain("Sync complete!");
     } finally {

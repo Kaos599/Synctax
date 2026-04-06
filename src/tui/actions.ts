@@ -43,7 +43,7 @@ const TUI_HOTKEY_DEFINITIONS: ReadonlyArray<TuiHotkeyActionDefinition> = [
     description: "Writes your master config to all enabled clients. Each client's existing config is overwritten atomically. A snapshot is taken first — run synctax restore to undo.",
     focus: "actions",
     async execute() {
-      await commands.syncCommand({});
+      await commands.syncCommand({ yes: true });
     },
   },
   {

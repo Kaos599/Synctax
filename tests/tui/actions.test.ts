@@ -28,7 +28,7 @@ describe("tui actions", () => {
     await runActionById("sync", { source: "cursor" });
 
     expect(syncSpy).toHaveBeenCalledTimes(1);
-    expect(syncSpy).toHaveBeenCalledWith({});
+    expect(syncSpy).toHaveBeenCalledWith({ yes: true });
   });
 
   it("dispatches pull action with provided source", async () => {

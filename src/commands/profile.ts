@@ -152,7 +152,7 @@ export async function profileCreateCommand(name: string, options: { include?: st
   console.log(ui.format.summary(timer.elapsed(), `profile "${name}" created`));
 }
 
-export async function profileUseCommand(name: string, options: { dryRun?: boolean, noSync?: boolean }) {
+export async function profileUseCommand(name: string, options: { dryRun?: boolean, noSync?: boolean, yes?: boolean }) {
   const timer = ui.startTimer();
   const configManager = getConfigManager();
   const config = await configManager.read();
@@ -182,7 +182,7 @@ export async function profileUseCommand(name: string, options: { dryRun?: boolea
   console.log(ui.format.summary(timer.elapsed(), `switched to profile "${name}"`));
 
   if (!options.noSync) {
-    await syncCommand({});
+    await syncCommand({ yes: options.yes });
   }
 }
 

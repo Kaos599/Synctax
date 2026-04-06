@@ -55,7 +55,7 @@ export function createConfig(overrides: Partial<Config> = {}): Config {
   return {
     version: overrides.version ?? 1,
     source: overrides.source,
-    theme: overrides.theme ?? "rebel",
+    theme: overrides.theme ?? "synctax",
     activeProfile: overrides.activeProfile ?? "default",
     clients: overrides.clients ?? {},
     profiles: overrides.profiles ?? { default: {} },

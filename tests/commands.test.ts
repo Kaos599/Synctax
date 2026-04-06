@@ -78,6 +78,38 @@ describe("CLI Commands", () => {
     expect(pulledAgent.prompt).toBe("Mocking");
   });
 
+  it("pullCommand normalizes real-world client aliases", async () => {
+    const previousOpencode = adapters["opencode"];
+    const opencodeRead = vi.fn(async () => ({
+      mcps: { "alias-mcp": { command: "node" } },
+      agents: {},
+      skills: {},
+      permissions: createPermissions(),
+    }));
+
+    adapters["opencode"] = {
+      id: "opencode",
+      name: "OpenCode",
+      detect: async () => true,
+      read: opencodeRead,
+      write: async () => {},
+      getMemoryFileName: () => "AGENTS.md",
+      readMemory: async () => null,
+      writeMemory: async () => {},
+    } as any;
+
+    try {
+      await pullCommand({ from: "open code", merge: true });
+
+      const config = await manager.read();
+      expect(config.source).toBe("opencode");
+      expect(opencodeRead).toHaveBeenCalledTimes(1);
+      expect(config.resources.mcps["alias-mcp"]).toBeDefined();
+    } finally {
+      adapters["opencode"] = previousOpencode;
+    }
+  });
+
   it("pullCommand sets non-zero exitCode when adapter read fails", async () => {
     const previousExitCode = process.exitCode;
     const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
@@ -456,12 +488,20 @@ describe("CLI Commands", () => {
     expect(config.theme).toBe("cyber");
   });
 
-  it("initCommand defaults to rebel theme if not provided", async () => {
+  it("initCommand defaults to synctax theme if not provided", async () => {
     const { initCommand } = await import("../src/commands.js");
     await initCommand({ force: true, detect: false, yes: true });
     
     const config = await manager.read();
-    expect(config.theme).toBe("rebel");
+    expect(config.theme).toBe("synctax");
+  });
+
+  it("initCommand normalizes source aliases to canonical client ids", async () => {
+    const { initCommand } = await import("../src/commands.js");
+    await initCommand({ source: "open-code", force: true, detect: false, yes: true });
+
+    const config = await manager.read();
+    expect(config.source).toBe("opencode");
   });
 
   it("doctorCommand diagnoses setup issues", async () => {
@@ -628,6 +668,100 @@ describe("CLI Commands", () => {
     const envPath = path.join(mockHome, ".synctax", "envs", "missing-profile-env.env");
     await expect(syncCommand({ dryRun: true })).resolves.toBeUndefined();
     await expect(fs.access(envPath)).rejects.toBeDefined();
+  });
+
+  it("sync does not rewrite master config when source pull has no effective changes", async () => {
+    const { syncCommand } = await import("../src/commands.js");
+
+    adapters["noopsource"] = {
+      id: "noopsource",
+      name: "No-op Source",
+      detect: async () => true,
+      read: async () => ({ mcps: {}, agents: {}, skills: {} }),
+      write: async () => {},
+      getMemoryFileName: () => "NOOP.md",
+      readMemory: async () => null,
+      writeMemory: async () => {},
+    } as any;
+
+    await manager.write(createConfig({
+      version: 1,
+      source: "noopsource",
+      theme: "synctax",
+      clients: { noopsource: { enabled: true } },
+      resources: {
+        mcps: {},
+        agents: {},
+        skills: {},
+        permissions: createPermissions(),
+      },
+    }));
+
+    const writeSpy = vi.spyOn(ConfigManager.prototype, "write");
+
+    try {
+      await syncCommand({ dryRun: false, yes: true });
+      expect(writeSpy).not.toHaveBeenCalled();
+
+      const config = await manager.read();
+      expect(config.theme).toBe("synctax");
+    } finally {
+      delete adapters["noopsource"];
+    }
+  });
+
+  it("sync resolves aliased source and aliased enabled-client ids", async () => {
+    const { syncCommand } = await import("../src/commands.js");
+    const previousOpencode = adapters["opencode"];
+
+    const sourceRead = vi.fn(async () => ({ mcps: {}, agents: {}, skills: {} }));
+    const targetWrite = vi.fn(async () => {});
+
+    adapters["opencode"] = {
+      id: "opencode",
+      name: "OpenCode",
+      detect: async () => true,
+      read: sourceRead,
+      write: async () => {},
+      getMemoryFileName: () => "AGENTS.md",
+      readMemory: async () => null,
+      writeMemory: async () => {},
+    } as any;
+
+    adapters["mocktarget"] = {
+      id: "mocktarget",
+      name: "Mock Target",
+      detect: async () => true,
+      read: async () => ({ mcps: {}, agents: {}, skills: {} }),
+      write: targetWrite,
+      getMemoryFileName: () => "MOCK.md",
+      readMemory: async () => null,
+      writeMemory: async () => {},
+    } as any;
+
+    await manager.write(createConfig({
+      version: 1,
+      source: "open code",
+      clients: {
+        "open code": { enabled: true },
+        mocktarget: { enabled: true },
+      },
+      resources: {
+        mcps: { "sync-mcp": { command: "echo" } },
+        agents: {},
+        skills: {},
+        permissions: createPermissions(),
+      },
+    }));
+
+    try {
+      await syncCommand({ dryRun: false, yes: true });
+      expect(sourceRead).toHaveBeenCalledTimes(1);
+      expect(targetWrite).toHaveBeenCalledTimes(1);
+    } finally {
+      adapters["opencode"] = previousOpencode;
+      delete adapters["mocktarget"];
+    }
   });
 
   it("profilePullCommand fails gracefully on invalid payload", async () => {

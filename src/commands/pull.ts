@@ -5,6 +5,7 @@ import { getConfigManager, mergePermissions } from "./_shared.js";
 import { getVersion } from "../version.js";
 import type { Agent, ClientAdapter, McpServer, Skill } from "../types.js";
 import { requireInteractiveTTY } from "./_terminal.js";
+import { resolveClientId } from "../client-id.js";
 
 type PulledData = Awaited<ReturnType<ClientAdapter["read"]>>;
 
@@ -24,7 +25,14 @@ export async function pullCommand(options: { from: string, merge?: boolean, over
   const timer = ui.startTimer();
   const configManager = getConfigManager();
 
-  const adapter = adapters[options.from];
+  const fromResolution = resolveClientId(options.from);
+  if (fromResolution?.ambiguousIds && !adapters[options.from]) {
+    ui.error(`Ambiguous client alias "${options.from}". Use one of: ${fromResolution.ambiguousIds.join(", ")}`);
+    process.exitCode = 1;
+    return;
+  }
+  const resolvedFrom = fromResolution?.canonicalId ?? options.from;
+  const adapter = adapters[resolvedFrom] ?? adapters[options.from];
   if (!adapter) {
     ui.error(`Adapter not found for client: ${options.from}`);
     process.exitCode = 1;
@@ -50,7 +58,7 @@ export async function pullCommand(options: { from: string, merge?: boolean, over
 
   const config = await configManager.read();
   console.log(ui.format.brandHeader(getVersion(), config.activeProfile));
-  ui.header(`Pulling config from ${options.from}...`);
+  ui.header(`Pulling config from ${resolvedFrom}...`);
 
   try {
     const spin = ui.spinner(`Reading from ${adapter.name}...`);
@@ -130,7 +138,7 @@ export async function pullCommand(options: { from: string, merge?: boolean, over
       if (!domain || domain === "prompts") { config.resources.prompts = { ...config.resources.prompts, ...toMerge.prompts }; }
     }
 
-    config.source = options.from;
+    config.source = resolvedFrom;
 
     await configManager.write(config);
     ui.success(`Successfully pulled resources from ${adapter.name}`);

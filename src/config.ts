@@ -86,6 +86,6 @@ export class ConfigManager {
 
   async getTheme(): Promise<string> {
     const config = await this.read();
-    return config.theme || "rebel";
+    return config.theme || "synctax";
   }
 }

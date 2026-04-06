@@ -30,7 +30,7 @@ description: Historical tracking of the Synctax project, detailing completed mil
 - Auto-triggers `syncCommand` on master config changes
 
 ### 1.2 Terminal UI ASCII Banner & Theming
-- FIGlet `rebel` theme (default), `pixel`/`synctax` wordmark, `default`, `cyber`, `green`
+- Persisted theme default is `synctax`; optional banner themes include `rebel`, `default`, `cyber`, `green`, and `pixel`/`synctax` wordmarks
 - `--theme` flag on any command
 
 ### 1.3 Interactive CLI Mode

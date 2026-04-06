@@ -83,12 +83,30 @@ function mergeAgents(parsed: Record<string, any>, into: Record<string, Agent>, s
  * Skill directories for OpenCode:
  *   project: .opencode/skills/
  *   user:    ~/.config/opencode/skills/
+ * Compatibility roots:
+ *   project: .claude/skills/, .agents/skills/
+ *   user:    ~/.claude/skills/, ~/.agents/skills/
  */
 function skillDirCandidates(h: string): { dir: string; scope: ConfigScope }[] {
-  return [
+  const candidates: { dir: string; scope: ConfigScope }[] = [
     { dir: path.join(process.cwd(), ".opencode", "skills"), scope: "project" },
+    { dir: path.join(process.cwd(), ".claude", "skills"), scope: "project" },
+    { dir: path.join(process.cwd(), ".agents", "skills"), scope: "project" },
     { dir: path.join(h, ".config", "opencode", "skills"), scope: "user" },
+    { dir: path.join(h, ".claude", "skills"), scope: "user" },
+    { dir: path.join(h, ".agents", "skills"), scope: "user" },
   ];
+  const seen = new Set<string>();
+  const deduped: { dir: string; scope: ConfigScope }[] = [];
+  for (const candidate of candidates) {
+    const key = process.platform === "win32"
+      ? path.resolve(candidate.dir).toLowerCase()
+      : path.resolve(candidate.dir);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    deduped.push(candidate);
+  }
+  return deduped;
 }
 
 async function readSkillsFromDir(
@@ -144,15 +162,19 @@ export class OpenCodeAdapter implements ClientAdapter {
   }
 
   async detect(): Promise<boolean> {
-    const paths = this.candidates().map((candidate) => candidate.path);
-    return (await firstExistingPath(paths)) !== null;
+    const configPaths = this.candidates().map((candidate) => candidate.path);
+    if ((await firstExistingPath(configPaths)) !== null) {
+      return true;
+    }
+    const skillRoots = skillDirCandidates(homeDir()).map((candidate) => candidate.dir);
+    return (await firstExistingPath(skillRoots)) !== null;
   }
 
   private async resolvedConfigPath(scope: ConfigScope): Promise<string> {
     const candidates = this.candidates().filter((candidate) => candidate.scope === scope);
     const first = await firstExistingScopedPath(candidates);
     if (first) return first.path;
-    return candidates[0]?.path ?? this.candidates()[0]?.path ?? path.join(process.cwd(), ".config", "opencode", "config.json");
+    return candidates[0]?.path ?? this.candidates()[0]?.path ?? path.join(homeDir(), ".config", "opencode", "config.json");
   }
 
   async read(): Promise<{ mcps: Record<string, McpServer>, agents: Record<string, Agent>, skills: Record<string, Skill>, permissions?: Permissions, models?: Models, prompts?: Prompts, credentials?: Credentials }> {

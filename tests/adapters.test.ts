@@ -509,6 +509,24 @@ Do the thing.`);
       expect(await adapter.detect()).toBe(true);
     });
 
+    it("detects skills-only installs from compatibility roots", async () => {
+      const adapter = new OpenCodeAdapter();
+      expect(await adapter.detect()).toBe(false);
+
+      const compatSkillDir = path.join(mockHome, ".claude", "skills", "compat");
+      await fs.mkdir(compatSkillDir, { recursive: true });
+      await fs.writeFile(
+        path.join(compatSkillDir, "SKILL.md"),
+        `---
+name: Compat Skill
+---
+
+Compatibility skill content.`,
+      );
+
+      expect(await adapter.detect()).toBe(true);
+    });
+
     it("reads and writes correctly (v2 array command format)", async () => {
       const adapter = new OpenCodeAdapter();
       await fs.mkdir(path.join(mockHome, ".config", "opencode"), { recursive: true });

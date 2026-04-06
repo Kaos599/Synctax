@@ -41,9 +41,9 @@ describe("ConfigManager", () => {
     expect(config.clients["claude"]?.enabled).toBe(true);
   });
 
-  it("getTheme returns the saved theme or defaults to rebel", async () => {
+  it("getTheme returns the saved theme or defaults to synctax", async () => {
     const manager = new ConfigManager();
-    expect(await manager.getTheme()).toBe("rebel");
+    expect(await manager.getTheme()).toBe("synctax");
 
     await manager.write(createConfig({
       version: 1,

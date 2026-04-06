@@ -37,7 +37,7 @@ export async function loadTuiFrameData(): Promise<TuiFrameData> {
     version: getVersion(),
     profile: config.activeProfile || "default",
     source,
-    theme: config.theme ?? "rebel",
+    theme: config.theme ?? "synctax",
     health: warnings.length > 0 ? "WARN" : "OK",
     enabledClients,
     totalClients: adapterIds.length,

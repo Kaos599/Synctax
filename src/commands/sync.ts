@@ -10,6 +10,7 @@ import { compareDomain, renderClientDiff, hasDiffChanges } from "../diff-utils.j
 import type { ClientDiff } from "../diff-utils.js";
 import { acquireLock } from "../lock.js";
 import { mapWithConcurrency } from "../utils/async-pool.js";
+import { resolveClientId } from "../client-id.js";
 
 const TOTAL_SYNC_STAGES = 6;
 const ANALYZE_CONCURRENCY = 4;
@@ -33,6 +34,7 @@ type AnalyzeResult = {
   snapshot?: ClientSnapshot;
   diff?: ClientDiff;
   error?: string;
+  elapsedMs?: number;
 };
 
 type WriteResult = {
@@ -40,10 +42,18 @@ type WriteResult = {
   name: string;
   ok: boolean;
   detail: string;
+  elapsedMs?: number;
 };
 
 function stageLabel(stage: number, title: string): string {
   return `Stage ${stage}/${TOTAL_SYNC_STAGES} ${title}`;
+}
+
+function formatMs(ms: number): string {
+  if (ms < 1000) {
+    return `${Math.round(ms)}ms`;
+  }
+  return `${(ms / 1000).toFixed(1)}s`;
 }
 
 function toSnapshot(data: any): ClientSnapshot {
@@ -63,8 +73,16 @@ function createPhaseReporter(stage: number, title: string, total: number) {
   let running = 0;
   let failed = 0;
   const interactive = ui.isInteractive();
+  const phaseStartMs = performance.now();
 
-  const text = () => `${stageLabel(stage, title)} (${done}/${total} done/total, ${running} running, ${failed} failed)`;
+  const text = () => {
+    const elapsedMs = performance.now() - phaseStartMs;
+    const remaining = Math.max(0, total - done);
+    const etaText = done > 0
+      ? `${formatMs((elapsedMs / done) * remaining)} remaining`
+      : "estimating remaining";
+    return `${stageLabel(stage, title)} (${done}/${total} done/total, ${running} running, ${failed} failed, ${etaText})`;
+  };
   const spin = ui.spinner(text());
 
   const update = () => {
@@ -137,12 +155,22 @@ async function syncCommandInner(
   ui.header(stageLabel(1, "Pull source"));
 
   // Client-first pull: if source is configured, pull from it first.
-  const sourceId = config.source;
+  const sourceResolution = resolveClientId(config.source);
+  const sourceId = sourceResolution?.canonicalId ?? config.source;
+  if (sourceResolution?.ambiguousIds && config.source && !adapters[config.source]) {
+    ui.warn(`Configured source alias "${config.source}" is ambiguous. Use one of: ${sourceResolution.ambiguousIds.join(", ")}`);
+  }
   const sourceAdapter = sourceId ? adapters[sourceId] : undefined;
 
   if (sourceAdapter) {
     const spin = ui.spinner(`Pulling from ${sourceAdapter.name}...`);
     try {
+      const beforeSourceMerge = JSON.stringify({
+        mcps: config.resources.mcps || {},
+        agents: config.resources.agents || {},
+        skills: config.resources.skills || {},
+        permissions: config.resources.permissions,
+      });
       const sourceData = await sourceAdapter.read();
       // Additive merge into master config
       for (const [key, value] of Object.entries(sourceData.mcps || {})) {
@@ -157,8 +185,20 @@ async function syncCommandInner(
       if (sourceData.permissions) {
         config.resources.permissions = mergePermissions(config.resources.permissions, sourceData.permissions);
       }
-      await configManager.write(config);
-      spin.succeed(`Pulled from ${sourceAdapter.name}`);
+      const afterSourceMerge = JSON.stringify({
+        mcps: config.resources.mcps || {},
+        agents: config.resources.agents || {},
+        skills: config.resources.skills || {},
+        permissions: config.resources.permissions,
+      });
+      if (beforeSourceMerge !== afterSourceMerge) {
+        await configManager.write(config);
+      }
+      spin.succeed(
+        beforeSourceMerge === afterSourceMerge
+          ? `Pulled from ${sourceAdapter.name} (no changes)`
+          : `Pulled from ${sourceAdapter.name}`,
+      );
     } catch (e: any) {
       spin.fail(`Pull from ${sourceAdapter.name} failed: ${e.message}`);
       ui.warn("Continuing with current master config.");
@@ -244,12 +284,21 @@ async function syncCommandInner(
 
   // Build enabled clients list (excluding source — it's the authority).
   const enabledClients: EnabledClient[] = [];
+  const seenTargetIds = new Set<string>();
   for (const [id, clientConf] of Object.entries(config.clients)) {
     if (!clientConf.enabled) continue;
-    if (id === sourceId) continue;
-    const adapter = adapters[id];
+    const idResolution = resolveClientId(id);
+    if (idResolution?.ambiguousIds && !adapters[id]) {
+      ui.warn(`Skipping ambiguous client alias "${id}". Use one of: ${idResolution.ambiguousIds.join(", ")}`);
+      continue;
+    }
+    const resolvedId = idResolution?.canonicalId ?? id;
+    if (resolvedId === sourceId) continue;
+    if (seenTargetIds.has(resolvedId)) continue;
+    const adapter = adapters[resolvedId] ?? adapters[id];
     if (!adapter) continue;
-    enabledClients.push({ id, adapter });
+    seenTargetIds.add(resolvedId);
+    enabledClients.push({ id: resolvedId, adapter });
   }
 
   const analyzeStageTimer = ui.startTimer();
@@ -262,6 +311,7 @@ async function syncCommandInner(
       enabledClients,
       Math.min(ANALYZE_CONCURRENCY, enabledClients.length),
       async ({ id, adapter }) => {
+        const taskTimer = ui.startTimer();
         analyzeReporter.startTask();
         try {
           const data = await adapter.read();
@@ -281,6 +331,7 @@ async function syncCommandInner(
             adapter,
             snapshot,
             diff,
+            elapsedMs: taskTimer.elapsedMs(),
           } satisfies AnalyzeResult;
         } catch (e: any) {
           analyzeReporter.finishTask(false);
@@ -288,6 +339,7 @@ async function syncCommandInner(
             id,
             adapter,
             error: e?.message || "unknown error",
+            elapsedMs: taskTimer.elapsedMs(),
           } satisfies AnalyzeResult;
         }
       },
@@ -302,6 +354,13 @@ async function syncCommandInner(
   const snapshots = new Map<string, ClientSnapshot>();
   const clientDiffs: ClientDiff[] = [];
   for (const result of analyzeResults) {
+    if (typeof result.elapsedMs === "number") {
+      if (result.error) {
+        ui.dim(`Analyze ${result.adapter.name} failed in ${formatMs(result.elapsedMs)}`, { indent: 1 });
+      } else {
+        ui.dim(`Analyze ${result.adapter.name} completed in ${formatMs(result.elapsedMs)}`, { indent: 1 });
+      }
+    }
     if (result.snapshot) {
       snapshots.set(result.id, result.snapshot);
     }
@@ -369,6 +428,7 @@ async function syncCommandInner(
       enabledClients,
       Math.min(WRITE_CONCURRENCY, enabledClients.length),
       async ({ id, adapter }) => {
+        const taskTimer = ui.startTimer();
         writeReporter.startTask();
         if (options.dryRun) {
           writeReporter.finishTask(true);
@@ -377,6 +437,7 @@ async function syncCommandInner(
             name: adapter.name,
             ok: true,
             detail: "dry run",
+            elapsedMs: taskTimer.elapsedMs(),
           } satisfies WriteResult;
         }
 
@@ -393,6 +454,7 @@ async function syncCommandInner(
             name: adapter.name,
             ok: true,
             detail,
+            elapsedMs: taskTimer.elapsedMs(),
           } satisfies WriteResult;
         } catch (e: any) {
           writeReporter.finishTask(false);
@@ -401,6 +463,7 @@ async function syncCommandInner(
             name: adapter.name,
             ok: false,
             detail: e?.message || "unknown error",
+            elapsedMs: taskTimer.elapsedMs(),
           } satisfies WriteResult;
         }
       },
@@ -419,8 +482,14 @@ async function syncCommandInner(
     }
     if (result.ok) {
       ui.success(`${result.name.padEnd(20)} ${result.detail}`);
+      if (typeof result.elapsedMs === "number") {
+        ui.dim(`Write ${result.name} completed in ${formatMs(result.elapsedMs)}`, { indent: 1 });
+      }
     } else {
       ui.error(`${result.name.padEnd(20)} failed: ${result.detail}`);
+      if (typeof result.elapsedMs === "number") {
+        ui.dim(`Write ${result.name} failed in ${formatMs(result.elapsedMs)}`, { indent: 1 });
+      }
     }
   }
 
@@ -444,12 +513,14 @@ async function syncCommandInner(
       rollbackClients,
       Math.min(ROLLBACK_CONCURRENCY, Math.max(1, rollbackClients.length)),
       async (client) => {
+        const taskTimer = ui.startTimer();
         const snapshot = snapshots.get(client.id);
         if (!snapshot) {
           return {
             name: client.adapter.name,
             ok: false,
             message: "snapshot unavailable",
+            elapsedMs: taskTimer.elapsedMs(),
           };
         }
 
@@ -459,12 +530,14 @@ async function syncCommandInner(
             name: client.adapter.name,
             ok: true,
             message: "",
+            elapsedMs: taskTimer.elapsedMs(),
           };
         } catch (rollbackError: any) {
           return {
             name: client.adapter.name,
             ok: false,
             message: rollbackError?.message || "unknown error",
+            elapsedMs: taskTimer.elapsedMs(),
           };
         }
       },
@@ -473,9 +546,15 @@ async function syncCommandInner(
     for (const rollbackResult of rollbackResults) {
       if (rollbackResult.ok) {
         rollbackSucceeded += 1;
+        if (typeof rollbackResult.elapsedMs === "number") {
+          ui.dim(`Rollback ${rollbackResult.name} completed in ${formatMs(rollbackResult.elapsedMs)}`, { indent: 1 });
+        }
       } else {
         rollbackFailed += 1;
-        ui.error(`Rollback failed for ${rollbackResult.name}: ${rollbackResult.message}`);
+        const timing = typeof rollbackResult.elapsedMs === "number"
+          ? ` in ${formatMs(rollbackResult.elapsedMs)}`
+          : "";
+        ui.error(`Rollback failed for ${rollbackResult.name}: ${rollbackResult.message}${timing}`);
       }
     }
 
@@ -492,6 +571,12 @@ async function syncCommandInner(
   const failCount = results.filter((r) => !r.ok).length;
   const summaryParts: string[] = [`${successCount} client${successCount !== 1 ? "s" : ""} synced`];
   if (failCount > 0) summaryParts.push(`${failCount} failed`);
+  const phaseTimings = [
+    `pull=${pullStageTimer.elapsed()}`,
+    `resolve=${resolveStageTimer.elapsed()}`,
+    `analyze=${analyzeStageTimer.elapsed()}`,
+    `write=${writeStageTimer.elapsed()}`,
+  ];
 
   ui.header(stageLabel(6, "Finalize"));
   if (writeFailed) {
@@ -499,6 +584,8 @@ async function syncCommandInner(
   } else {
     ui.header("Sync complete!");
   }
+  ui.info(`Phase timings: ${phaseTimings.join(", ")}`, { indent: 1 });
+  ui.info(`Client results: success=${successCount} failed=${failCount}`, { indent: 1 });
   console.log(ui.format.summary(timer.elapsed(), summaryParts.join(", ")));
 }
 
@@ -512,7 +599,13 @@ export async function memorySyncCommand(options: { source?: string, dryRun?: boo
 
   const cwd = process.cwd();
 
-  let sourceId = options.source || config.source;
+  const sourceResolution = resolveClientId(options.source || config.source);
+  let sourceId = sourceResolution?.canonicalId ?? options.source ?? config.source;
+  if (sourceResolution?.ambiguousIds && (options.source || config.source) && !adapters[options.source || config.source || ""]) {
+    ui.error(`Ambiguous source alias "${options.source || config.source}". Use one of: ${sourceResolution.ambiguousIds.join(", ")}`);
+    process.exitCode = 1;
+    return;
+  }
   let sourceAdapter = sourceId ? adapters[sourceId] : undefined;
 
   if (!sourceAdapter) {
@@ -533,10 +626,17 @@ export async function memorySyncCommand(options: { source?: string, dryRun?: boo
   let succeeded = 0;
   let failed = 0;
 
+  const seenTargetIds = new Set<string>();
   for (const [id, clientConf] of Object.entries(config.clients)) {
-    if (!clientConf.enabled || id === sourceId) continue;
+    if (!clientConf.enabled) continue;
+    const idResolution = resolveClientId(id);
+    if (idResolution?.ambiguousIds && !adapters[id]) continue;
+    const resolvedId = idResolution?.canonicalId ?? id;
+    if (resolvedId === sourceId) continue;
+    if (seenTargetIds.has(resolvedId)) continue;
+    seenTargetIds.add(resolvedId);
 
-    const adapter = adapters[id];
+    const adapter = adapters[resolvedId] ?? adapters[id];
     if (!adapter) continue;
 
     const targetFileName = adapter.getMemoryFileName();

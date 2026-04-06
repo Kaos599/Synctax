@@ -43,7 +43,7 @@ The core of Synctax is a central configuration state defined entirely by Zod sch
 - **Standard Execution (`synctax`)**: Running the CLI with zero arguments intercepts the standard Commander help output and dynamically drops the user into an interactive, searchable command palette with "hover" descriptions for each command.
 - **`synctax init`** ends with an interactive PATH offer (when stdin is a TTY): install `~/.synctax/bin` and update the user environment so `synctax` is on PATH. Non-interactive runs use `init --yes` or `init --no-path-prompt`; tests and CI skip the prompt automatically.
 - Uses `cli-table3` to print a gorgeous dashboard of installed clients and their specific resource metrics (e.g., "Cursor | Yes | 3 MCPs | 2 Agents | 1 Skill").
-- Startup banner: Uses a gorgeous `rebel` theme (default) rendering "Synctax" in block characters. CLI themes also include legacy line-art palettes (`default`, `cyber`) and `synctax`/`pixel` for the wordmark.
+- Startup banner: Uses the `synctax` wordmark by default. CLI themes also include `rebel` and legacy line-art palettes (`default`, `cyber`, `green`) plus `pixel`/`synctax` for the wordmark.
 
 ### 2.3 The Daemon Layer (`synctax watch`)
 - Uses `chokidar` to run silently in the background.

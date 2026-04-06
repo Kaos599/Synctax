@@ -53,4 +53,27 @@ describe("tui executor", () => {
     expect(result.ok).toBe(true);
     expect(result.output.join("\n")).toContain("spin-line");
   });
+
+  it("streams output updates while action is running", async () => {
+    const snapshots: string[][] = [];
+
+    const result = await runGuardedAction(
+      "sync",
+      async () => {
+        console.log("first-line");
+        await new Promise((resolve) => setTimeout(resolve, 5));
+        console.log("second-line");
+      },
+      {
+        onOutput: (output) => {
+          snapshots.push([...output]);
+        },
+      },
+    );
+
+    expect(result.ok).toBe(true);
+    expect(snapshots.length).toBeGreaterThan(0);
+    expect(snapshots.some((snapshot) => snapshot.includes("first-line"))).toBe(true);
+    expect(snapshots[snapshots.length - 1]).toEqual(result.output);
+  });
 });

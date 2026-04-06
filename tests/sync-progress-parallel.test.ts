@@ -114,6 +114,55 @@ describe("sync progress and bounded parallelism", () => {
     expect(output).toContain("done/total");
   });
 
+  it("prints ETA hints, per-client timing, and phase timing summary", async () => {
+    await manager.write({
+      version: 1,
+      activeProfile: "default",
+      clients: {
+        clienta: { enabled: true },
+        clientb: { enabled: true },
+      },
+      profiles: {
+        default: {},
+      },
+      resources: {
+        mcps: {
+          "new-mcp": { command: "echo" },
+        },
+        agents: {},
+        skills: {},
+      },
+    } as any);
+
+    for (const id of ["clienta", "clientb"]) {
+      setAdapter(id, {
+        id,
+        name: id.toUpperCase(),
+        detect: async () => true,
+        read: async () => {
+          await sleep(20);
+          return { mcps: {}, agents: {}, skills: {} };
+        },
+        write: async () => {
+          await sleep(20);
+        },
+        getMemoryFileName: () => `${id}.md`,
+        readMemory: async () => null,
+        writeMemory: async () => {},
+      });
+    }
+
+    const output = await captureLogs(async () => {
+      await syncCommand({ dryRun: false, yes: true });
+    });
+
+    expect(output).toContain("remaining");
+    expect(output).toContain("Analyze CLIENTA completed in");
+    expect(output).toContain("Write CLIENTA completed in");
+    expect(output).toContain("Phase timings:");
+    expect(output).toContain("Client results: success=2 failed=0");
+  });
+
   it("reads each target client exactly once per sync", async () => {
     await manager.write({
       version: 1,
