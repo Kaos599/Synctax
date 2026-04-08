@@ -151,24 +151,41 @@ async function syncCommandInner(
     enabledClients.push({ id, adapter });
   }
 
+  // Parallel read of all enabled clients
+  // We use this single read for both diff previews and snapshots to avoid duplicated I/O
+  let readResults: Array<
+    | { success: true; id: string; adapter: any; data: any }
+    | { success: false; id: string; adapter: any; error: any }
+  > = [];
+
+  if (!options.dryRun && enabledClients.length > 0) {
+    readResults = await Promise.all(
+      enabledClients.map(async ({ id, adapter }) => {
+        try {
+          const data = await adapter.read();
+          return { success: true as const, id, adapter, data };
+        } catch (error: any) {
+          return { success: false as const, id, adapter, error };
+        }
+      })
+    );
+  }
+
   // --- Diff preview: show what will change before writing ---
   if (!options.dryRun && enabledClients.length > 0) {
     const clientDiffs: ClientDiff[] = [];
-    for (const { id, adapter } of enabledClients) {
-      try {
-        const data = await adapter.read();
+    for (const res of readResults) {
+      if (res.success) {
         const diff: ClientDiff = {
-          id,
-          name: adapter.name,
+          id: res.id,
+          name: res.adapter.name,
           domains: {
-            mcps: compareDomain(resources.mcps || {}, data.mcps || {}),
-            agents: compareDomain(resources.agents || {}, data.agents || {}),
-            skills: compareDomain(resources.skills || {}, data.skills || {}),
+            mcps: compareDomain(resources.mcps || {}, res.data.mcps || {}),
+            agents: compareDomain(resources.agents || {}, res.data.agents || {}),
+            skills: compareDomain(resources.skills || {}, res.data.skills || {}),
           },
         };
         clientDiffs.push(diff);
-      } catch {
-        // Can't diff — will attempt write anyway
       }
     }
 
@@ -217,20 +234,19 @@ async function syncCommandInner(
 
   const snapshots = new Map<string, any>();
   if (!options.dryRun) {
-    for (const { id, adapter } of enabledClients) {
-      try {
-        const snapshot = await adapter.read();
-        snapshots.set(id, {
-          mcps: snapshot?.mcps || {},
-          agents: snapshot?.agents || {},
-          skills: snapshot?.skills || {},
-          permissions: snapshot?.permissions,
-          models: snapshot?.models,
-          prompts: snapshot?.prompts,
-          credentials: snapshot?.credentials,
+    for (const res of readResults) {
+      if (res.success) {
+        snapshots.set(res.id, {
+          mcps: res.data?.mcps || {},
+          agents: res.data?.agents || {},
+          skills: res.data?.skills || {},
+          permissions: res.data?.permissions,
+          models: res.data?.models,
+          prompts: res.data?.prompts,
+          credentials: res.data?.credentials,
         });
-      } catch (err: any) {
-        ui.warn(`Snapshot failed for ${adapter.name}: ${err?.message || "unknown error"}. Rollback for this client will be unavailable.`);
+      } else {
+        ui.warn(`Snapshot failed for ${res.adapter.name}: ${res.error?.message || "unknown error"}. Rollback for this client will be unavailable.`);
       }
     }
   }
