@@ -9,7 +9,17 @@ import chalk from "chalk";
 
 const srcDir = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(srcDir, "..");
-const cliScript = path.join(repoRoot, "bin", "synctax.ts");
+
+/** Resolve the CLI entry script: prefer dist/synctax.js (npm install) → fall back to bin/synctax.ts (dev). */
+export async function resolveCliEntryPath(): Promise<string> {
+  const distEntry = path.join(repoRoot, "dist", "synctax.js");
+  try {
+    await fs.access(distEntry);
+    return distEntry;
+  } catch {
+    return path.join(repoRoot, "bin", "synctax.ts");
+  }
+}
 
 const MARKER = "# synctax PATH";
 
@@ -85,7 +95,7 @@ async function appendPathBlock(rc: string, body: string): Promise<void> {
 
 async function tryUnixShellProfiles(home: string, binDir: string): Promise<boolean> {
   const exportSh = `export PATH="${binDir}:$PATH"`;
-  const fishBlock = "fish_add_path $HOME/.synctax/bin";
+  const fishBlock = `fish_add_path ${binDir}`;
 
   for (const rc of unixShellRcOrder(home)) {
     const isFish = rc.endsWith("config.fish");
@@ -106,7 +116,7 @@ async function createUnixShellProfile(home: string, binDir: string): Promise<voi
   const target = defaultRcToCreate(home);
   const isFish = target.endsWith("config.fish");
   const exportSh = `export PATH="${binDir}:$PATH"`;
-  const fishBlock = "fish_add_path $HOME/.synctax/bin";
+  const fishBlock = `fish_add_path ${binDir}`;
   const body = `${MARKER}\n${isFish ? fishBlock : exportSh}\n`;
 
   if (isFish) {
@@ -156,8 +166,9 @@ async function tryLinuxEnvironmentD(binDir: string): Promise<boolean> {
 
 export async function installPathCommand(): Promise<void> {
   const bunExe = process.execPath;
-  const home = os.homedir();
+  const home = process.env.SYNCTAX_HOME || os.homedir();
   const binDir = path.join(home, ".synctax", "bin");
+  const cliScript = await resolveCliEntryPath();
 
   try {
     await fs.access(cliScript);
@@ -236,6 +247,9 @@ export async function maybePromptAndInstallPath(opts: PathPromptOptions = {}): P
   if (opts.noPathPrompt) return;
   if (process.env.VITEST) return;
 
+  const home = process.env.SYNCTAX_HOME || os.homedir();
+  const binDir = path.join(home, ".synctax", "bin");
+
   let install = false;
   if (opts.assumeYes) {
     install = true;
@@ -253,7 +267,7 @@ export async function maybePromptAndInstallPath(opts: PathPromptOptions = {}): P
     try {
       const line = await rl.question(
         chalk.cyan(
-          "Add ~/.synctax/bin to your PATH so the `synctax` command works from any folder? [Y/n] "
+          `Add ${binDir} to your PATH so the \`synctax\` command works from any folder? [Y/n] `
         )
       );
       const t = line.trim().toLowerCase();

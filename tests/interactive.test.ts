@@ -230,4 +230,15 @@ describe("Interactive Mode", () => {
 
     await expect(startInteractiveMode()).rejects.toThrow("Something broke");
   });
+
+  it("TUI-04: exit command terminates interactive mode cleanly", async () => {
+    vi.mocked(search).mockResolvedValueOnce("exit" as any);
+    const consoleSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+
+    await expect(startInteractiveMode()).resolves.toBeUndefined();
+
+    const output = consoleSpy.mock.calls.map((c) => String(c[0])).join("\n");
+    expect(output).toContain("Goodbye");
+    consoleSpy.mockRestore();
+  });
 });

@@ -59,6 +59,7 @@ const commandsList = [
   { value: 'export', name: 'export', description: 'Export the entire master configuration to a JSON file' },
   { value: 'import', name: 'import', description: 'Import the entire master configuration from a JSON file' },
   { value: 'init', name: 'init', description: 'Initialize synctax in your environment' },
+  { value: 'exit', name: 'exit', description: 'Exit interactive mode' },
 ];
 
 export async function startInteractiveMode(themeOverride?: string) {
@@ -123,6 +124,9 @@ export async function startInteractiveMode(themeOverride?: string) {
 
     try {
       switch (selectedCommand) {
+      case 'exit':
+        console.log(ui.format.dim("Goodbye."));
+        return;
       case 'init':
         await initCommand({ skipBanner: true });
         break;

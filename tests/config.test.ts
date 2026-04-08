@@ -114,6 +114,13 @@ describe("ConfigManager", () => {
     expect(remaining.length).toBe(10);
   });
 
+  it("write creates config file with 0o600 permissions", async () => {
+    const manager = new ConfigManager();
+    await manager.write(createConfig({ version: 1, clients: {}, resources: createResources({ mcps: {} }) }));
+    const stat = await fs.stat(path.join(mockHome, ".synctax", "config.json"));
+    expect(stat.mode & 0o777).toBe(0o600);
+  });
+
   it("pruneBackups does not delete non-backup files", async () => {
     const manager = new ConfigManager();
     const configDir = path.join(mockHome, ".synctax");

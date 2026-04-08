@@ -6,6 +6,7 @@ import { getVersion } from "../version.js";
 import type { Agent, ClientAdapter, McpServer, Skill } from "../types.js";
 import { requireInteractiveTTY } from "./_terminal.js";
 import { resolveClientId } from "../client-id.js";
+import { acquireLock } from "../lock.js";
 
 type PulledData = Awaited<ReturnType<ClientAdapter["read"]>>;
 
@@ -21,7 +22,7 @@ function normalizePullDomain(domain?: string): "mcp" | "agents" | "skills" | "pe
   return normalized as "mcp" | "agents" | "skills" | "permissions" | "models" | "prompts";
 }
 
-export async function pullCommand(options: { from: string, merge?: boolean, overwrite?: boolean, domain?: string, interactive?: boolean }) {
+export async function pullCommand(options: { from: string, merge?: boolean, overwrite?: boolean, domain?: string, interactive?: boolean, dryRun?: boolean }) {
   const timer = ui.startTimer();
   const configManager = getConfigManager();
 
@@ -56,6 +57,8 @@ export async function pullCommand(options: { from: string, merge?: boolean, over
     return;
   }
 
+  const lock = await acquireLock("pull");
+  try {
   const config = await configManager.read();
   console.log(ui.format.brandHeader(getVersion(), config.activeProfile));
   ui.header(`Pulling config from ${resolvedFrom}...`);
@@ -140,6 +143,26 @@ export async function pullCommand(options: { from: string, merge?: boolean, over
 
     config.source = resolvedFrom;
 
+    if (options.dryRun) {
+      const mcpCount = Object.keys(toMerge.mcps || {}).length;
+      const agentCount = Object.keys(toMerge.agents || {}).length;
+      const skillCount = Object.keys(toMerge.skills || {}).length;
+      const permCount = toMerge.permissions ? 1 : 0;
+      const modelCount = toMerge.models ? 1 : 0;
+      const promptCount = toMerge.prompts ? 1 : 0;
+
+      ui.header("Dry-run summary (no changes written):");
+      console.log(`  MCPs:        ${mcpCount}`);
+      console.log(`  Agents:      ${agentCount}`);
+      console.log(`  Skills:      ${skillCount}`);
+      if (permCount) console.log(`  Permissions: yes`);
+      if (modelCount) console.log(`  Models:      yes`);
+      if (promptCount) console.log(`  Prompts:     yes`);
+      console.log(ui.format.summary(timer.elapsed(), `dry-run pull from ${adapter.name}`));
+      return;
+    }
+
+    await configManager.backup();
     await configManager.write(config);
     ui.success(`Successfully pulled resources from ${adapter.name}`);
 
@@ -147,5 +170,8 @@ export async function pullCommand(options: { from: string, merge?: boolean, over
   } catch (e: any) {
     ui.error(`Failed to pull config: ${e.message}`);
     process.exitCode = 1;
+  }
+  } finally {
+    await lock.release();
   }
 }

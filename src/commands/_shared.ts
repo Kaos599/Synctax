@@ -65,7 +65,15 @@ export function mergePermissions(p1: any, p2: any) {
 export async function applyProfileFilter(resources: any, profile: any) {
   if (!profile || (!profile.include && !profile.exclude)) return resources;
 
-  const filtered = { ...resources, mcps: { ...resources.mcps }, agents: { ...resources.agents }, skills: { ...resources.skills } };
+  const filtered = {
+    ...resources,
+    mcps: { ...resources.mcps },
+    agents: { ...resources.agents },
+    skills: { ...resources.skills },
+    permissions: resources.permissions ? { ...resources.permissions } : undefined,
+    models: resources.models ? { ...resources.models } : undefined,
+    prompts: resources.prompts ? { ...resources.prompts } : undefined,
+  };
 
   // Helper to filter a specific group
   const filterGroup = (group: any) => {
@@ -83,6 +91,18 @@ export async function applyProfileFilter(resources: any, profile: any) {
   filterGroup(filtered.mcps);
   filterGroup(filtered.agents);
   filterGroup(filtered.skills);
+
+  // Filter non-named domains (permissions/models/prompts)
+  if (profile.include) {
+    if (!profile.include.includes("permissions")) filtered.permissions = undefined;
+    if (!profile.include.includes("models")) filtered.models = undefined;
+    if (!profile.include.includes("prompts")) filtered.prompts = undefined;
+  }
+  if (profile.exclude) {
+    if (profile.exclude.includes("permissions")) filtered.permissions = undefined;
+    if (profile.exclude.includes("models")) filtered.models = undefined;
+    if (profile.exclude.includes("prompts")) filtered.prompts = undefined;
+  }
 
   return filtered;
 }

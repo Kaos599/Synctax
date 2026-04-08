@@ -6,7 +6,7 @@ import type { TuiRuntimeContext } from "./runtime-context.js";
 export type TuiActionId =
   | "sync" | "pull" | "profile" | "diff" | "validate" | "backup"
   | "doctor" | "watch" | "memory-sync" | "status" | "restore" | "export"
-  | "import" | "add" | "remove" | "move" | "unlink" | "link" | "info"
+  | "import" | "add" | "remove" | "move" | "unlink" | "link" | "info" | "init"
   | "profile-use" | "profile-create" | "profile-diff";
 export type TuiActionHotkey = "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9" | "0" | "!" | "@";
 
@@ -330,6 +330,19 @@ const TUI_PALETTE_DEFINITIONS: ReadonlyArray<TuiActionDefinition> = [
     focus: "actions",
     async execute() {
       throw new Error("Should be handled by TUI picker flow");
+    },
+  },
+  {
+    id: "init",
+    label: "init",
+    commandPreview: "synctax init",
+    confirmTitle: "Run initial setup?",
+    confirmRisk: "low",
+    description: "Initialize or re-initialize synctax — detect clients, set source, configure PATH.",
+    hint: "Detects installed clients and sets up your environment.",
+    focus: "actions",
+    async execute() {
+      await commands.initCommand({ skipBanner: true });
     },
   },
 ];

@@ -4,6 +4,7 @@ import { syncCommand } from "./sync.js";
 import { getVersion } from "../version.js";
 import { EnvVault } from "../env-vault.js";
 import { assertSafeResourceMapKeys } from "../resource-name.js";
+import { acquireLock } from "../lock.js";
 
 function toSortedKeys(record: Record<string, unknown> | undefined): string[] {
   return Object.keys(record || {}).sort((a, b) => a.localeCompare(b));
@@ -142,6 +143,7 @@ export async function profileCreateCommand(name: string, options: { include?: st
     exclude: options.exclude ? options.exclude.split(",").map(s => s.trim()) : undefined
   };
 
+  await configManager.backup();
   await configManager.write(config);
   const ensured = await new EnvVault().ensureProfileEnv(name);
   if (ensured.created) {
@@ -172,6 +174,7 @@ export async function profileUseCommand(name: string, options: { dryRun?: boolea
   }
 
   config.activeProfile = name;
+  await configManager.backup();
   await configManager.write(config);
   const ensured = await new EnvVault().ensureProfileEnv(name);
   if (ensured.created) {
@@ -202,11 +205,28 @@ export async function profilePullCommand(url: string, options?: any) {
   console.log(ui.format.brandHeader(getVersion(), activeProfile));
   ui.header(`Pulling profile from ${url}...`);
 
+  const lock = await acquireLock("profile-pull");
   try {
+    // URL scheme validation
+    const parsed = new URL(url);
+    if (parsed.protocol !== "https:" && !(parsed.protocol === "http:" && (parsed.hostname === "localhost" || parsed.hostname === "127.0.0.1"))) {
+      throw new Error("Profile pull requires HTTPS (HTTP allowed only for localhost)");
+    }
+
     const response = await fetch(url);
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
 
-    const payload: any = await response.json();
+    // Size guard
+    const MAX_SIZE = 5 * 1024 * 1024;
+    const contentLength = response.headers.get("content-length");
+    if (contentLength && parseInt(contentLength, 10) > MAX_SIZE) {
+      throw new Error(`Response too large: ${contentLength} bytes (max ${MAX_SIZE})`);
+    }
+    const text = await response.text();
+    if (text.length > MAX_SIZE) {
+      throw new Error(`Response body too large: ${text.length} bytes (max ${MAX_SIZE})`);
+    }
+    const payload: any = JSON.parse(text);
     if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
       throw new Error("Invalid profile payload: expected object");
     }
@@ -251,6 +271,7 @@ export async function profilePullCommand(url: string, options?: any) {
       if (payload.resources.prompts) config.resources.prompts = { ...config.resources.prompts, ...payload.resources.prompts };
     }
 
+    await configManager.backup();
     await configManager.write(config);
     ui.success(`Imported profile ${name}`);
 
@@ -262,6 +283,8 @@ export async function profilePullCommand(url: string, options?: any) {
   } catch (e: any) {
     ui.error(`Failed to pull profile: ${e.message}`);
     process.exitCode = 1;
+  } finally {
+    await lock.release();
   }
 }
 

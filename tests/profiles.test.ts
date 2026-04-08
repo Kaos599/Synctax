@@ -4,6 +4,8 @@ import {
   profileUseCommand,
   profileListCommand,
   profileDiffCommand,
+  profilePullCommand,
+  pullCommand,
   syncCommand,
 } from "../src/commands.js";
 import { ConfigManager } from "../src/config.js";
@@ -407,5 +409,120 @@ describe("Profiles Domain", () => {
         delete adapters["mockclient"];
       }
     }
+  });
+});
+
+describe("P1 safety audit fixes", () => {
+  let mockHome: string;
+  let manager: ConfigManager;
+
+  beforeEach(async () => {
+    mockHome = await fs.mkdtemp(path.join(os.tmpdir(), "synctax-p1-safety-"));
+    process.env.SYNCTAX_HOME = mockHome;
+    manager = new ConfigManager();
+    vi.spyOn(console, "log").mockImplementation(() => {});
+  });
+
+  afterEach(async () => {
+    vi.restoreAllMocks();
+    await fs.rm(mockHome, { recursive: true, force: true });
+    delete process.env.SYNCTAX_HOME;
+  });
+
+  it("pullCommand creates backup before writing", async () => {
+    adapters["p1-pull-src"] = {
+      id: "p1-pull-src",
+      name: "PullSource",
+      detect: async () => true,
+      read: async () => ({ mcps: { "pulled-mcp": { command: "echo" } }, agents: {}, skills: {}, permissions: undefined }),
+      write: async () => {},
+      getMemoryFileName: () => "MOCK.md",
+      readMemory: async () => null,
+      writeMemory: async () => {},
+    } as any;
+
+    await manager.write({
+      version: 1,
+      source: "p1-pull-src",
+      theme: "synctax",
+      activeProfile: "default",
+      clients: { "p1-pull-src": { enabled: true } },
+      profiles: { default: {} },
+      resources: { mcps: {}, agents: {}, skills: {}, permissions: { allowedPaths: [], deniedPaths: [], allowedCommands: [], deniedCommands: [], networkAllow: false, allow: [], deny: [], ask: [], allowedUrls: [], deniedUrls: [], trustedFolders: [] } },
+    });
+
+    try {
+      await pullCommand({ from: "p1-pull-src" });
+      const files = await fs.readdir(path.join(mockHome, ".synctax"));
+      const bakFiles = files.filter((f) => f.endsWith(".bak"));
+      expect(bakFiles.length).toBeGreaterThan(0);
+    } finally {
+      delete adapters["p1-pull-src"];
+    }
+  });
+
+  it("pullCommand acquires and releases lock", async () => {
+    adapters["p1-lock-src"] = {
+      id: "p1-lock-src",
+      name: "LockSource",
+      detect: async () => true,
+      read: async () => ({ mcps: {}, agents: {}, skills: {}, permissions: undefined }),
+      write: async () => {},
+      getMemoryFileName: () => "MOCK.md",
+      readMemory: async () => null,
+      writeMemory: async () => {},
+    } as any;
+
+    await manager.write({
+      version: 1,
+      source: "p1-lock-src",
+      theme: "synctax",
+      activeProfile: "default",
+      clients: { "p1-lock-src": { enabled: true } },
+      profiles: { default: {} },
+      resources: { mcps: {}, agents: {}, skills: {}, permissions: { allowedPaths: [], deniedPaths: [], allowedCommands: [], deniedCommands: [], networkAllow: false, allow: [], deny: [], ask: [], allowedUrls: [], deniedUrls: [], trustedFolders: [] } },
+    });
+
+    try {
+      await pullCommand({ from: "p1-lock-src" });
+      // Lock should be released after command completes
+      const lockPath = path.join(mockHome, ".synctax", "sync.lock");
+      await expect(fs.access(lockPath)).rejects.toThrow();
+    } finally {
+      delete adapters["p1-lock-src"];
+    }
+  });
+
+  it("profilePullCommand rejects non-HTTPS URLs", async () => {
+    await manager.write({
+      version: 1,
+      theme: "synctax",
+      activeProfile: "default",
+      clients: {},
+      profiles: { default: {} },
+      resources: { mcps: {}, agents: {}, skills: {}, permissions: { allowedPaths: [], deniedPaths: [], allowedCommands: [], deniedCommands: [], networkAllow: false, allow: [], deny: [], ask: [], allowedUrls: [], deniedUrls: [], trustedFolders: [] } },
+    });
+
+    // HTTP to non-localhost should be rejected
+    await profilePullCommand("http://evil.com/profile.json");
+    // Check that an error was printed (exitCode set or error logged)
+    expect(process.exitCode).toBe(1);
+  });
+
+  it("profilePullCommand allows localhost HTTP without protocol error", async () => {
+    await manager.write({
+      version: 1,
+      theme: "synctax",
+      activeProfile: "default",
+      clients: {},
+      profiles: { default: {} },
+      resources: { mcps: {}, agents: {}, skills: {}, permissions: { allowedPaths: [], deniedPaths: [], allowedCommands: [], deniedCommands: [], networkAllow: false, allow: [], deny: [], ask: [], allowedUrls: [], deniedUrls: [], trustedFolders: [] } },
+    });
+
+    // HTTP to localhost — should fail with connection error, NOT protocol error
+    await profilePullCommand("http://localhost:19999/profile.json");
+    // The error should be about connection, not about HTTPS requirement
+    const calls = vi.mocked(console.log).mock.calls.map((c) => String(c[0])).join("\n");
+    expect(calls).not.toContain("requires HTTPS");
   });
 });

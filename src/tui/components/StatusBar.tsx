@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React from "react";
 import { Box, Text } from "ink";
 import { colors, chars } from "../theme.js";
 import type { TuiMode } from "../ink-types.js";
@@ -32,21 +32,7 @@ function ModeIndicator({ mode }: { mode: TuiMode }) {
 
 export function StatusBar({ mode, statusLine }: StatusBarProps) {
   const isSubView = mode !== "dashboard";
-  const [time, setTime] = useState("");
-
-  useEffect(() => {
-    if (process.platform === "win32") {
-      setTime("");
-      return;
-    }
-
-    setTime(new Date().toLocaleTimeString());
-    const interval = setInterval(() => {
-      setTime(new Date().toLocaleTimeString());
-    }, 1000);
-
-    return () => clearInterval(interval);
-  }, []);
+  // Clock removed — caused rendering issues across platforms (TUI-06)
 
   return (
     <Box paddingX={1} justifyContent="space-between">
@@ -74,7 +60,6 @@ export function StatusBar({ mode, statusLine }: StatusBarProps) {
         <Text color={colors.textMuted}>
           <Text color={colors.hotkey}>[q]</Text> quit
         </Text>
-        {!!time && <Text color={colors.textMuted}>{time}</Text>}
       </Box>
     </Box>
   );

@@ -68,10 +68,7 @@ export function homeDir(): string {
 function addVscodeBaseCandidates(candidates: ScopedCandidate[], h: string): void {
   const syn = process.env.SYNCTAX_HOME;
   const ad = process.env.APPDATA;
-  const useWinAppData =
-    process.platform === "win32" &&
-    ad &&
-    (!syn || path.resolve(ad).startsWith(path.resolve(syn)));
+  const useWinAppData = process.platform === "win32" && !!ad;
 
   if (useWinAppData) {
     candidates.push(
@@ -110,10 +107,7 @@ export function vscodeUserMcpJsonCandidates(h = homeDir(), projectRoot = process
 
   const syn = process.env.SYNCTAX_HOME;
   const ad = process.env.APPDATA;
-  const useWinAppData =
-    process.platform === "win32" &&
-    ad &&
-    (!syn || path.resolve(ad).startsWith(path.resolve(syn)));
+  const useWinAppData = process.platform === "win32" && !!ad;
 
   if (useWinAppData) {
     list.push(

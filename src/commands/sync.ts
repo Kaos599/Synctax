@@ -170,6 +170,8 @@ async function syncCommandInner(
         agents: config.resources.agents || {},
         skills: config.resources.skills || {},
         permissions: config.resources.permissions,
+        models: config.resources.models,
+        prompts: config.resources.prompts,
       });
       const sourceData = await sourceAdapter.read();
       // Additive merge into master config
@@ -185,13 +187,32 @@ async function syncCommandInner(
       if (sourceData.permissions) {
         config.resources.permissions = mergePermissions(config.resources.permissions, sourceData.permissions);
       }
+      if (sourceData.models) {
+        config.resources.models = { ...config.resources.models, ...sourceData.models };
+      }
+      if (sourceData.prompts) {
+        config.resources.prompts = { ...config.resources.prompts, ...sourceData.prompts };
+      }
       const afterSourceMerge = JSON.stringify({
         mcps: config.resources.mcps || {},
         agents: config.resources.agents || {},
         skills: config.resources.skills || {},
         permissions: config.resources.permissions,
+        models: config.resources.models,
+        prompts: config.resources.prompts,
       });
-      if (beforeSourceMerge !== afterSourceMerge) {
+      if (beforeSourceMerge !== afterSourceMerge && !options.dryRun) {
+        const beforeObj = JSON.parse(beforeSourceMerge);
+        const afterObj = JSON.parse(afterSourceMerge);
+        const changedDomains: string[] = [];
+        for (const domain of ["mcps", "agents", "skills", "permissions", "models", "prompts"] as const) {
+          if (JSON.stringify(beforeObj[domain]) !== JSON.stringify(afterObj[domain])) {
+            changedDomains.push(domain);
+          }
+        }
+        if (changedDomains.length > 0) {
+          ui.warn(`Source pull modified master config: ${changedDomains.join(", ")}`);
+        }
         await configManager.write(config);
       }
       spin.succeed(
@@ -368,9 +389,11 @@ async function syncCommandInner(
       clientDiffs.push(result.diff);
     }
     if (result.error) {
-      ui.warn(`Analyze failed for ${result.adapter.name}: ${result.error}. Sync will still attempt to write.`);
+      ui.warn(`Analyze failed for ${result.adapter.name}: ${result.error}. This client will be skipped during write.`);
     }
   }
+
+  const analyzeFailedIds = new Set(analyzeResults.filter((r) => !!r.error).map((r) => r.id));
 
   if (!options.dryRun && enabledClients.length > 0) {
     const hasChanges = clientDiffs.some(hasDiffChanges);
@@ -422,10 +445,15 @@ async function syncCommandInner(
   const agentCount = Object.keys(resources.agents || {}).length;
   const skillCount = Object.keys(resources.skills || {}).length;
 
-  if (enabledClients.length > 0) {
-    const writeReporter = createPhaseReporter(5, "Write clients", enabledClients.length);
+  const writeClients = enabledClients.filter((c) => !analyzeFailedIds.has(c.id));
+  for (const skipped of enabledClients.filter((c) => analyzeFailedIds.has(c.id))) {
+    ui.warn(`Skipping write for ${skipped.adapter.name}: analyze failed (no safe snapshot).`);
+  }
+
+  if (writeClients.length > 0) {
+    const writeReporter = createPhaseReporter(5, "Write clients", writeClients.length);
     const writes = await mapWithConcurrency(
-      enabledClients,
+      writeClients,
       Math.min(WRITE_CONCURRENCY, enabledClients.length),
       async ({ id, adapter }) => {
         const taskTimer = ui.startTimer();
@@ -677,7 +705,7 @@ export async function watchCommand(options: any) {
   const homeDir = process.env.SYNCTAX_HOME || os.homedir();
   const configPath = path.join(homeDir, ".synctax", "config.json");
 
-  console.log(chalk.magenta("\n\uD83D\uDC41\uFE0F  Initializing synctax Watch Daemon..."));
+  console.log(chalk.magenta("\n[watch] Initializing synctax Watch Daemon..."));
   ui.dim(`Watching: ${configPath}`);
 
   const scheduler = createWatchSyncScheduler(async () => {

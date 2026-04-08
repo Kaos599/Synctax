@@ -46,8 +46,8 @@ export async function loadTuiFrameData(): Promise<TuiFrameData> {
       agents: Object.keys(config.resources.agents).length,
       skills: Object.keys(config.resources.skills).length,
     },
-    driftClients: 0,
-    lastSync: "unknown",
+    driftClients: 0, // TODO: compute real drift from diff-utils
+    lastSync: "not tracked",
     warnings,
     profileNames: Object.keys(config.profiles),
     resourceNames: {
