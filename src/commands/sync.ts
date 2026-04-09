@@ -151,25 +151,38 @@ async function syncCommandInner(
     enabledClients.push({ id, adapter });
   }
 
+  // --- Prefetch adapter data for diff and rollback concurrently ---
+  let prefetchResults: Array<{ id: string, adapter: any, success: boolean, data?: any, error?: string }> = [];
+
+  if (!options.dryRun && enabledClients.length > 0) {
+    prefetchResults = await Promise.all(
+      enabledClients.map(async ({ id, adapter }) => {
+        try {
+          const data = await adapter.read();
+          return { id, adapter, success: true as const, data };
+        } catch (error: any) {
+          return { id, adapter, success: false as const, error: error.message };
+        }
+      })
+    );
+  }
+
   // --- Diff preview: show what will change before writing ---
   if (!options.dryRun && enabledClients.length > 0) {
     const clientDiffs: ClientDiff[] = [];
-    for (const { id, adapter } of enabledClients) {
-      try {
-        const data = await adapter.read();
-        const diff: ClientDiff = {
-          id,
-          name: adapter.name,
-          domains: {
-            mcps: compareDomain(resources.mcps || {}, data.mcps || {}),
-            agents: compareDomain(resources.agents || {}, data.agents || {}),
-            skills: compareDomain(resources.skills || {}, data.skills || {}),
-          },
-        };
-        clientDiffs.push(diff);
-      } catch {
-        // Can't diff — will attempt write anyway
-      }
+    for (const result of prefetchResults) {
+      if (!result.success) continue;
+      const { id, adapter, data } = result;
+      const diff: ClientDiff = {
+        id,
+        name: adapter.name,
+        domains: {
+          mcps: compareDomain(resources.mcps || {}, data.mcps || {}),
+          agents: compareDomain(resources.agents || {}, data.agents || {}),
+          skills: compareDomain(resources.skills || {}, data.skills || {}),
+        },
+      };
+      clientDiffs.push(diff);
     }
 
     const hasChanges = clientDiffs.some(hasDiffChanges);
@@ -217,10 +230,10 @@ async function syncCommandInner(
 
   const snapshots = new Map<string, any>();
   if (!options.dryRun) {
-    for (const { id, adapter } of enabledClients) {
-      try {
-        const snapshot = await adapter.read();
-        snapshots.set(id, {
+    for (const result of prefetchResults) {
+      if (result.success) {
+        const snapshot = result.data;
+        snapshots.set(result.id, {
           mcps: snapshot?.mcps || {},
           agents: snapshot?.agents || {},
           skills: snapshot?.skills || {},
@@ -229,8 +242,8 @@ async function syncCommandInner(
           prompts: snapshot?.prompts,
           credentials: snapshot?.credentials,
         });
-      } catch (err: any) {
-        ui.warn(`Snapshot failed for ${adapter.name}: ${err?.message || "unknown error"}. Rollback for this client will be unavailable.`);
+      } else {
+        ui.warn(`Snapshot failed for ${result.adapter.name}: ${result.error || "unknown error"}. Rollback for this client will be unavailable.`);
       }
     }
   }
