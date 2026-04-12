@@ -120,3 +120,8 @@
 .terminal-glow:hover {
   box-shadow: 0 0 0 1px var(--neon), 0 0 24px rgba(0, 255, 0, 0.12);
 }
+
+@keyframes marquee {
+  0% { transform: translateX(0); }
+  100% { transform: translateX(-50%); }
+}

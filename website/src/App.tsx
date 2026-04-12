@@ -12,8 +12,9 @@ import { ScannerCardStream } from './components/ui/ScannerCardStream';
 const CLIENT_IMAGES = [
   'assets/clients/claude.png',
   'assets/clients/gemini.png',
-  'assets/opencode.png',
-  'assets/antigravity.png',
+  'assets/clients/opencode.png',
+  'assets/clients/antigravity.png',
+  'assets/clients/cline.png',
   'assets/clients/cursor.png',
   'assets/clients/copilot.png',
   'assets/clients/windsurf.png',

@@ -27,8 +27,6 @@ const itemVariants = {
 export const Hero = () => {
   return (
     <section id="hero" className="relative h-screen w-full flex flex-col items-center justify-center overflow-hidden border-b border-[#333] bg-black">
-        {/* Analog Scanline Overlay */}
-        <div className="pointer-events-none absolute inset-0 z-40 bg-[linear-gradient(rgba(0,0,0,0)_50%,rgba(0,0,0,0.15)_50%)] bg-[length:100%_4px] mix-blend-multiply" />
         
         {/* Background Wave */}
         <div className="absolute inset-0 z-0 opacity-40">
@@ -49,12 +47,12 @@ export const Hero = () => {
                 >
                     SYNCTAX
                 </motion.h1>
-                <motion.p 
-                    variants={itemVariants}
-                    className="font-mono text-sm md:text-lg bg-white text-black px-6 py-2 mt-4 font-bold border border-black shadow-[4px_4px_0_0_#00FF00]"
-                >
-                    One config file. Every AI tool in sync. Always.
-                </motion.p>
+
+                <motion.div variants={itemVariants} className="mt-8 relative z-20">
+                    <p className="font-mono text-sm md:text-lg bg-[#00FF00] text-black px-8 py-3 font-bold border-2 border-black shadow-[8px_8px_0_0_#e5e5e5] uppercase tracking-widest">
+                        [ One config. Every AI tool syncs. ]
+                    </p>
+                </motion.div>
             </div>
         </motion.div>
 

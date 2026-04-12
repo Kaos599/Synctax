@@ -331,13 +331,13 @@ export const ScannerCardStream = ({
               style={{ width: 360, height: 240 }}
             >
               <div
-                className="fnorm absolute inset-0 overflow-hidden"
+                className="fnorm absolute inset-0 overflow-hidden bg-[#0c0c0c] flex items-center justify-center border border-[#1a1a1a]"
                 style={{ clipPath: 'inset(0 0 0 var(--cr, 0%))' }}
               >
                 <img
                   src={card.image}
                   alt="card"
-                  className="w-full h-full object-contain p-8 bg-[#040404] border border-[#1a1a1a]"
+                  className="w-full h-full object-contain p-6"
                   style={{ borderRadius: 0 }}
                 />
               </div>
