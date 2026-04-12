@@ -153,24 +153,33 @@ async function syncCommandInner(
 
   // --- Diff preview: show what will change before writing ---
   if (!options.dryRun && enabledClients.length > 0) {
-    const clientDiffs: ClientDiff[] = [];
-    for (const { id, adapter } of enabledClients) {
-      try {
-        const data = await adapter.read();
-        const diff: ClientDiff = {
-          id,
-          name: adapter.name,
-          domains: {
-            mcps: compareDomain(resources.mcps || {}, data.mcps || {}),
-            agents: compareDomain(resources.agents || {}, data.agents || {}),
-            skills: compareDomain(resources.skills || {}, data.skills || {}),
-          },
-        };
-        clientDiffs.push(diff);
-      } catch {
-        // Can't diff — will attempt write anyway
-      }
-    }
+    // ⚡ Bolt: Parallelize independent I/O reads.
+    // Why: Previously, `adapter.read()` was awaited sequentially in a for...of loop.
+    // Impact: Reduces the time taken to read configs from multiple clients from O(N) to O(1) in disk I/O time.
+    const diffResults = await Promise.all(
+      enabledClients.map(async ({ id, adapter }) => {
+        try {
+          const data = await adapter.read();
+          const diff: ClientDiff = {
+            id,
+            name: adapter.name,
+            domains: {
+              mcps: compareDomain(resources.mcps || {}, data.mcps || {}),
+              agents: compareDomain(resources.agents || {}, data.agents || {}),
+              skills: compareDomain(resources.skills || {}, data.skills || {}),
+            },
+          };
+          return { success: true as const, diff };
+        } catch {
+          // Can't diff — will attempt write anyway
+          return { success: false as const };
+        }
+      })
+    );
+
+    const clientDiffs: ClientDiff[] = diffResults
+      .filter((result): result is { success: true, diff: ClientDiff } => result.success)
+      .map(result => result.diff);
 
     const hasChanges = clientDiffs.some(hasDiffChanges);
 
@@ -217,20 +226,33 @@ async function syncCommandInner(
 
   const snapshots = new Map<string, any>();
   if (!options.dryRun) {
-    for (const { id, adapter } of enabledClients) {
-      try {
-        const snapshot = await adapter.read();
-        snapshots.set(id, {
-          mcps: snapshot?.mcps || {},
-          agents: snapshot?.agents || {},
-          skills: snapshot?.skills || {},
-          permissions: snapshot?.permissions,
-          models: snapshot?.models,
-          prompts: snapshot?.prompts,
-          credentials: snapshot?.credentials,
+    // ⚡ Bolt: Parallelize independent snapshot I/O reads.
+    // Why: Similar to the diff preview, sequential reads create a bottleneck.
+    // Impact: Speeds up the snapshot phase significantly when multiple clients are configured.
+    const snapshotResults = await Promise.all(
+      enabledClients.map(async ({ id, adapter }) => {
+        try {
+          const snapshot = await adapter.read();
+          return { success: true as const, id, snapshot };
+        } catch (err: any) {
+          return { success: false as const, adapter, err };
+        }
+      })
+    );
+
+    for (const result of snapshotResults) {
+      if (result.success) {
+        snapshots.set(result.id, {
+          mcps: result.snapshot?.mcps || {},
+          agents: result.snapshot?.agents || {},
+          skills: result.snapshot?.skills || {},
+          permissions: result.snapshot?.permissions,
+          models: result.snapshot?.models,
+          prompts: result.snapshot?.prompts,
+          credentials: result.snapshot?.credentials,
         });
-      } catch (err: any) {
-        ui.warn(`Snapshot failed for ${adapter.name}: ${err?.message || "unknown error"}. Rollback for this client will be unavailable.`);
+      } else {
+        ui.warn(`Snapshot failed for ${result.adapter.name}: ${result.err?.message || "unknown error"}. Rollback for this client will be unavailable.`);
       }
     }
   }
