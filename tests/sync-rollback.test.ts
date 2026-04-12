@@ -116,11 +116,12 @@ describe("sync rollback", () => {
       expect(writeA.mock.calls[0]?.[0]?.mcps?.["new-mcp"]?.command).toBe("new-command");
       expect(writeA.mock.calls[1]?.[0]).toEqual(snapshotA);
       expect(writeB).toHaveBeenCalledTimes(1);
-      expect(writeC).not.toHaveBeenCalled();
+      expect(writeC).toHaveBeenCalledTimes(2);
       expect(process.exitCode).toBe(1);
 
       const output = logSpy.mock.calls.map((call) => String(call[0])).join("\n");
-      expect(output).toContain("Rollback complete: 1 succeeded, 0 failed");
+      expect(output).toContain("Rollback complete: 2 succeeded, 0 failed");
+      expect(output).toContain("Rollback Client A completed in");
       expect(output).toContain("Sync failed");
       expect(output).not.toContain("Sync complete!");
     } finally {
@@ -176,12 +177,12 @@ describe("sync rollback", () => {
 
       expect(writeA).toHaveBeenCalledTimes(2);
       expect(writeB).toHaveBeenCalledTimes(1);
-      expect(writeC).not.toHaveBeenCalled();
+      expect(writeC).toHaveBeenCalledTimes(2);
       expect(process.exitCode).toBe(1);
 
       const output = logSpy.mock.calls.map((call) => String(call[0])).join("\n");
       expect(output).toContain("Rollback failed for Client A: rollback failed on clienta");
-      expect(output).toContain("Rollback complete: 0 succeeded, 1 failed");
+      expect(output).toContain("Rollback complete: 1 succeeded, 1 failed");
     } finally {
       process.exitCode = previousExitCode;
     }

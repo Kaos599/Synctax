@@ -63,8 +63,9 @@ program
 program
   .command("status")
   .description("Show the current sync status across all clients")
-  .action(() => {
-    void statusCommand();
+  .option("--json", "Output in JSON format")
+  .action((options) => {
+    void statusCommand(options);
   });
 
 program
@@ -95,6 +96,7 @@ program
   .option("--merge", "Merge pulled config with existing master (default)")
   .option("--overwrite", "Replace master config entirely")
   .option("--domain <domain>", "Pull only specific domain (mcp|agents|skills|permissions|models|prompts)")
+  .option("--dry-run", "Preview what would be pulled without writing")
   .option("-i, --interactive", "Interactively select resources to pull")
   .action((options) => {
     void pullCommand(options);
@@ -179,6 +181,7 @@ program
   .description("Diagnose common issues")
   .option("--fix", "Attempt to automatically fix detected issues")
   .option("--deep", "Run deep MCP command and env validation")
+  .option("--json", "Output in JSON format")
   .action((options) => {
     void doctorCommand(options);
   });
@@ -202,7 +205,7 @@ profileCmd
 
 // Hidden alias: `info` still works but shows deprecation hint
 program
-  .command("info", { hidden: true })
+  .command("info")
   .description("Display tabular system intelligence (installed clients and resource counts)")
   .action(() => {
     void infoCommand();

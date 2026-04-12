@@ -77,6 +77,17 @@ async function walkDirFiles(dir: string): Promise<string[]> {
 
       if (stat.isDirectory()) {
         stack.push(fullPath);
+      } else if (stat.isSymbolicLink()) {
+        try {
+          const linked = await fs.stat(fullPath);
+          if (linked.isDirectory()) {
+            stack.push(fullPath);
+          } else if (linked.isFile()) {
+            files.push(fullPath);
+          }
+        } catch {
+          continue;
+        }
       } else if (stat.isFile()) {
         files.push(fullPath);
       }
@@ -126,7 +137,11 @@ function buildCandidatesForAdapter(adapter: ClientAdapter, clientId: string, pro
       pushFile(candidates, { clientId, scope: candidate.scope, path: candidate.path, kind: "config", label: candidate.label });
     }
     pushDir(candidates, clientId, "project", path.join(projectDir, ".opencode", "skills"), "skills-dir", "opencode project skills dir");
+    pushDir(candidates, clientId, "project", path.join(projectDir, ".claude", "skills"), "skills-dir", "opencode project claude skills dir");
+    pushDir(candidates, clientId, "project", path.join(projectDir, ".agents", "skills"), "skills-dir", "opencode project agents skills dir");
     pushDir(candidates, clientId, "user", path.join(h, ".config", "opencode", "skills"), "skills-dir", "opencode user skills dir");
+    pushDir(candidates, clientId, "user", path.join(h, ".claude", "skills"), "skills-dir", "opencode user claude skills dir");
+    pushDir(candidates, clientId, "user", path.join(h, ".agents", "skills"), "skills-dir", "opencode user agents skills dir");
   } else if (clientId === "cline") {
     pushFile(candidates, { clientId, scope: "global", path: path.join(h, ".cline", "mcp_settings.json"), kind: "mcp", label: "cline global mcp settings" });
     pushFile(candidates, { clientId, scope: "user", path: path.join(h, ".cline", "data", "settings", "cline_mcp_settings.json"), kind: "mcp", label: "cline package mcp settings" });
@@ -199,7 +214,20 @@ export async function discoverBackupFilesForAdapter(
       continue;
     }
 
-    if (stat.isDirectory()) {
+    let isDirectory = stat.isDirectory();
+    let isFile = stat.isFile();
+    if (stat.isSymbolicLink()) {
+      try {
+        const linked = await fs.stat(candidate.path);
+        isDirectory = linked.isDirectory();
+        isFile = linked.isFile();
+      } catch {
+        warnings.push(`Broken symlink (${candidate.scope}): ${candidate.path}`);
+        continue;
+      }
+    }
+
+    if (isDirectory) {
       const nested = await walkDirFiles(candidate.path);
       if (nested.length === 0) {
         warnings.push(`Empty directory (${candidate.scope}): ${candidate.path}`);
@@ -216,7 +244,7 @@ export async function discoverBackupFilesForAdapter(
       continue;
     }
 
-    if (!stat.isFile()) {
+    if (!isFile) {
       warnings.push(`Unsupported filesystem entry (${candidate.scope}): ${candidate.path}`);
       continue;
     }

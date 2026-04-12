@@ -6,11 +6,14 @@ import { homeDir } from "../platform-paths.js";
 import { assertSafeResourceName } from "../resource-name.js";
 import { atomicWriteFile } from "../fs-utils.js";
 import { toArray, toBool, toNum } from "../coerce.js";
+import { mapWithConcurrency } from "../utils/async-pool.js";
 
 function stripScope<T extends { scope?: ResourceScope }>(item: T): Omit<T, "scope"> {
   const { scope: _scope, ...rest } = item;
   return rest;
 }
+
+const IO_CONCURRENCY = 8;
 
 // Default empty permissions — satisfies the full Permissions type
 function emptyPermissions(): Permissions {
@@ -321,32 +324,48 @@ export class ClaudeAdapter implements ClientAdapter {
   ): Promise<void> {
     let files: string[];
     try { files = await fs.readdir(dir); } catch { return; }
+    const agentFiles = files
+      .filter((file) => file.match(/\.(md|agent|agents|claude)$/))
+      .sort((a, b) => a.localeCompare(b));
 
-    for (const file of files) {
-      if (!file.match(/\.(md|agent|agents|claude)$/)) continue;
-      const key = file.replace(/\.(md|agent|agents|claude)$/, "");
-      const raw = await fs.readFile(path.join(dir, file), "utf-8");
+    const readResults = await mapWithConcurrency(
+      agentFiles,
+      Math.min(IO_CONCURRENCY, Math.max(1, agentFiles.length)),
+      async (file) => {
+        try {
+          const key = file.replace(/\.(md|agent|agents|claude)$/, "");
+          const raw = await fs.readFile(path.join(dir, file), "utf-8");
+          const { data, content } = parseFrontmatter<Record<string, any>>(raw);
+          return {
+            key,
+            agent: {
+              name: data.name || key,
+              description: data.description,
+              prompt: content,
+              model: data.model,
+              tools: toArray(data.tools),
+              disallowedTools: toArray(data.disallowedTools),
+              permissionMode: data.permissionMode,
+              maxTurns: toNum(data.maxTurns),
+              mcpServers: Array.isArray(data.mcpServers) ? data.mcpServers : (typeof data.mcpServers === "object" && data.mcpServers ? data.mcpServers : undefined),
+              hooks: data.hooks,
+              memory: toArray(data.memory),
+              background: toBool(data.background),
+              effort: data.effort,
+              isolation: toBool(data.isolation),
+              userInvocable: toBool(data.userInvocable),
+              scope,
+            } satisfies Agent,
+          };
+        } catch {
+          return null;
+        }
+      },
+    );
 
-      const { data, content } = parseFrontmatter<Record<string, any>>(raw);
-
-      target[key] = {
-        name: data.name || key,
-        description: data.description,
-        prompt: content,
-        model: data.model,
-        tools: toArray(data.tools),
-        disallowedTools: toArray(data.disallowedTools),
-        permissionMode: data.permissionMode,
-        maxTurns: toNum(data.maxTurns),
-        mcpServers: Array.isArray(data.mcpServers) ? data.mcpServers : (typeof data.mcpServers === "object" && data.mcpServers ? data.mcpServers : undefined),
-        hooks: data.hooks,
-        memory: toArray(data.memory),
-        background: toBool(data.background),
-        effort: data.effort,
-        isolation: toBool(data.isolation),
-        userInvocable: toBool(data.userInvocable),
-        scope,
-      };
+    for (const result of readResults) {
+      if (!result) continue;
+      target[result.key] = result.agent;
     }
   }
 
@@ -357,48 +376,67 @@ export class ClaudeAdapter implements ClientAdapter {
   ): Promise<void> {
     let entries: string[];
     try { entries = await fs.readdir(dir); } catch { return; }
+    const sortedEntries = [...entries].sort((a, b) => a.localeCompare(b));
+    const readResults = await mapWithConcurrency(
+      sortedEntries,
+      Math.min(IO_CONCURRENCY, Math.max(1, sortedEntries.length)),
+      async (entry) => {
+        const entryPath = path.join(dir, entry);
+        try {
+          const stat = await fs.stat(entryPath);
 
-    for (const entry of entries) {
-      const entryPath = path.join(dir, entry);
-      let stat;
-      try { stat = await fs.stat(entryPath); } catch { continue; }
+          if (stat.isDirectory()) {
+            const skillMdPath = path.join(entryPath, "SKILL.md");
+            if (!await fileExists(skillMdPath)) return null;
 
-      if (stat.isDirectory()) {
-        // Directory-based skill: skills/<name>/SKILL.md
-        const skillMdPath = path.join(entryPath, "SKILL.md");
-        if (await fileExists(skillMdPath)) {
-          const raw = await fs.readFile(skillMdPath, "utf-8");
-          const { data, content } = parseFrontmatter<Record<string, any>>(raw);
-          target[entry] = {
-            name: data.name || entry,
-            description: data.description,
-            content,
-            trigger: data.trigger,
-            argumentHint: data["argument-hint"],
-            disableModelInvocation: toBool(data["disable-model-invocation"]),
-            userInvocable: toBool(data["user-invocable"]),
-            allowedTools: toArray(data["allowed-tools"]),
-            model: data.model,
-            effort: data.effort,
-            context: toArray(data.context),
-            agent: data.agent,
-            hooks: data.hooks,
-            scope,
-          };
+            const raw = await fs.readFile(skillMdPath, "utf-8");
+            const { data, content } = parseFrontmatter<Record<string, any>>(raw);
+            return {
+              key: entry,
+              skill: {
+                name: data.name || entry,
+                description: data.description,
+                content,
+                trigger: data.trigger,
+                argumentHint: data["argument-hint"],
+                disableModelInvocation: toBool(data["disable-model-invocation"]),
+                userInvocable: toBool(data["user-invocable"]),
+                allowedTools: toArray(data["allowed-tools"]),
+                model: data.model,
+                effort: data.effort,
+                context: toArray(data.context),
+                agent: data.agent,
+                hooks: data.hooks,
+                scope,
+              } satisfies Skill,
+            };
+          }
+
+          if (entry.match(/\.(md|agent|agents|claude)$/)) {
+            const key = entry.replace(/\.(md|agent|agents|claude)$/, "");
+            const raw = await fs.readFile(entryPath, "utf-8");
+            const { data, content } = parseFrontmatter<Record<string, any>>(raw);
+            return {
+              key,
+              skill: {
+                name: data.name || key,
+                description: data.description,
+                content,
+                trigger: data.trigger,
+                scope,
+              } satisfies Skill,
+            };
+          }
+        } catch {
+          return null;
         }
-      } else if (entry.match(/\.(md|agent|agents|claude)$/)) {
-        // Legacy flat file skill (backward compat)
-        const key = entry.replace(/\.(md|agent|agents|claude)$/, "");
-        const raw = await fs.readFile(entryPath, "utf-8");
-        const { data, content } = parseFrontmatter<Record<string, any>>(raw);
-        target[key] = {
-          name: data.name || key,
-          description: data.description,
-          content,
-          trigger: data.trigger,
-          scope,
-        };
-      }
+        return null;
+      },
+    );
+
+    for (const result of readResults) {
+      if (!result) continue;
+      target[result.key] = result.skill;
     }
   }
 }

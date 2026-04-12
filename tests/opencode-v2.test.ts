@@ -502,6 +502,38 @@ Project skill content.`,
       expect(skills.bare.name).toBe("bare"); // falls back to key
       expect(skills.bare.content).toBe("Just plain content.");
     });
+
+    it("reads skills from Claude and Agents compatibility paths", async () => {
+      const adapter = new OpenCodeAdapter();
+
+      const claudeSkillDir = path.join(mockHome, ".claude", "skills", "claude-skill");
+      await fs.mkdir(claudeSkillDir, { recursive: true });
+      await fs.writeFile(
+        path.join(claudeSkillDir, "SKILL.md"),
+        `---
+name: Claude Skill
+---
+
+Claude compatibility content.`,
+      );
+
+      const agentsSkillDir = path.join(mockHome, ".agents", "skills", "agents-skill");
+      await fs.mkdir(agentsSkillDir, { recursive: true });
+      await fs.writeFile(
+        path.join(agentsSkillDir, "SKILL.md"),
+        `---
+name: Agents Skill
+---
+
+Agents compatibility content.`,
+      );
+
+      const { skills } = await adapter.read();
+      expectHas(skills, "claude-skill");
+      expectHas(skills, "agents-skill");
+      expect(skills["claude-skill"].content).toBe("Claude compatibility content.");
+      expect(skills["agents-skill"].content).toBe("Agents compatibility content.");
+    });
   });
 
   // -----------------------------------------------------------------------
@@ -745,6 +777,59 @@ Project skill content.`,
       const adapter = new OpenCodeAdapter();
       await fs.writeFile(path.join(mockHome, "opencode.json"), "{}");
       expect(await adapter.detect()).toBe(true);
+    });
+
+    it("detects skills-only installs via compatibility skill roots", async () => {
+      const adapter = new OpenCodeAdapter();
+      expect(await adapter.detect()).toBe(false);
+
+      const skillDir = path.join(mockHome, ".agents", "skills", "global-skill");
+      await fs.mkdir(skillDir, { recursive: true });
+      await fs.writeFile(
+        path.join(skillDir, "SKILL.md"),
+        `---
+name: Global Skill
+---
+
+Global skill content.`,
+      );
+
+      expect(await adapter.detect()).toBe(true);
+    });
+
+    it("detects and reads from OPENCODE_CONFIG override path", async () => {
+      const adapter = new OpenCodeAdapter();
+      const previousOpencodeConfig = process.env.OPENCODE_CONFIG;
+      const customConfigPath = path.join(mockHome, "custom", "opencode-custom.json");
+
+      await fs.mkdir(path.dirname(customConfigPath), { recursive: true });
+      await fs.writeFile(
+        customConfigPath,
+        JSON.stringify({
+          mcp: {
+            customServer: {
+              type: "local",
+              command: ["node", "custom-server.js"],
+              environment: {},
+            },
+          },
+        }),
+      );
+      process.env.OPENCODE_CONFIG = customConfigPath;
+
+      try {
+        expect(await adapter.detect()).toBe(true);
+        const { mcps } = await adapter.read();
+        expectHas(mcps, "customServer");
+        expect(mcps.customServer.command).toBe("node");
+        expect(mcps.customServer.args).toEqual(["custom-server.js"]);
+      } finally {
+        if (previousOpencodeConfig === undefined) {
+          delete process.env.OPENCODE_CONFIG;
+        } else {
+          process.env.OPENCODE_CONFIG = previousOpencodeConfig;
+        }
+      }
     });
   });
 

@@ -68,10 +68,7 @@ export function homeDir(): string {
 function addVscodeBaseCandidates(candidates: ScopedCandidate[], h: string): void {
   const syn = process.env.SYNCTAX_HOME;
   const ad = process.env.APPDATA;
-  const useWinAppData =
-    process.platform === "win32" &&
-    ad &&
-    (!syn || path.resolve(ad).startsWith(path.resolve(syn)));
+  const useWinAppData = process.platform === "win32" && !!ad;
 
   if (useWinAppData) {
     candidates.push(
@@ -110,10 +107,7 @@ export function vscodeUserMcpJsonCandidates(h = homeDir(), projectRoot = process
 
   const syn = process.env.SYNCTAX_HOME;
   const ad = process.env.APPDATA;
-  const useWinAppData =
-    process.platform === "win32" &&
-    ad &&
-    (!syn || path.resolve(ad).startsWith(path.resolve(syn)));
+  const useWinAppData = process.platform === "win32" && !!ad;
 
   if (useWinAppData) {
     list.push(
@@ -180,16 +174,32 @@ export function opencodeConfigCandidates(h = homeDir()): ScopedCandidate[] {
   const out: ScopedCandidate[] = [];
   const cwd = process.cwd();
   const projectPrimary = path.join(cwd, "opencode.json");
+  const projectPrimaryJsonc = path.join(cwd, "opencode.jsonc");
   const projectFallback = path.join(cwd, ".opencode", "config.json");
+  const projectFallbackNamed = path.join(cwd, ".opencode", "opencode.json");
+  const projectFallbackNamedJsonc = path.join(cwd, ".opencode", "opencode.jsonc");
   out.push(
     { path: projectPrimary, scope: "project", label: "project opencode.json" },
+    { path: projectPrimaryJsonc, scope: "project", label: "project opencode.jsonc" },
     { path: projectFallback, scope: "project", label: "project .opencode config" },
+    { path: projectFallbackNamed, scope: "project", label: "project .opencode opencode.json" },
+    { path: projectFallbackNamedJsonc, scope: "project", label: "project .opencode opencode.jsonc" },
   );
   out.push(
     { path: path.join(h, ".config", "opencode", "config.json"), scope: "user", label: "user opencode config" },
+    { path: path.join(h, ".config", "opencode", "opencode.json"), scope: "user", label: "user opencode primary json" },
     { path: path.join(h, ".opencode", "config.json"), scope: "user", label: "user hidden opencode config" },
-    { path: path.join(h, ".config", "opencode", "opencode.json"), scope: "user", label: "user opencode legacy json" },
+    { path: path.join(h, ".config", "opencode", "opencode.jsonc"), scope: "user", label: "user opencode primary jsonc" },
   );
+
+  const customConfigPath = process.env.OPENCODE_CONFIG?.trim();
+  if (customConfigPath) {
+    out.push({
+      path: path.isAbsolute(customConfigPath) ? customConfigPath : path.resolve(cwd, customConfigPath),
+      scope: "user",
+      label: "opencode env override config",
+    });
+  }
 
   const la = process.env.LOCALAPPDATA;
   const ad = process.env.APPDATA;

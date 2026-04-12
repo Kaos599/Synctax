@@ -128,7 +128,7 @@ export type Profile = z.infer<typeof ProfileSchema>;
 export const ConfigSchema = z.object({
   version: z.number().default(1),
   source: z.string().optional(),
-  theme: z.string().default("rebel"),
+  theme: z.string().default("synctax"),
   activeProfile: z.string().default("default"),
   clients: z.record(z.string(), z.object({
     enabled: z.boolean(),

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { exportCommand, importCommand } from "../src/commands.js";
+import { exportCommand, importCommand, getConfigManager } from "../src/commands.js";
 import fs from "fs/promises";
 import path from "path";
 import os from "os";
@@ -63,6 +63,46 @@ describe("Export/Import Commands", () => {
       const exportedData = await fs.readFile(resolvedPath, "utf-8");
       const parsed = JSON.parse(exportedData);
       expect(parsed.resources.mcps.test.command).toBe("test");
+    });
+  });
+
+  describe("export credential stripping", () => {
+    it("exportCommand strips credentials from exported file", async () => {
+      // 1. Write a config WITH credentials
+      const configManager = getConfigManager();
+      let config = await configManager.read();
+      config.resources.credentials = { envRefs: { SECRET_KEY: "sk-test-123" } };
+      await configManager.write(config);
+
+      // 2. Export to temp file
+      const exportPath = path.join(tmpDir, "export-test.json");
+      await exportCommand(exportPath);
+
+      // 3. Read exported file
+      const exported = JSON.parse(await fs.readFile(exportPath, "utf-8"));
+
+      // 4. Assert credentials are ABSENT
+      expect(exported.resources?.credentials).toBeUndefined();
+
+      // 5. Assert other resources still present
+      expect(exported.resources).toBeDefined();
+      expect(exported.version).toBeDefined();
+    });
+
+    it("exportCommand preserves non-sensitive config fields", async () => {
+      // Ensure mcps, agents, skills etc are still in the export
+      const configManager = getConfigManager();
+      let config = await configManager.read();
+      config.resources.mcps = { "test-mcp": { command: "test", args: [] } as any };
+      config.resources.credentials = { envRefs: { KEY: "secret" } };
+      await configManager.write(config);
+
+      const exportPath = path.join(tmpDir, "export-test2.json");
+      await exportCommand(exportPath);
+
+      const exported = JSON.parse(await fs.readFile(exportPath, "utf-8"));
+      expect(exported.resources.mcps["test-mcp"]).toBeDefined();
+      expect(exported.resources?.credentials).toBeUndefined();
     });
   });
 

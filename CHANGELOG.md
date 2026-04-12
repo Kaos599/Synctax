@@ -7,6 +7,15 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [Unreleased]
+
+### Changed
+
+- **Theme defaults**: Persisted/default theme fallback is now `"synctax"` across schema/config/init/interactive/TUI loaders, and sync avoids no-op source write-backs that could materialize unintended defaults.
+- **Sync observability**: Added per-phase ETA hints, per-client analyze/write/rollback timing lines, and richer finalize summaries with phase/client metrics.
+- **OpenCode detection**: Expanded config and skills discovery to include `OPENCODE_CONFIG` and compatibility skill roots (`.claude/skills`, `.agents/skills`, plus global equivalents).
+- **Client aliases**: Added canonicalization for common client id variants (for example `open code`/`open-code` → `opencode`) in pull/init/sync/status/doctor flows.
+
 ## [2.0.1] — 2026-04-05
 
 ### Fixed

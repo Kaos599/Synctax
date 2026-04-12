@@ -28,7 +28,7 @@ describe("tui actions", () => {
     await runActionById("sync", { source: "cursor" });
 
     expect(syncSpy).toHaveBeenCalledTimes(1);
-    expect(syncSpy).toHaveBeenCalledWith({});
+    expect(syncSpy).toHaveBeenCalledWith({ yes: true });
   });
 
   it("dispatches pull action with provided source", async () => {
@@ -99,5 +99,18 @@ describe("tui actions", () => {
 
     expect(backupSpy).toHaveBeenCalledTimes(1);
     expect(backupSpy).toHaveBeenCalledWith({});
+  });
+
+  it("TUI-02: TUI_ACTIONS includes non-numeric hotkeys ! and @", () => {
+    const hotkeys = TUI_ACTIONS.map((a) => a.hotkey);
+    expect(hotkeys).toContain("!");
+    expect(hotkeys).toContain("@");
+
+    const bangAction = getActionByHotkey("!");
+    const atAction = getActionByHotkey("@");
+    expect(bangAction).toBeDefined();
+    expect(atAction).toBeDefined();
+    expect(bangAction!.id).toBeTruthy();
+    expect(atAction!.id).toBeTruthy();
   });
 });

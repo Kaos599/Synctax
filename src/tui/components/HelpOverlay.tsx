@@ -60,7 +60,7 @@ export function HelpView() {
       <HelpRow keys="Esc  or  n" description="Cancel — return to dashboard" />
 
       <SectionTitle title="During Execution" />
-      <HelpRow keys="q" description="Quit (action completes in background)" />
+      <HelpRow keys="q" description="Quit immediately — running action is cancelled" />
       <HelpRow keys="any key" description="After completion, return to dashboard" />
     </Box>
   );

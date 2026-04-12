@@ -259,7 +259,7 @@ Resources carry a `scope` field (`global | user | project | local`). Scope prece
 ConfigSchema
   ├── version: number (default: 1)
   ├── source: string?
-  ├── theme: string (default: "rebel")
+  ├── theme: string (default: "synctax")
   ├── activeProfile: string (default: "default")
   ├── clients: Record<string, { enabled: boolean, configPath?: string }>
   ├── profiles: Record<string, ProfileSchema { include?, exclude?, extends? }>
@@ -286,7 +286,7 @@ Every adapter uses a `stripScope<T>()` helper that removes the `scope` field bef
 
 ### Banner & Theme System
 
-- **CLI banner themes** (for non-TUI output): `rebel` (FIGlet block art), `pixel`/`synctax` (custom pixel wordmark with shadow dither), `default`, `cyber`, `green`. Defined in `src/theme.ts` + `src/banner.ts`.
+- **CLI banner themes** (for non-TUI output): persisted default is `synctax`; optional themes include `rebel` (FIGlet block art), `pixel`/`synctax` (custom pixel wordmark with shadow dither), `default`, `cyber`, `green`. Defined in `src/theme.ts` + `src/banner.ts`.
 - **TUI themes** (for the fullscreen dashboard): 16 color presets defined in `src/tui/theme.ts`. Default: `synctax`. Others: `catppuccin`, `dracula`, `nord`, `tokyo-night`, `gruvbox`, `one-dark`, `solarized`, `rose-pine`, `monokai`, `cyberpunk`, `sunset`, `ocean`, `forest`, `ember`, `aurora`.
 - `--theme <name>` flag overrides on any run.
 - Theme is persisted in master config `theme` field.

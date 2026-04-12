@@ -83,6 +83,10 @@ export function App({ data, executeAction }: AppProps) {
 
       const result = await runGuardedAction(action.id, async () => {
         await executor(action);
+      }, {
+        onOutput: (nextOutput) => {
+          setRunOutput(nextOutput.slice(-200));
+        },
       });
 
       setRunOutput(result.output);
@@ -383,7 +387,7 @@ export function App({ data, executeAction }: AppProps) {
 
               const result = await runGuardedAction(profilePickAction ?? "profile-use", async () => {
                 if (profilePickAction === "profile-use") {
-                  await commands.profileUseCommand(name, {});
+                  await commands.profileUseCommand(name, { yes: true });
                 } else {
                   await commands.profileDiffCommand(name, {});
                 }

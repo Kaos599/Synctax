@@ -43,7 +43,7 @@ export const Install = () => {
                   Run the Setup
                 </h4>
                 <p className="font-mono text-sm text-[#666] leading-relaxed">
-                  Synctax finds Claude Desktop, Cursor, Ghostty, and 6 other tools — automatically.
+                  Synctax finds Claude Desktop, Cursor, Zed, and 6 other tools — automatically.
                 </p>
               </div>
             </div>
@@ -72,7 +72,7 @@ export const Install = () => {
             <TerminalBlock code="synctax init" />
           </div>
 
-          <div className="border border-[#1a1a1a] p-6 bg-[#040404] terminal-glow transition-all duration-300">
+          <div className="border-2 border-[#00FF00] p-6 bg-black shadow-[8px_8px_0_0_#222] transition-transform duration-300 hover:-translate-y-1 hover:-translate-x-1">
             <pre className="font-mono text-xs leading-relaxed overflow-x-auto">
               <span className="text-[#444]">{'> '}Scanning for tools...<br /></span>
               <br />
@@ -81,20 +81,18 @@ export const Install = () => {
               <span className="text-[#00FF00]">{'[✓]'}</span>
               <span className="text-[#888]">{' Cursor — found\n'}</span>
               <span className="text-[#00FF00]">{'[✓]'}</span>
-              <span className="text-[#888]">{' Ghostty — found\n'}</span>
-              <span className="text-[#00FF00]">{'[✓]'}</span>
               <span className="text-[#888]">{' Windsurf — found\n'}</span>
               <span className="text-[#00FF00]">{'[✓]'}</span>
               <span className="text-[#888]">{' Zed — found\n'}</span>
               <br />
               <span className="text-[#444]">{'> '}Writing master config...<br /></span>
               <span className="text-[#00FF00] font-bold">{'[✓]'}</span>
-              <span className="text-[#00FF00]">{' ~/.synctax.yml created\n'}</span>
+              <span className="text-[#00FF00]">{' ~/.synctax.yaml created\n'}</span>
               <span className="text-[#00FF00] font-bold">{'[✓]'}</span>
               <span className="text-[#00FF00]">{' Symlinks generated\n'}</span>
               <br />
-              <span className="text-[#00FF00] font-bold text-sm">{'▶ SYSTEM ONLINE'}</span>
-              <span className="text-[#00FF00] blink">_</span>
+              <span className="text-[#00FF00] font-bold text-sm bg-[#005500] px-2 py-1">{'▶ SYSTEM ONLINE'}</span>
+              <span className="text-[#00FF00] blink ml-2">█</span>
             </pre>
           </div>
         </div>
