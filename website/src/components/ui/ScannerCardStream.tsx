@@ -337,7 +337,7 @@ export const ScannerCardStream = ({
                 <img
                   src={card.image}
                   alt="card"
-                  className="w-full h-full object-cover"
+                  className="w-full h-full object-contain p-8 bg-[#040404] border border-[#1a1a1a]"
                   style={{ borderRadius: 0 }}
                 />
               </div>
