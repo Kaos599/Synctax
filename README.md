@@ -78,7 +78,7 @@ synctax sync
 
 | Command | Description |
 |---------|-------------|
-| `synctax sync` | Pulls from your source client, shows a per-client diff, asks for confirmation, then writes to every enabled client atomically. Rolls back all clients on failure. Run this after any change to master config. |
+| `synctax sync` | Pulls from your source client, analyzes targets with live progress counters, shows a per-client diff, asks for confirmation, then writes to enabled clients with bounded parallelism. Rolls back synced clients on failure. Run this after any change to master config. |
 | `synctax pull --from <client>` | Imports a specific client's live config into master. Use this when you've added an MCP directly in Cursor or Claude Code and want master to reflect it. |
 | `synctax diff [client]` | Compares master against each client's live config and shows exactly what has been added, removed, or modified — without writing anything. Safe to run at any time. |
 | `synctax watch` | Starts a background daemon that watches `~/.synctax/config.json` and auto-syncs on every save (500ms debounce). Useful when editing master config directly. |
@@ -165,12 +165,15 @@ synctax sync
        ├─ 3. Resolve env vault
        │       $VAR references → real values from ~/.synctax/envs/<profile>.env
        │
-       ├─ 4. Show diff preview per client
+       ├─ 4. Analyze clients with staged progress
+       │       bounded parallel reads + per-client diff data
+       │
+       ├─ 5. Show diff preview per client
        │       added / removed / modified resources listed before any write
        │
-       ├─ 5. Confirm: "Apply these changes? [y/N]"
+       ├─ 6. Confirm: "Apply these changes? [y/N]"
        │
-       └─ 6. Atomic write to all enabled clients
+       └─ 7. Atomic write to enabled clients (bounded parallel)
                temp-file → rename · file lock · rollback on failure
 ```
 
@@ -180,6 +183,7 @@ synctax sync
 - All writes go to a temp file first, then renamed atomically. A crash mid-write leaves the original intact.
 - If any client write fails, all clients that already received changes in this run are rolled back.
 - Permission merges use deny-wins logic: if a path appears in both allow and deny lists, it is denied.
+- Sync progress is staged (`pull`, `resolve`, `analyze`, `backup`, `write`, `finalize`) with live counters in TTY and plain updates in non-TTY logs.
 
 ---
 

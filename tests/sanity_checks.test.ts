@@ -198,3 +198,18 @@ describe("TDD Sanity Checks for Copilot Flags", () => {
     consoleSpy.mockRestore();
   });
 });
+
+describe("resolveCliEntryPath audit fix", () => {
+  it("resolves to a path that exists on disk", async () => {
+    const { resolveCliEntryPath } = await import("../src/install-path.js");
+    const resolved = await resolveCliEntryPath();
+    // Should not throw — the resolved path should exist
+    await fs.access(resolved);
+  });
+
+  it("resolved path ends with synctax.js or synctax.ts", async () => {
+    const { resolveCliEntryPath } = await import("../src/install-path.js");
+    const resolved = await resolveCliEntryPath();
+    expect(resolved).toMatch(/synctax\.(js|ts)$/);
+  });
+});

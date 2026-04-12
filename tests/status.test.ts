@@ -203,4 +203,36 @@ describe("statusCommand drift regression", () => {
     const output = await captureStatusOutput();
     expect(output).toContain("Mock Client: Out of Sync");
   });
+
+  it("normalizes aliased enabled client ids in status checks", async () => {
+    setAdapter("opencode", {
+      id: "opencode",
+      name: "OpenCode",
+      detect: async () => true,
+      read: async () => ({
+        mcps: {},
+        agents: {},
+        skills: {},
+      }),
+      write: async () => {},
+      getMemoryFileName: () => "AGENTS.md",
+      readMemory: async () => null,
+      writeMemory: async () => {},
+    } as any);
+
+    await manager.write({
+      version: 1,
+      source: "open code",
+      clients: { "open code": { enabled: true } },
+      resources: {
+        mcps: {},
+        agents: {},
+        skills: {},
+      },
+    } as any);
+
+    const output = await captureStatusOutput();
+    expect(output).toContain("OpenCode: In Sync");
+    expect(output).not.toContain("No clients enabled.");
+  });
 });

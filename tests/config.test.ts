@@ -41,9 +41,9 @@ describe("ConfigManager", () => {
     expect(config.clients["claude"]?.enabled).toBe(true);
   });
 
-  it("getTheme returns the saved theme or defaults to rebel", async () => {
+  it("getTheme returns the saved theme or defaults to synctax", async () => {
     const manager = new ConfigManager();
-    expect(await manager.getTheme()).toBe("rebel");
+    expect(await manager.getTheme()).toBe("synctax");
 
     await manager.write(createConfig({
       version: 1,
@@ -112,6 +112,13 @@ describe("ConfigManager", () => {
 
     const remaining = (await fs.readdir(configDir)).filter(f => f.endsWith(".bak"));
     expect(remaining.length).toBe(10);
+  });
+
+  it("write creates config file with 0o600 permissions", async () => {
+    const manager = new ConfigManager();
+    await manager.write(createConfig({ version: 1, clients: {}, resources: createResources({ mcps: {} }) }));
+    const stat = await fs.stat(path.join(mockHome, ".synctax", "config.json"));
+    expect(stat.mode & 0o777).toBe(0o600);
   });
 
   it("pruneBackups does not delete non-backup files", async () => {

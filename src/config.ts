@@ -3,7 +3,7 @@ import path from "path";
 import os from "os";
 import { ConfigSchema } from "./types.js";
 import type { Config } from "./types.js";
-import { atomicWriteFile } from "./fs-utils.js";
+import { atomicWriteSecure } from "./fs-utils.js";
 
 export class ConfigManager {
   private configPath: string;
@@ -38,7 +38,7 @@ export class ConfigManager {
   async write(config: Config): Promise<void> {
     const validated = ConfigSchema.parse(config);
     await this.ensureConfigDir();
-    await atomicWriteFile(this.configPath, JSON.stringify(validated, null, 2));
+    await atomicWriteSecure(this.configPath, JSON.stringify(validated, null, 2));
   }
 
   async backup(): Promise<void> {
@@ -86,6 +86,6 @@ export class ConfigManager {
 
   async getTheme(): Promise<string> {
     const config = await this.read();
-    return config.theme || "rebel";
+    return config.theme || "synctax";
   }
 }

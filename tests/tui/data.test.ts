@@ -75,7 +75,7 @@ describe("tui data loader", () => {
     expect(data.health).toBe("OK");
     expect(data.warnings).toEqual([]);
     expect(data.driftClients).toBe(0);
-    expect(data.lastSync).toBe("unknown");
+    expect(data.lastSync).toBe("not tracked");
   });
 
   it("adds warnings for invalid source and no enabled clients", async () => {

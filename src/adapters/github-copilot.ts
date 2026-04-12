@@ -14,6 +14,7 @@ import {
 import { splitByScope } from "../scopes.js";
 import { atomicWriteFile } from "../fs-utils.js";
 import { toArray, toBool } from "../coerce.js";
+import { mapWithConcurrency } from "../utils/async-pool.js";
 
 type CandidateScope = "global" | "user" | "project";
 
@@ -96,6 +97,8 @@ function mcpToVscodeFormat(m: McpServer): Record<string, unknown> {
   };
 }
 
+const IO_CONCURRENCY = 8;
+
 function mcpsToVscodeFormat(mcps: Record<string, McpServer>): Record<string, unknown> {
   const servers: Record<string, unknown> = {};
   for (const [key, m] of Object.entries(mcps || {})) {
@@ -142,17 +145,26 @@ export class GithubCopilotAdapter implements ClientAdapter {
       ...vscodeUserMcpJsonCandidates(h),
     ].sort((a, b) => scopeWeight(toCandidateScope(scopeOf(a))) - scopeWeight(toCandidateScope(scopeOf(b))));
 
-    for (const candidate of candidates) {
-      try {
-        const parsed = JSON.parse(await fs.readFile(candidate.path, "utf-8")) as Record<string, unknown>;
-        const scope = toCandidateScope(scopeOf(candidate));
-        if (candidate.path.endsWith("settings.json")) {
-          mergeMcpsFromSettingsJson(parsed, result.mcps, scope);
-        } else {
-          mergeMcpsFromMcpJson(parsed, result.mcps, scope);
+    const parsedCandidates = await mapWithConcurrency(
+      candidates,
+      Math.min(IO_CONCURRENCY, Math.max(1, candidates.length)),
+      async (candidate) => {
+        try {
+          const parsed = JSON.parse(await fs.readFile(candidate.path, "utf-8")) as Record<string, unknown>;
+          return { candidate, parsed };
+        } catch {
+          return null;
         }
-      } catch {
-        /* missing or invalid */
+      },
+    );
+
+    for (const entry of parsedCandidates) {
+      if (!entry) continue;
+      const scope = toCandidateScope(scopeOf(entry.candidate));
+      if (entry.candidate.path.endsWith("settings.json")) {
+        mergeMcpsFromSettingsJson(entry.parsed, result.mcps, scope);
+      } else {
+        mergeMcpsFromMcpJson(entry.parsed, result.mcps, scope);
       }
     }
 
@@ -228,23 +240,40 @@ export class GithubCopilotAdapter implements ClientAdapter {
   ): Promise<void> {
     let files: string[];
     try { files = await fs.readdir(dir); } catch { return; }
+    const agentFiles = files
+      .filter((file) => file.endsWith(".md"))
+      .sort((a, b) => a.localeCompare(b));
 
-    for (const file of files) {
-      if (!file.endsWith(".md")) continue;
-      const key = file.replace(/\.md$/, "");
-      const raw = await fs.readFile(path.join(dir, file), "utf-8");
-      const { data, content } = parseFrontmatter<Record<string, any>>(raw);
+    const readResults = await mapWithConcurrency(
+      agentFiles,
+      Math.min(IO_CONCURRENCY, Math.max(1, agentFiles.length)),
+      async (file) => {
+        try {
+          const key = file.replace(/\.md$/, "");
+          const raw = await fs.readFile(path.join(dir, file), "utf-8");
+          const { data, content } = parseFrontmatter<Record<string, any>>(raw);
+          return {
+            key,
+            agent: {
+              name: data.name || key,
+              description: data.description,
+              prompt: content,
+              model: data.model,
+              tools: toArray(data.tools),
+              mcpServers: Array.isArray(data["mcp-servers"]) ? data["mcp-servers"] : (typeof data["mcp-servers"] === "object" && data["mcp-servers"] ? data["mcp-servers"] : undefined),
+              userInvocable: toBool(data["user-invocable"]),
+              scope,
+            } satisfies Agent,
+          };
+        } catch {
+          return null;
+        }
+      },
+    );
 
-      target[key] = {
-        name: data.name || key,
-        description: data.description,
-        prompt: content,
-        model: data.model,
-        tools: toArray(data.tools),
-        mcpServers: Array.isArray(data["mcp-servers"]) ? data["mcp-servers"] : (typeof data["mcp-servers"] === "object" && data["mcp-servers"] ? data["mcp-servers"] : undefined),
-        userInvocable: toBool(data["user-invocable"]),
-        scope,
-      };
+    for (const result of readResults) {
+      if (!result) continue;
+      target[result.key] = result.agent;
     }
   }
 
@@ -255,35 +284,49 @@ export class GithubCopilotAdapter implements ClientAdapter {
   ): Promise<void> {
     let entries: string[];
     try { entries = await fs.readdir(dir); } catch { return; }
+    const sortedEntries = [...entries].sort((a, b) => a.localeCompare(b));
+    const readResults = await mapWithConcurrency(
+      sortedEntries,
+      Math.min(IO_CONCURRENCY, Math.max(1, sortedEntries.length)),
+      async (entry) => {
+        const entryPath = path.join(dir, entry);
+        try {
+          const stat = await fs.stat(entryPath);
+          if (!stat.isDirectory()) return null;
 
-    for (const entry of entries) {
-      const entryPath = path.join(dir, entry);
-      let stat;
-      try { stat = await fs.stat(entryPath); } catch { continue; }
+          const skillMdPath = path.join(entryPath, "SKILL.md");
+          if (!await fileExists(skillMdPath)) return null;
 
-      if (stat.isDirectory()) {
-        const skillMdPath = path.join(entryPath, "SKILL.md");
-        if (await fileExists(skillMdPath)) {
           const raw = await fs.readFile(skillMdPath, "utf-8");
           const { data, content } = parseFrontmatter<Record<string, any>>(raw);
-          target[entry] = {
-            name: data.name || entry,
-            description: data.description,
-            content,
-            trigger: data.trigger,
-            argumentHint: data["argument-hint"],
-            disableModelInvocation: data["disable-model-invocation"],
-            userInvocable: data["user-invocable"],
-            allowedTools: toArray(data["allowed-tools"]),
-            model: data.model,
-            effort: data.effort,
-            context: toArray(data.context),
-            agent: data.agent,
-            hooks: data.hooks,
-            scope,
+          return {
+            entry,
+            skill: {
+              name: data.name || entry,
+              description: data.description,
+              content,
+              trigger: data.trigger,
+              argumentHint: data["argument-hint"],
+              disableModelInvocation: data["disable-model-invocation"],
+              userInvocable: data["user-invocable"],
+              allowedTools: toArray(data["allowed-tools"]),
+              model: data.model,
+              effort: data.effort,
+              context: toArray(data.context),
+              agent: data.agent,
+              hooks: data.hooks,
+              scope,
+            } satisfies Skill,
           };
+        } catch {
+          return null;
         }
-      }
+      },
+    );
+
+    for (const result of readResults) {
+      if (!result) continue;
+      target[result.entry] = result.skill;
     }
   }
 }

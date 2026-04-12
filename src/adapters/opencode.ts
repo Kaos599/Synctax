@@ -17,6 +17,7 @@ import { splitByScope } from "../scopes.js";
 import { parseFrontmatter, serializeFrontmatter } from "../frontmatter.js";
 import { assertSafeResourceName } from "../resource-name.js";
 import { atomicWriteFile } from "../fs-utils.js";
+import { mapWithConcurrency } from "../utils/async-pool.js";
 
 function scopeWeight(scope: ConfigScope): number {
   if (scope === "global") return 0;
@@ -28,6 +29,8 @@ function stripScope<T extends { scope?: ResourceScope }>(item: T): Omit<T, "scop
   const { scope: _scope, ...rest } = item;
   return rest;
 }
+
+const IO_CONCURRENCY = 8;
 
 async function fileExists(p: string): Promise<boolean> {
   try { await fs.access(p); return true; } catch { return false; }
@@ -80,12 +83,30 @@ function mergeAgents(parsed: Record<string, any>, into: Record<string, Agent>, s
  * Skill directories for OpenCode:
  *   project: .opencode/skills/
  *   user:    ~/.config/opencode/skills/
+ * Compatibility roots:
+ *   project: .claude/skills/, .agents/skills/
+ *   user:    ~/.claude/skills/, ~/.agents/skills/
  */
 function skillDirCandidates(h: string): { dir: string; scope: ConfigScope }[] {
-  return [
+  const candidates: { dir: string; scope: ConfigScope }[] = [
     { dir: path.join(process.cwd(), ".opencode", "skills"), scope: "project" },
+    { dir: path.join(process.cwd(), ".claude", "skills"), scope: "project" },
+    { dir: path.join(process.cwd(), ".agents", "skills"), scope: "project" },
     { dir: path.join(h, ".config", "opencode", "skills"), scope: "user" },
+    { dir: path.join(h, ".claude", "skills"), scope: "user" },
+    { dir: path.join(h, ".agents", "skills"), scope: "user" },
   ];
+  const seen = new Set<string>();
+  const deduped: { dir: string; scope: ConfigScope }[] = [];
+  for (const candidate of candidates) {
+    const key = process.platform === "win32"
+      ? path.resolve(candidate.dir).toLowerCase()
+      : path.resolve(candidate.dir);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    deduped.push(candidate);
+  }
+  return deduped;
 }
 
 async function readSkillsFromDir(
@@ -95,27 +116,40 @@ async function readSkillsFromDir(
 ): Promise<void> {
   let entries: string[];
   try { entries = await fs.readdir(dir); } catch { return; }
+  const sortedEntries = [...entries].sort((a, b) => a.localeCompare(b));
+  const readResults = await mapWithConcurrency(
+    sortedEntries,
+    Math.min(IO_CONCURRENCY, Math.max(1, sortedEntries.length)),
+    async (entry) => {
+      const entryPath = path.join(dir, entry);
+      try {
+        const stat = await fs.stat(entryPath);
+        if (!stat.isDirectory()) return null;
 
-  for (const entry of entries) {
-    const entryPath = path.join(dir, entry);
-    let stat;
-    try { stat = await fs.stat(entryPath); } catch { continue; }
+        const skillMdPath = path.join(entryPath, "SKILL.md");
+        if (!await fileExists(skillMdPath)) return null;
 
-    if (stat.isDirectory()) {
-      // Directory-based skill: skills/<name>/SKILL.md
-      const skillMdPath = path.join(entryPath, "SKILL.md");
-      if (await fileExists(skillMdPath)) {
         const raw = await fs.readFile(skillMdPath, "utf-8");
         const { data, content } = parseFrontmatter<Record<string, any>>(raw);
-        target[entry] = {
-          name: data.name || entry,
-          description: data.description,
-          content,
-          trigger: data.trigger,
-          scope,
+        return {
+          entry,
+          skill: {
+            name: data.name || entry,
+            description: data.description,
+            content,
+            trigger: data.trigger,
+            scope,
+          } satisfies Skill,
         };
+      } catch {
+        return null;
       }
-    }
+    },
+  );
+
+  for (const result of readResults) {
+    if (!result) continue;
+    target[result.entry] = result.skill;
   }
 }
 
@@ -128,15 +162,19 @@ export class OpenCodeAdapter implements ClientAdapter {
   }
 
   async detect(): Promise<boolean> {
-    const paths = this.candidates().map((candidate) => candidate.path);
-    return (await firstExistingPath(paths)) !== null;
+    const configPaths = this.candidates().map((candidate) => candidate.path);
+    if ((await firstExistingPath(configPaths)) !== null) {
+      return true;
+    }
+    const skillRoots = skillDirCandidates(homeDir()).map((candidate) => candidate.dir);
+    return (await firstExistingPath(skillRoots)) !== null;
   }
 
   private async resolvedConfigPath(scope: ConfigScope): Promise<string> {
     const candidates = this.candidates().filter((candidate) => candidate.scope === scope);
     const first = await firstExistingScopedPath(candidates);
     if (first) return first.path;
-    return candidates[0]?.path ?? this.candidates()[0]?.path ?? path.join(process.cwd(), ".config", "opencode", "config.json");
+    return candidates[0]?.path ?? this.candidates()[0]?.path ?? path.join(homeDir(), ".config", "opencode", "config.json");
   }
 
   async read(): Promise<{ mcps: Record<string, McpServer>, agents: Record<string, Agent>, skills: Record<string, Skill>, permissions?: Permissions, models?: Models, prompts?: Prompts, credentials?: Credentials }> {
@@ -148,15 +186,24 @@ export class OpenCodeAdapter implements ClientAdapter {
 
     // Read MCPs and agents from JSON config candidates (sorted by scope weight, higher wins)
     const candidates = this.candidates().sort((a, b) => scopeWeight(a.scope) - scopeWeight(b.scope));
-    for (const candidate of candidates) {
-      try {
-        const data = await fs.readFile(candidate.path, "utf-8");
-        const parsed = JSON.parse(data) as Record<string, any>;
-        mergeMcpServers(parsed, result.mcps, candidate.scope);
-        mergeAgents(parsed, result.agents, candidate.scope);
-      } catch {
-        /* missing or invalid */
-      }
+    const parsedCandidates = await mapWithConcurrency(
+      candidates,
+      Math.min(IO_CONCURRENCY, Math.max(1, candidates.length)),
+      async (candidate) => {
+        try {
+          const data = await fs.readFile(candidate.path, "utf-8");
+          const parsed = JSON.parse(data) as Record<string, any>;
+          return { candidate, parsed };
+        } catch {
+          return null;
+        }
+      },
+    );
+
+    for (const entry of parsedCandidates) {
+      if (!entry) continue;
+      mergeMcpServers(entry.parsed, result.mcps, entry.candidate.scope);
+      mergeAgents(entry.parsed, result.agents, entry.candidate.scope);
     }
 
     // Read skills from SKILL.md directories (sorted by scope weight, higher wins)

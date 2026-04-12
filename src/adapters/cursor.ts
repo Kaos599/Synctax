@@ -7,8 +7,11 @@ import { assertSafeResourceName } from "../resource-name.js";
 import { splitByScope } from "../scopes.js";
 import { atomicWriteFile } from "../fs-utils.js";
 import { toArray } from "../coerce.js";
+import { mapWithConcurrency } from "../utils/async-pool.js";
 
 import type { Permissions, Models, Prompts, Credentials } from "../types.js";
+
+const IO_CONCURRENCY = 8;
 
 function stripScope<T extends { scope?: ResourceScope }>(item: T): Omit<T, "scope"> {
   const { scope: _scope, ...rest } = item;
@@ -160,12 +163,28 @@ export class CursorAdapter implements ClientAdapter {
   ): Promise<void> {
     try {
       const files = await fs.readdir(dir);
-      for (const file of files) {
-        if (!file.endsWith(".md")) continue;
-        const name = file.replace(".md", "");
-        const content = await fs.readFile(path.join(dir, file), "utf-8");
-        const trigger = `/${name}`;
-        target[name] = { name, content: content.trim(), trigger };
+      const markdownFiles = files
+        .filter((file) => file.endsWith(".md"))
+        .sort((a, b) => a.localeCompare(b));
+
+      const readResults = await mapWithConcurrency(
+        markdownFiles,
+        Math.min(IO_CONCURRENCY, Math.max(1, markdownFiles.length)),
+        async (file) => {
+          try {
+            const name = file.replace(".md", "");
+            const content = await fs.readFile(path.join(dir, file), "utf-8");
+            const trigger = `/${name}`;
+            return { name, skill: { name, content: content.trim(), trigger } };
+          } catch {
+            return null;
+          }
+        },
+      );
+
+      for (const result of readResults) {
+        if (!result) continue;
+        target[result.name] = result.skill;
       }
     } catch (e: any) {}
   }
@@ -178,34 +197,49 @@ export class CursorAdapter implements ClientAdapter {
     let entries: string[];
     try { entries = await fs.readdir(dir); } catch { return; }
 
-    for (const entry of entries) {
-      const entryPath = path.join(dir, entry);
-      let stat;
-      try { stat = await fs.stat(entryPath); } catch { continue; }
+    const sortedEntries = [...entries].sort((a, b) => a.localeCompare(b));
+    const readResults = await mapWithConcurrency(
+      sortedEntries,
+      Math.min(IO_CONCURRENCY, Math.max(1, sortedEntries.length)),
+      async (entry) => {
+        const entryPath = path.join(dir, entry);
+        try {
+          const stat = await fs.stat(entryPath);
+          if (!stat.isDirectory()) return null;
 
-      if (stat.isDirectory()) {
-        const skillMdPath = path.join(entryPath, "SKILL.md");
-        if (await fileExists(skillMdPath)) {
+          const skillMdPath = path.join(entryPath, "SKILL.md");
+          if (!await fileExists(skillMdPath)) return null;
+
           const raw = await fs.readFile(skillMdPath, "utf-8");
           const { data, content } = parseFrontmatter<Record<string, any>>(raw);
-          target[entry] = {
-            name: data.name || entry,
-            description: data.description,
-            content,
-            trigger: data.trigger,
-            argumentHint: data["argument-hint"],
-            disableModelInvocation: data["disable-model-invocation"],
-            userInvocable: data["user-invocable"],
-            allowedTools: toArray(data["allowed-tools"]),
-            model: data.model,
-            effort: data.effort,
-            context: toArray(data.context),
-            agent: data.agent,
-            hooks: data.hooks,
-            scope,
+          return {
+            entry,
+            skill: {
+              name: data.name || entry,
+              description: data.description,
+              content,
+              trigger: data.trigger,
+              argumentHint: data["argument-hint"],
+              disableModelInvocation: data["disable-model-invocation"],
+              userInvocable: data["user-invocable"],
+              allowedTools: toArray(data["allowed-tools"]),
+              model: data.model,
+              effort: data.effort,
+              context: toArray(data.context),
+              agent: data.agent,
+              hooks: data.hooks,
+              scope,
+            } satisfies Skill,
           };
+        } catch {
+          return null;
         }
-      }
+      },
+    );
+
+    for (const result of readResults) {
+      if (!result) continue;
+      target[result.entry] = result.skill;
     }
   }
 }

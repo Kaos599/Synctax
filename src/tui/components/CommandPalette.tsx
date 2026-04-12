@@ -19,7 +19,8 @@ export function CommandPalette({ onSelect, onCancel }: CommandPaletteProps) {
     : allActions.filter((a) =>
       a.label.toLowerCase().includes(query.toLowerCase())
       || a.commandPreview.toLowerCase().includes(query.toLowerCase())
-      || a.id.toLowerCase().includes(query.toLowerCase()),
+      || a.id.toLowerCase().includes(query.toLowerCase())
+      || (a.description && a.description.toLowerCase().includes(query.toLowerCase())),
     );
 
   // Scrolling viewport — show up to MAX_VISIBLE items, scroll to keep selection visible

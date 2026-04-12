@@ -113,8 +113,9 @@ export const FeatureCard = ({ id, title, description, details }: FeatureCardProp
         w-[85vw] md:w-[400px] shrink-0
         border border-[#1a1a1a] bg-black
         flex flex-col group
-        transition-colors duration-200
+        transition-all duration-200
         hover:border-[#333]
+        hover:-translate-y-1 hover:-translate-x-1 hover:shadow-[6px_6px_0px_#00FF00]
       "
     >
       {/* Top Header — black on black, system label style */}

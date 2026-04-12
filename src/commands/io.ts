@@ -6,6 +6,7 @@ import { getConfigManager } from "./_shared.js";
 import { getVersion } from "../version.js";
 import { ConfigSchema } from "../types.js";
 import { requireInteractiveTTY } from "./_terminal.js";
+import { acquireLock } from "../lock.js";
 
 function timestampLike(input: string): string {
   return input.replace(/[:.]/g, "-");
@@ -102,7 +103,11 @@ export async function exportCommand(filePath: string) {
   console.log(ui.format.brandHeader(getVersion(), config.activeProfile));
 
   const resolvedPath = path.resolve(process.cwd(), filePath);
-  await fs.writeFile(resolvedPath, JSON.stringify(config, null, 2), "utf-8");
+  const exportable = JSON.parse(JSON.stringify(config));
+  if (exportable.resources) {
+    delete exportable.resources.credentials;
+  }
+  await fs.writeFile(resolvedPath, JSON.stringify(exportable, null, 2), "utf-8");
   ui.success(`Exported master configuration to ${resolvedPath}`);
 
   console.log(ui.format.summary(timer.elapsed(), `exported to ${resolvedPath}`));
@@ -122,6 +127,9 @@ export async function importCommand(filePath: string) {
   }
 
   console.log(ui.format.brandHeader(getVersion(), activeProfile));
+
+  const lock = await acquireLock("import");
+  try {
 
   const resolvedPath = path.resolve(process.cwd(), filePath);
   let rawData: string;
@@ -195,5 +203,8 @@ export async function importCommand(filePath: string) {
   } catch (e: any) {
     ui.error(`Imported config is invalid: ${e.message}`);
     process.exitCode = 1;
+  }
+  } finally {
+    await lock.release();
   }
 }

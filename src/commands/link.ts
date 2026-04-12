@@ -96,7 +96,14 @@ export async function linkCommand() {
     }
 
     const relativeCanonical = path.relative(path.dirname(targetPath), canonicalPath);
-    await fs.symlink(relativeCanonical, targetPath);
+    try {
+      await fs.symlink(relativeCanonical, targetPath);
+    } catch (err: any) {
+      if (err.code === "EPERM" && process.platform === "win32") {
+        throw new Error(`Symlink failed: Windows requires Developer Mode or admin privileges. Enable Developer Mode in Settings > For Developers, or use 'synctax unlink' to copy files instead.`);
+      }
+      throw err;
+    }
     linked++;
   }
 

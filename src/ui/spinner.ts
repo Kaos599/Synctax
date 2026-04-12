@@ -14,12 +14,16 @@ export interface SpinnerInstance {
 const unicodeFrames = ["\u28CB", "\u28D9", "\u28F9", "\u28F8", "\u28FC", "\u28F4", "\u28E6", "\u28E7", "\u28C7", "\u28CF"];
 const asciiFrames = ["-", "\\", "|", "/"];
 
+function usePlainOutputMode(): boolean {
+  return process.env.SYNCTAX_TUI_PLAIN_OUTPUT === "1";
+}
+
 export function spinner(text: string): SpinnerInstance {
   const capabilities = getCapabilities();
   const stream = process.stderr;
   const frames = capabilities.unicode ? unicodeFrames : asciiFrames;
   const ellipsis = capabilities.unicode ? "…" : "...";
-  const canAnimate = capabilities.animate;
+  const canAnimate = capabilities.animate && !usePlainOutputMode();
 
   let frameIndex = 0;
   let currentText = text;
@@ -89,6 +93,9 @@ export function spinner(text: string): SpinnerInstance {
 }
 
 export function isInteractive(): boolean {
+  if (usePlainOutputMode()) {
+    return false;
+  }
   const capabilities = getCapabilities();
   return capabilities.stdoutIsTTY || capabilities.stderrIsTTY;
 }

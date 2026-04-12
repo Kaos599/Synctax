@@ -19,7 +19,7 @@ export interface QuickActionsProps {
 
 export function QuickActions({ focused }: QuickActionsProps) {
   // Show first 10 numeric actions in a grid (1-9, 0)
-  const numericActions = TUI_ACTIONS.filter((a) => /^[0-9]$/.test(a.hotkey));
+  const numericActions = TUI_ACTIONS.filter((a) => /^[0-9!@#]$/.test(a.hotkey));
   const cols = 5;
   const colWidth = 18;
   const rows: typeof numericActions[] = [];

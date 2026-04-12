@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { ConfigManager } from "../src/config.js";
 import { ClaudeAdapter } from "../src/adapters/claude.js";
+import { applyProfileFilter } from "../src/commands/_shared.js";
 import fs from "fs/promises";
 import path from "path";
 import os from "os";
@@ -164,5 +165,52 @@ describe("Permissions Domain & Merge-Conservative Logic", () => {
     expect(merged.networkAllow).toBe(false);
     // trustedFolders: p2 has no trustedFolders, so p1's are kept (no intersection needed)
     expect(merged.trustedFolders).toContain("/Users/me");
+  });
+});
+
+describe("P1 profile filter audit fix", () => {
+  it("strips permissions/models/prompts when include list is active", async () => {
+    const resources = {
+      mcps: { "mcp-a": { command: "a" }, "mcp-b": { command: "b" } },
+      agents: { "agent-1": { name: "A1", prompt: "p" } },
+      skills: {},
+      permissions: { allowedPaths: ["/tmp"], deniedPaths: [], allowedCommands: [], deniedCommands: [], networkAllow: true },
+      models: { defaultModel: "claude-3" },
+      prompts: { globalSystemPrompt: "Be helpful" },
+    };
+    const filtered = await applyProfileFilter(resources, { include: ["mcp-a", "agent-1"] });
+    expect(filtered.mcps["mcp-a"]).toBeDefined();
+    expect(filtered.mcps["mcp-b"]).toBeUndefined();
+    expect(filtered.permissions).toBeUndefined();
+    expect(filtered.models).toBeUndefined();
+    expect(filtered.prompts).toBeUndefined();
+  });
+
+  it("keeps permissions/models/prompts when only exclude list active", async () => {
+    const resources = {
+      mcps: { "mcp-a": { command: "a" }, "mcp-b": { command: "b" } },
+      agents: {}, skills: {},
+      permissions: { allowedPaths: ["/tmp"] },
+      models: { defaultModel: "claude-3" },
+      prompts: { globalSystemPrompt: "Be helpful" },
+    };
+    const filtered = await applyProfileFilter(resources, { exclude: ["mcp-b"] });
+    expect(filtered.mcps["mcp-a"]).toBeDefined();
+    expect(filtered.mcps["mcp-b"]).toBeUndefined();
+    expect(filtered.permissions).toBeDefined();
+    expect(filtered.models).toBeDefined();
+    expect(filtered.prompts).toBeDefined();
+  });
+
+  it("strips prompts when excluded by domain name", async () => {
+    const resources = {
+      mcps: {}, agents: {}, skills: {},
+      permissions: { allowedPaths: [] },
+      models: { defaultModel: "claude-3" },
+      prompts: { globalSystemPrompt: "secret" },
+    };
+    const filtered = await applyProfileFilter(resources, { exclude: ["prompts"] });
+    expect(filtered.prompts).toBeUndefined();
+    expect(filtered.models).toBeDefined();
   });
 });

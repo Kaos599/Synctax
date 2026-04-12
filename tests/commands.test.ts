@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { pullCommand, moveCommand } from "../src/commands.js";
+import { pullCommand, moveCommand, syncCommand, statusCommand, doctorCommand } from "../src/commands.js";
 import { ConfigManager } from "../src/config.js";
 import { adapters } from "../src/adapters/index.js";
 import { checkbox } from "@inquirer/prompts";
@@ -76,6 +76,38 @@ describe("CLI Commands", () => {
     const pulledAgent = expectDefined(config.resources.agents["mock-agent"], "Expected mock-agent to exist");
     expect(pulledMcp.command).toBe("mock");
     expect(pulledAgent.prompt).toBe("Mocking");
+  });
+
+  it("pullCommand normalizes real-world client aliases", async () => {
+    const previousOpencode = adapters["opencode"];
+    const opencodeRead = vi.fn(async () => ({
+      mcps: { "alias-mcp": { command: "node" } },
+      agents: {},
+      skills: {},
+      permissions: createPermissions(),
+    }));
+
+    adapters["opencode"] = {
+      id: "opencode",
+      name: "OpenCode",
+      detect: async () => true,
+      read: opencodeRead,
+      write: async () => {},
+      getMemoryFileName: () => "AGENTS.md",
+      readMemory: async () => null,
+      writeMemory: async () => {},
+    } as any;
+
+    try {
+      await pullCommand({ from: "open code", merge: true });
+
+      const config = await manager.read();
+      expect(config.source).toBe("opencode");
+      expect(opencodeRead).toHaveBeenCalledTimes(1);
+      expect(config.resources.mcps["alias-mcp"]).toBeDefined();
+    } finally {
+      adapters["opencode"] = previousOpencode;
+    }
   });
 
   it("pullCommand sets non-zero exitCode when adapter read fails", async () => {
@@ -456,12 +488,20 @@ describe("CLI Commands", () => {
     expect(config.theme).toBe("cyber");
   });
 
-  it("initCommand defaults to rebel theme if not provided", async () => {
+  it("initCommand defaults to synctax theme if not provided", async () => {
     const { initCommand } = await import("../src/commands.js");
     await initCommand({ force: true, detect: false, yes: true });
     
     const config = await manager.read();
-    expect(config.theme).toBe("rebel");
+    expect(config.theme).toBe("synctax");
+  });
+
+  it("initCommand normalizes source aliases to canonical client ids", async () => {
+    const { initCommand } = await import("../src/commands.js");
+    await initCommand({ source: "open-code", force: true, detect: false, yes: true });
+
+    const config = await manager.read();
+    expect(config.source).toBe("opencode");
   });
 
   it("doctorCommand diagnoses setup issues", async () => {
@@ -630,12 +670,108 @@ describe("CLI Commands", () => {
     await expect(fs.access(envPath)).rejects.toBeDefined();
   });
 
+  it("sync does not rewrite master config when source pull has no effective changes", async () => {
+    const { syncCommand } = await import("../src/commands.js");
+
+    adapters["noopsource"] = {
+      id: "noopsource",
+      name: "No-op Source",
+      detect: async () => true,
+      read: async () => ({ mcps: {}, agents: {}, skills: {} }),
+      write: async () => {},
+      getMemoryFileName: () => "NOOP.md",
+      readMemory: async () => null,
+      writeMemory: async () => {},
+    } as any;
+
+    await manager.write(createConfig({
+      version: 1,
+      source: "noopsource",
+      theme: "synctax",
+      clients: { noopsource: { enabled: true } },
+      resources: {
+        mcps: {},
+        agents: {},
+        skills: {},
+        permissions: createPermissions(),
+      },
+    }));
+
+    const writeSpy = vi.spyOn(ConfigManager.prototype, "write");
+
+    try {
+      await syncCommand({ dryRun: false, yes: true });
+      expect(writeSpy).not.toHaveBeenCalled();
+
+      const config = await manager.read();
+      expect(config.theme).toBe("synctax");
+    } finally {
+      delete adapters["noopsource"];
+    }
+  });
+
+  it("sync resolves aliased source and aliased enabled-client ids", async () => {
+    const { syncCommand } = await import("../src/commands.js");
+    const previousOpencode = adapters["opencode"];
+
+    const sourceRead = vi.fn(async () => ({ mcps: {}, agents: {}, skills: {} }));
+    const targetWrite = vi.fn(async () => {});
+
+    adapters["opencode"] = {
+      id: "opencode",
+      name: "OpenCode",
+      detect: async () => true,
+      read: sourceRead,
+      write: async () => {},
+      getMemoryFileName: () => "AGENTS.md",
+      readMemory: async () => null,
+      writeMemory: async () => {},
+    } as any;
+
+    adapters["mocktarget"] = {
+      id: "mocktarget",
+      name: "Mock Target",
+      detect: async () => true,
+      read: async () => ({ mcps: {}, agents: {}, skills: {} }),
+      write: targetWrite,
+      getMemoryFileName: () => "MOCK.md",
+      readMemory: async () => null,
+      writeMemory: async () => {},
+    } as any;
+
+    await manager.write(createConfig({
+      version: 1,
+      source: "open code",
+      clients: {
+        "open code": { enabled: true },
+        mocktarget: { enabled: true },
+      },
+      resources: {
+        mcps: { "sync-mcp": { command: "echo" } },
+        agents: {},
+        skills: {},
+        permissions: createPermissions(),
+      },
+    }));
+
+    try {
+      await syncCommand({ dryRun: false, yes: true });
+      expect(sourceRead).toHaveBeenCalledTimes(1);
+      expect(targetWrite).toHaveBeenCalledTimes(1);
+    } finally {
+      adapters["opencode"] = previousOpencode;
+      delete adapters["mocktarget"];
+    }
+  });
+
   it("profilePullCommand fails gracefully on invalid payload", async () => {
     const { profilePullCommand } = await import("../src/commands.js");
 
+    const brokenPayload = { name: "broken" };
     const fetchSpyInvalid = vi.spyOn(globalThis, "fetch").mockResolvedValue({
       ok: true,
-      json: () => Promise.resolve({ name: "broken" }),
+      headers: { get: () => null },
+      text: () => Promise.resolve(JSON.stringify(brokenPayload)),
     } as any);
 
     await profilePullCommand("https://dummy.url");
@@ -647,33 +783,35 @@ describe("CLI Commands", () => {
   it("profilePullCommand merges supported profile domains", async () => {
     const { profilePullCommand } = await import("../src/commands.js");
 
+    const mergePayload = {
+      name: "team-profile",
+      profile: { include: ["team-mcp"], exclude: [] },
+      resources: {
+        mcps: { "team-mcp": { command: "echo" } },
+        agents: { "team-agent": { name: "Team", prompt: "Do team things" } },
+        skills: { "team-skill": { name: "Team Skill", content: "Use team tools" } },
+        permissions: {
+          allowedPaths: ["/safe"],
+          deniedPaths: ["/safe"],
+          allowedCommands: ["ls"],
+          deniedCommands: ["ls"],
+          networkAllow: true,
+          allow: [],
+          deny: [],
+          ask: [],
+          allowedUrls: [],
+          deniedUrls: [],
+          trustedFolders: [],
+        },
+        models: { defaultModel: "gpt-5" },
+        prompts: { globalSystemPrompt: "Be helpful" },
+        credentials: { envRefs: { SHOULD_NOT: "MERGE" } },
+      },
+    };
     const fetchSpyMerge = vi.spyOn(globalThis, "fetch").mockResolvedValue({
       ok: true,
-      json: () => Promise.resolve({
-        name: "team-profile",
-        profile: { include: ["team-mcp"], exclude: [] },
-        resources: {
-          mcps: { "team-mcp": { command: "echo" } },
-          agents: { "team-agent": { name: "Team", prompt: "Do team things" } },
-          skills: { "team-skill": { name: "Team Skill", content: "Use team tools" } },
-          permissions: {
-            allowedPaths: ["/safe"],
-            deniedPaths: ["/safe"],
-            allowedCommands: ["ls"],
-            deniedCommands: ["ls"],
-            networkAllow: true,
-            allow: [],
-            deny: [],
-            ask: [],
-            allowedUrls: [],
-            deniedUrls: [],
-            trustedFolders: [],
-          },
-          models: { defaultModel: "gpt-5" },
-          prompts: { globalSystemPrompt: "Be helpful" },
-          credentials: { envRefs: { SHOULD_NOT: "MERGE" } },
-        },
-      }),
+      headers: { get: () => null },
+      text: () => Promise.resolve(JSON.stringify(mergePayload)),
     } as any);
 
     await profilePullCommand("https://dummy.url");
@@ -702,17 +840,19 @@ describe("CLI Commands", () => {
     const { profilePullCommand } = await import("../src/commands.js");
     const previousExitCode = process.exitCode;
 
+    const unsafePayload = {
+      name: "unsafe-profile",
+      profile: { include: [] },
+      resources: {
+        mcps: {
+          "../../escape": { command: "echo", args: ["oops"] },
+        },
+      },
+    };
     const fetchSpyUnsafe = vi.spyOn(globalThis, "fetch").mockResolvedValue({
       ok: true,
-      json: () => Promise.resolve({
-        name: "unsafe-profile",
-        profile: { include: [] },
-        resources: {
-          mcps: {
-            "../../escape": { command: "echo", args: ["oops"] },
-          },
-        },
-      }),
+      headers: { get: () => null },
+      text: () => Promise.resolve(JSON.stringify(unsafePayload)),
     } as any);
 
     try {
@@ -737,7 +877,7 @@ describe("CLI Commands", () => {
       source: "claude",
       clients: {},
       profiles: {
-        "team-profile": { include: ["team-mcp", "team-agent", "team-skill"], exclude: ["skip-this"] },
+        "team-profile": { include: ["team-mcp", "team-agent", "team-skill", "permissions", "models", "prompts"], exclude: ["skip-this"] },
       },
       activeProfile: "default",
       resources: {
@@ -767,12 +907,11 @@ describe("CLI Commands", () => {
     expect(published).toBeDefined();
     expect(published.resources.credentials).toBeUndefined();
 
+    const roundTripPayload = { ...published, name: "imported-team-profile" };
     const fetchSpyRoundTrip = vi.spyOn(globalThis, "fetch").mockResolvedValue({
       ok: true,
-      json: () => Promise.resolve({
-        ...published,
-        name: "imported-team-profile",
-      }),
+      headers: { get: () => null },
+      text: () => Promise.resolve(JSON.stringify(roundTripPayload)),
     } as any);
 
     await profilePullCommand("https://dummy.url");
@@ -787,5 +926,528 @@ describe("CLI Commands", () => {
     expect(config.resources.prompts).toEqual(published.resources.prompts);
     expect(expectDefined(config.resources.credentials, "Expected credentials").envRefs.SECRET).toBe("VALUE");
     fetchSpyRoundTrip.mockRestore();
+  });
+});
+
+describe("P0 audit fixes", () => {
+  let mockHome: string;
+  let manager: ConfigManager;
+
+  beforeEach(async () => {
+    mockHome = await fs.mkdtemp(path.join(os.tmpdir(), "synctax-p0-audit-"));
+    process.env.SYNCTAX_HOME = mockHome;
+    await fs.mkdir(path.join(mockHome, ".synctax"), { recursive: true });
+    manager = new ConfigManager();
+  });
+
+  afterEach(async () => {
+    vi.restoreAllMocks();
+    await fs.rm(mockHome, { recursive: true, force: true });
+    delete process.env.SYNCTAX_HOME;
+  });
+
+  it("doctorCommand output says synctax not agentsync", async () => {
+    const { doctorCommand } = await import("../src/commands.js");
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+
+    await manager.write(createConfig({
+      version: 1,
+      clients: { mockclient: { enabled: true } },
+      resources: createResources(),
+    }));
+
+    // Register a mock adapter so the doctor check can find it
+    adapters["mockclient"] = {
+      id: "mockclient",
+      name: "Mock Client",
+      detect: async () => true,
+      read: async () => ({ mcps: {}, agents: {}, skills: {}, permissions: createPermissions() }),
+      write: async () => {},
+      getMemoryFileName: () => "MOCK.md",
+      readMemory: async () => null,
+      writeMemory: async () => {},
+    } as any;
+
+    try {
+      await doctorCommand({});
+      const output = logSpy.mock.calls.map((call) => String(call[0])).join("\n");
+      expect(output).toContain("synctax");
+      expect(output.toLowerCase()).not.toContain("agentsync");
+    } finally {
+      delete adapters["mockclient"];
+    }
+  });
+
+  it("doctorCommand does not report all-passed with zero enabled clients", async () => {
+    const { doctorCommand } = await import("../src/commands.js");
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+
+    await manager.write(createConfig({
+      version: 1,
+      clients: {},
+      resources: createResources(),
+    }));
+
+    const result = await doctorCommand({});
+
+    expect(result).toBe(false);
+    const output = logSpy.mock.calls.map((call) => String(call[0])).join("\n");
+    expect(output).not.toContain("All checks passed");
+  });
+
+  it("sync --dry-run does not write master config when source has new resources", async () => {
+    const { syncCommand } = await import("../src/commands.js");
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+
+    // Register mock source adapter that returns extra MCPs
+    adapters["drysource"] = {
+      id: "drysource",
+      name: "Dry Source",
+      detect: async () => true,
+      read: async () => ({
+        mcps: { "new-from-source": { command: "node", args: ["server.js"] } },
+        agents: {},
+        skills: {},
+        permissions: createPermissions(),
+      }),
+      write: async () => {},
+      getMemoryFileName: () => "DRY.md",
+      readMemory: async () => null,
+      writeMemory: async () => {},
+    } as any;
+
+    // Write initial config with drysource as the source
+    await manager.write(createConfig({
+      version: 1,
+      source: "drysource",
+      clients: { drysource: { enabled: true } },
+      resources: createResources({
+        mcps: { "existing-mcp": { command: "echo" } },
+      }),
+    }));
+
+    // Snapshot config file content BEFORE
+    const configPath = path.join(mockHome, ".synctax", "config.json");
+    const before = await fs.readFile(configPath, "utf-8");
+
+    // Run sync with --dry-run
+    await syncCommand({ dryRun: true });
+
+    // Read config file content AFTER
+    const after = await fs.readFile(configPath, "utf-8");
+
+    // Assert content is UNCHANGED
+    expect(after).toBe(before);
+
+    // Clean up mock adapter
+    delete adapters["drysource"];
+  });
+});
+
+describe("P1 sync safety fixes", () => {
+  let mockHome: string;
+  let manager: any;
+
+  beforeEach(async () => {
+    mockHome = await fs.mkdtemp(path.join(os.tmpdir(), "synctax-p1-sync-"));
+    process.env.SYNCTAX_HOME = mockHome;
+    const { ConfigManager } = await import("../src/config.js");
+    manager = new ConfigManager();
+  });
+
+  afterEach(async () => {
+    await fs.rm(mockHome, { recursive: true, force: true });
+    delete process.env.SYNCTAX_HOME;
+  });
+
+  it("sync skips writing to clients whose analyze failed", async () => {
+    const { syncCommand } = await import("../src/commands.js");
+    const { adapters } = await import("../src/adapters/index.js");
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+
+    const failWrite = vi.fn();
+    const okWrite = vi.fn();
+
+    adapters["p1-fail"] = {
+      id: "p1-fail",
+      name: "FailClient",
+      detect: async () => true,
+      read: async () => { throw new Error("simulated analyze failure"); },
+      write: failWrite,
+      getMemoryFileName: () => "MOCK.md",
+      readMemory: async () => null,
+      writeMemory: async () => {},
+    } as any;
+
+    adapters["p1-ok"] = {
+      id: "p1-ok",
+      name: "OkClient",
+      detect: async () => true,
+      read: async () => ({ mcps: {}, agents: {}, skills: {}, permissions: undefined }),
+      write: okWrite,
+      getMemoryFileName: () => "MOCK.md",
+      readMemory: async () => null,
+      writeMemory: async () => {},
+    } as any;
+
+    await manager.write(createConfig({
+      version: 1,
+      clients: { "p1-fail": { enabled: true }, "p1-ok": { enabled: true } },
+      resources: createResources({
+        mcps: { "test-mcp": { command: "echo" } },
+      }),
+    }));
+
+    try {
+      await syncCommand({ dryRun: false, yes: true });
+      expect(failWrite).not.toHaveBeenCalled();
+      expect(okWrite).toHaveBeenCalled();
+    } finally {
+      delete adapters["p1-fail"];
+      delete adapters["p1-ok"];
+      logSpy.mockRestore();
+    }
+  });
+
+  it("sync reports source-pull changes in output", async () => {
+    const { syncCommand } = await import("../src/commands.js");
+    const { adapters } = await import("../src/adapters/index.js");
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+
+    adapters["p1-source"] = {
+      id: "p1-source",
+      name: "SourceClient",
+      detect: async () => true,
+      read: async () => ({
+        mcps: { "new-from-source": { command: "injected" } },
+        agents: {},
+        skills: {},
+        permissions: undefined,
+      }),
+      write: async () => {},
+      getMemoryFileName: () => "MOCK.md",
+      readMemory: async () => null,
+      writeMemory: async () => {},
+    } as any;
+
+    await manager.write(createConfig({
+      version: 1,
+      source: "p1-source",
+      clients: { "p1-source": { enabled: true } },
+      resources: createResources({}),
+    }));
+
+    try {
+      await syncCommand({ dryRun: false, yes: true });
+      const output = logSpy.mock.calls.map((c) => String(c[0])).join("\n");
+      expect(output).toContain("Source pull modified master config");
+      expect(output).toContain("mcps");
+    } finally {
+      delete adapters["p1-source"];
+      logSpy.mockRestore();
+    }
+  });
+});
+
+describe("XPLAT bug fixes", () => {
+  let mockHome: string;
+  let manager: any;
+
+  beforeEach(async () => {
+    mockHome = await fs.mkdtemp(path.join(os.tmpdir(), "synctax-xplat-"));
+    process.env.SYNCTAX_HOME = mockHome;
+    const { ConfigManager } = await import("../src/config.js");
+    manager = new ConfigManager();
+  });
+
+  afterEach(async () => {
+    vi.restoreAllMocks();
+    await fs.rm(mockHome, { recursive: true, force: true });
+    delete process.env.SYNCTAX_HOME;
+  });
+
+  it("sync with source that has models/prompts merges them into master", async () => {
+    const { syncCommand } = await import("../src/commands.js");
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+
+    adapters["model-source"] = {
+      id: "model-source",
+      name: "Model Source",
+      detect: async () => true,
+      read: async () => ({
+        mcps: {},
+        agents: {},
+        skills: {},
+        permissions: undefined,
+        models: { defaultModel: "gpt-5-turbo" },
+        prompts: { globalSystemPrompt: "You are a helpful assistant." },
+      }),
+      write: async () => {},
+      getMemoryFileName: () => "SOURCE.md",
+      readMemory: async () => null,
+      writeMemory: async () => {},
+    } as any;
+
+    adapters["model-target"] = {
+      id: "model-target",
+      name: "Model Target",
+      detect: async () => true,
+      read: async () => ({ mcps: {}, agents: {}, skills: {} }),
+      write: async () => {},
+      getMemoryFileName: () => "TARGET.md",
+      readMemory: async () => null,
+      writeMemory: async () => {},
+    } as any;
+
+    await manager.write(createConfig({
+      version: 1,
+      source: "model-source",
+      clients: {
+        "model-source": { enabled: true },
+        "model-target": { enabled: true },
+      },
+      resources: createResources({
+        mcps: {},
+        agents: {},
+        skills: {},
+        permissions: createPermissions(),
+      }),
+    }));
+
+    try {
+      await syncCommand({ dryRun: false, yes: true });
+      const config = await manager.read();
+      expect(config.resources.models?.defaultModel).toBe("gpt-5-turbo");
+      expect(config.resources.prompts?.globalSystemPrompt).toBe("You are a helpful assistant.");
+    } finally {
+      delete adapters["model-source"];
+      delete adapters["model-target"];
+      logSpy.mockRestore();
+    }
+  });
+});
+
+describe("P2 pull dry-run", () => {
+  let mockHome: string;
+  let manager: ConfigManager;
+
+  beforeEach(async () => {
+    mockHome = await fs.mkdtemp(path.join(os.tmpdir(), "synctax-p2-pull-dryrun-"));
+    process.env.SYNCTAX_HOME = mockHome;
+    await fs.mkdir(path.join(mockHome, ".synctax"), { recursive: true });
+    manager = new ConfigManager();
+    await manager.write(createConfig({
+      version: 1,
+      source: "claude",
+      clients: {},
+      resources: createResources({
+        mcps: { "existing-mcp": { command: "echo" } },
+        agents: {},
+        skills: {},
+        permissions: createPermissions(),
+      }),
+    }));
+
+    adapters["dryrun-mock"] = {
+      id: "dryrun-mock",
+      name: "DryRun Mock",
+      detect: async () => true,
+      read: async () => ({
+        mcps: { "new-mcp": { command: "node" } },
+        agents: { "new-agent": { name: "A", prompt: "p" } },
+        skills: {},
+        permissions: createPermissions(),
+      }),
+      write: async () => {},
+      getMemoryFileName: () => "MOCK.md",
+      readMemory: async () => null,
+      writeMemory: async () => {},
+    } as any;
+  });
+
+  afterEach(async () => {
+    vi.restoreAllMocks();
+    await fs.rm(mockHome, { recursive: true, force: true });
+    delete process.env.SYNCTAX_HOME;
+    delete adapters["dryrun-mock"];
+  });
+
+  it("pull --dry-run does not write master config", async () => {
+    const configPath = path.join(mockHome, ".synctax", "config.json");
+    const before = await fs.readFile(configPath, "utf-8");
+
+    await pullCommand({ from: "dryrun-mock", dryRun: true });
+
+    const after = await fs.readFile(configPath, "utf-8");
+    expect(after).toBe(before);
+
+    const config = await manager.read();
+    expect(config.resources.mcps["new-mcp"]).toBeUndefined();
+    expect(config.resources.mcps["existing-mcp"]).toBeDefined();
+  });
+
+  it("pull --dry-run prints summary with resource counts", async () => {
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+
+    await pullCommand({ from: "dryrun-mock", dryRun: true });
+
+    const output = logSpy.mock.calls.map((c) => String(c[0])).join("\n");
+    expect(output).toContain("Dry-run");
+    expect(output).toContain("MCPs");
+    expect(output).toContain("Agents");
+    logSpy.mockRestore();
+  });
+});
+
+describe("SEC-09 JSON output", () => {
+  let mockHome: string;
+  let manager: ConfigManager;
+
+  beforeEach(async () => {
+    mockHome = await fs.mkdtemp(path.join(os.tmpdir(), "synctax-sec09-json-"));
+    process.env.SYNCTAX_HOME = mockHome;
+    await fs.mkdir(path.join(mockHome, ".synctax"), { recursive: true });
+    manager = new ConfigManager();
+    await manager.write(createConfig({
+      version: 1,
+      source: "claude",
+      clients: { "json-mock": { enabled: true } },
+      resources: createResources({
+        mcps: { "test-mcp": { command: "echo" } },
+        agents: {},
+        skills: {},
+        permissions: createPermissions(),
+      }),
+    }));
+
+    adapters["json-mock"] = {
+      id: "json-mock",
+      name: "JSON Mock",
+      detect: async () => true,
+      read: async () => ({ mcps: {}, agents: {}, skills: {}, permissions: createPermissions() }),
+      write: async () => {},
+      getMemoryFileName: () => "MOCK.md",
+      readMemory: async () => null,
+      writeMemory: async () => {},
+    } as any;
+  });
+
+  afterEach(async () => {
+    vi.restoreAllMocks();
+    await fs.rm(mockHome, { recursive: true, force: true });
+    delete process.env.SYNCTAX_HOME;
+    delete adapters["json-mock"];
+  });
+
+  it("doctorCommand --json outputs valid JSON with healthy field", async () => {
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+
+    const result = await doctorCommand({ json: true });
+
+    const jsonCalls = logSpy.mock.calls.filter((c) => {
+      try { JSON.parse(String(c[0])); return true; } catch { return false; }
+    });
+    expect(jsonCalls.length).toBeGreaterThanOrEqual(1);
+    const parsed = JSON.parse(String(jsonCalls[0]![0]));
+    expect(parsed).toHaveProperty("healthy");
+    expect(parsed).toHaveProperty("clients");
+    expect(parsed).toHaveProperty("warnings");
+    expect(typeof parsed.healthy).toBe("boolean");
+
+    logSpy.mockRestore();
+  });
+
+  it("statusCommand --json outputs valid JSON with resource counts", async () => {
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+
+    await statusCommand({ json: true });
+
+    const jsonCalls = logSpy.mock.calls.filter((c) => {
+      try { JSON.parse(String(c[0])); return true; } catch { return false; }
+    });
+    expect(jsonCalls.length).toBeGreaterThanOrEqual(1);
+    const parsed = JSON.parse(String(jsonCalls[0]![0]));
+    expect(parsed).toHaveProperty("mcpCount");
+    expect(parsed).toHaveProperty("agentCount");
+    expect(parsed).toHaveProperty("skillCount");
+    expect(parsed).toHaveProperty("clients");
+    expect(parsed).toHaveProperty("warnings");
+
+    logSpy.mockRestore();
+  });
+});
+
+describe("SYNC-04 source merge includes models and prompts", () => {
+  let mockHome: string;
+  let manager: ConfigManager;
+
+  beforeEach(async () => {
+    mockHome = await fs.mkdtemp(path.join(os.tmpdir(), "synctax-sync04-"));
+    process.env.SYNCTAX_HOME = mockHome;
+    await fs.mkdir(path.join(mockHome, ".synctax"), { recursive: true });
+    manager = new ConfigManager();
+  });
+
+  afterEach(async () => {
+    vi.restoreAllMocks();
+    await fs.rm(mockHome, { recursive: true, force: true });
+    delete process.env.SYNCTAX_HOME;
+    delete adapters["sync04-source"];
+    delete adapters["sync04-target"];
+  });
+
+  it("sync source merge includes models and prompts", async () => {
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+
+    adapters["sync04-source"] = {
+      id: "sync04-source",
+      name: "SYNC04 Source",
+      detect: async () => true,
+      read: async () => ({
+        mcps: {},
+        agents: {},
+        skills: {},
+        permissions: undefined,
+        models: { defaultModel: "claude-opus" },
+        prompts: { globalSystemPrompt: "Be precise." },
+      }),
+      write: async () => {},
+      getMemoryFileName: () => "S.md",
+      readMemory: async () => null,
+      writeMemory: async () => {},
+    } as any;
+
+    adapters["sync04-target"] = {
+      id: "sync04-target",
+      name: "SYNC04 Target",
+      detect: async () => true,
+      read: async () => ({ mcps: {}, agents: {}, skills: {} }),
+      write: async () => {},
+      getMemoryFileName: () => "T.md",
+      readMemory: async () => null,
+      writeMemory: async () => {},
+    } as any;
+
+    await manager.write(createConfig({
+      version: 1,
+      source: "sync04-source",
+      clients: {
+        "sync04-source": { enabled: true },
+        "sync04-target": { enabled: true },
+      },
+      resources: createResources({
+        mcps: {},
+        agents: {},
+        skills: {},
+        permissions: createPermissions(),
+      }),
+    }));
+
+    await syncCommand({ dryRun: false, yes: true });
+
+    const config = await manager.read();
+    expect(config.resources.models?.defaultModel).toBe("claude-opus");
+    expect(config.resources.prompts?.globalSystemPrompt).toBe("Be precise.");
+    logSpy.mockRestore();
   });
 });
