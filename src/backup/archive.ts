@@ -144,6 +144,15 @@ export async function writeBackupBundle(params: {
     });
   }
 
+  // ⚡ Bolt: Replaced 4 O(N) .filter().length passes with a single O(N) .reduce() pass to minimize array allocations and improve large scale backup performance
+  const statusTotals = clientResults.reduce(
+    (acc, r) => {
+      acc[r.status]++;
+      return acc;
+    },
+    { success: 0, partial: 0, skipped: 0, failed: 0 }
+  );
+
   const rootManifest = {
     manifestVersion: 1,
     kind: "synctax-backup-bundle",
@@ -158,10 +167,10 @@ export async function writeBackupBundle(params: {
     })),
     totals: {
       clients: clientResults.length,
-      success: clientResults.filter((r) => r.status === "success").length,
-      partial: clientResults.filter((r) => r.status === "partial").length,
-      skipped: clientResults.filter((r) => r.status === "skipped").length,
-      failed: clientResults.filter((r) => r.status === "failed").length,
+      success: statusTotals.success,
+      partial: statusTotals.partial,
+      skipped: statusTotals.skipped,
+      failed: statusTotals.failed,
     },
   };
 
