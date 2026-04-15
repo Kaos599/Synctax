@@ -116,6 +116,7 @@ export class CursorAdapter implements ClientAdapter {
       try { existingModes = JSON.parse(await fs.readFile(this.modesPath, "utf-8")); } catch (e) {}
 
       for (const [key, agent] of Object.entries(resources.agents || {})) {
+        assertSafeResourceName(key, "agent");
         const clean = stripScope(agent);
         existingModes.modes[key] = { name: clean.name, description: clean.description, systemPrompt: clean.prompt, model: clean.model };
       }

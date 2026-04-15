@@ -56,7 +56,7 @@ describe("Security: Path Traversal", () => {
             "another_skill_123": { name: "Another Skill", content: "also safe" },
           },
         })
-      ).resolves.not.toThrow();
+      ).resolves.toBeUndefined();
     });
   });
 
@@ -112,7 +112,7 @@ describe("Security: Path Traversal", () => {
             "summarize": { name: "Summarize", content: "Summarize the input." },
           },
         })
-      ).resolves.not.toThrow();
+      ).resolves.toBeUndefined();
     });
   });
 });
