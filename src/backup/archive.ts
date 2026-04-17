@@ -144,6 +144,18 @@ export async function writeBackupBundle(params: {
     });
   }
 
+  // ⚡ Bolt Performance Optimization:
+  // Instead of 4 separate O(N) .filter().length passes that allocate new arrays,
+  // we do a single O(N) .reduce() pass to calculate all status counts.
+  // Reduces iteration by 75% and saves memory allocations for large result sets.
+  const statusCounts = clientResults.reduce(
+    (acc, r) => {
+      acc[r.status] = (acc[r.status] || 0) + 1;
+      return acc;
+    },
+    { success: 0, partial: 0, skipped: 0, failed: 0 } as Record<string, number>
+  );
+
   const rootManifest = {
     manifestVersion: 1,
     kind: "synctax-backup-bundle",
@@ -158,10 +170,10 @@ export async function writeBackupBundle(params: {
     })),
     totals: {
       clients: clientResults.length,
-      success: clientResults.filter((r) => r.status === "success").length,
-      partial: clientResults.filter((r) => r.status === "partial").length,
-      skipped: clientResults.filter((r) => r.status === "skipped").length,
-      failed: clientResults.filter((r) => r.status === "failed").length,
+      success: statusCounts.success,
+      partial: statusCounts.partial,
+      skipped: statusCounts.skipped,
+      failed: statusCounts.failed,
     },
   };
 
