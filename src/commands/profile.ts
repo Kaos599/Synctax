@@ -330,7 +330,7 @@ export async function profilePublishCommand(name: string, options?: any): Promis
 
   if (options?.output) {
     const fs = await import("fs/promises");
-    await fs.writeFile(options.output, jsonStr, "utf-8");
+    await fs.writeFile(options.output, jsonStr, { encoding: "utf-8", mode: 0o600 });
     ui.success(`Profile ${name} exported to ${options.output}`);
   } else {
     ui.header(`Profile Export JSON:`);
