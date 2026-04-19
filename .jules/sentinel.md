@@ -1,0 +1,4 @@
+## 2024-04-19 - [Atomic File Writes Bypass Default Permissions]
+**Vulnerability:** Zip backups and restored configuration files were created with default system permissions (e.g., `0o644`) instead of owner-only permissions (`0o600`), exposing sensitive configuration like API keys, paths, and prompts to other local users.
+**Learning:** Atomic file write utilities (`fs.writeFile` to a temp file, followed by `fs.rename`) do not inherit target file permissions or guarantee restricted access by default. The temporary file dictates the final permissions, meaning `{ mode: 0o600 }` must be explicitly passed to `fs.writeFile` for sensitive data.
+**Prevention:** Always explicitly set `{ mode: 0o600 }` when using `fs.writeFile` for temporary files that will be renamed to sensitive configuration or backup files. Use `atomicWriteSecure` where possible.
