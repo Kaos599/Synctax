@@ -595,8 +595,13 @@ async function syncCommandInner(
     process.exitCode = 1;
   }
 
-  const successCount = results.filter((r) => r.ok).length;
-  const failCount = results.filter((r) => !r.ok).length;
+  const { successCount, failCount } = results.reduce(
+    (acc, r) => {
+      r.ok ? acc.successCount++ : acc.failCount++;
+      return acc;
+    },
+    { successCount: 0, failCount: 0 }
+  );
   const summaryParts: string[] = [`${successCount} client${successCount !== 1 ? "s" : ""} synced`];
   if (failCount > 0) summaryParts.push(`${failCount} failed`);
   const phaseTimings = [
