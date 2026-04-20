@@ -5,7 +5,7 @@ import { getVersion } from "../version.js";
 import { EnvVault } from "../env-vault.js";
 import { assertSafeResourceMapKeys } from "../resource-name.js";
 import { acquireLock } from "../lock.js";
-import path from "path";
+import { atomicWriteSecure } from "../fs-utils.js";
 
 function toSortedKeys(record: Record<string, unknown> | undefined): string[] {
   return Object.keys(record || {}).sort((a, b) => a.localeCompare(b));
@@ -15,14 +15,6 @@ function summarizeProfile(profile: { include?: string[], exclude?: string[] }) {
   const includeCount = profile.include?.length || 0;
   const excludeCount = profile.exclude?.length || 0;
   return `${includeCount} include${includeCount === 1 ? "" : "s"}, ${excludeCount} exclude${excludeCount === 1 ? "" : "s"}`;
-}
-
-async function writeFileAtomicSecure(targetPath: string, content: string): Promise<void> {
-  const fs = await import("fs/promises");
-  const tempPath = `${targetPath}.tmp-${Date.now()}-${Math.random().toString(16).slice(2)}`;
-  await fs.mkdir(path.dirname(targetPath), { recursive: true });
-  await fs.writeFile(tempPath, content, { encoding: "utf-8", mode: 0o600 });
-  await fs.rename(tempPath, targetPath);
 }
 
 export async function profileListCommand(options?: { json?: boolean }) {
@@ -338,7 +330,7 @@ export async function profilePublishCommand(name: string, options?: any): Promis
   const jsonStr = JSON.stringify(exportPayload, null, 2);
 
   if (options?.output) {
-    await writeFileAtomicSecure(options.output, jsonStr);
+    await atomicWriteSecure(options.output, jsonStr);
     ui.success(`Profile ${name} exported to ${options.output}`);
   } else {
     ui.header(`Profile Export JSON:`);

@@ -150,7 +150,10 @@ export class GithubCopilotCliAdapter implements ClientAdapter {
       existing.mcpServers = existing.mcpServers || {};
       for (const [key, value] of Object.entries(allMcps)) {
         const formatted = mcpToCopilotCliFormat(value);
-        if (!formatted) continue;
+        if (!formatted) {
+          delete existing.mcpServers[key];
+          continue;
+        }
         existing.mcpServers[key] = formatted;
       }
       await atomicWriteFile(this.mcpConfigPath, JSON.stringify(existing, null, 2));

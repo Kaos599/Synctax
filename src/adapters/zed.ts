@@ -68,7 +68,10 @@ export class ZedAdapter implements ClientAdapter {
     existing.context_servers = existing.context_servers || {};
     for (const [key, value] of Object.entries(resources.mcps || {})) {
       const formatted = mcpToZedFormat(value);
-      if (!formatted) continue;
+      if (!formatted) {
+        delete existing.context_servers[key];
+        continue;
+      }
       existing.context_servers[key] = formatted;
     }
     await atomicWriteFile(configPath, JSON.stringify(existing, null, 2));

@@ -45,9 +45,11 @@ function mergeMcpServers(parsed: Record<string, any>, into: Record<string, McpSe
   for (const [key, val] of Object.entries<any>(mcp)) {
     if (!val || typeof val !== "object") continue;
     if (val.type === "remote") {
+      const url = typeof val.url === "string" ? val.url.trim() : "";
+      if (!url) continue;
       into[key] = {
         command: "",
-        url: val.url,
+        url,
         headers: val.headers,
         env: val.environment || {},
         transport: "sse",

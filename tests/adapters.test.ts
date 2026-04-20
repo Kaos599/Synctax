@@ -809,6 +809,29 @@ Compatibility skill content.`,
       );
       expect(content.mcpServers?.["remote-only"]).toBeUndefined();
     });
+
+    it("removes stale MCP entries when command becomes empty", async () => {
+      process.chdir(originalCwd);
+      const adapter = new AntigravityAdapter();
+      const configPath = path.join(mockHome, ".gemini", "antigravity", "mcp_config.json");
+      await fs.mkdir(path.dirname(configPath), { recursive: true });
+      await fs.writeFile(configPath, JSON.stringify({
+        mcpServers: {
+          stale: { command: "old-command" },
+        },
+      }));
+
+      await adapter.write({
+        mcps: {
+          stale: { command: "   " },
+        },
+        agents: {},
+        skills: {},
+      });
+
+      const content = JSON.parse(await fs.readFile(configPath, "utf-8"));
+      expect(content.mcpServers.stale).toBeUndefined();
+    });
   });
 
   describe("GeminiCliAdapter", () => {
@@ -830,6 +853,29 @@ Compatibility skill content.`,
       expect(mcps["no-args"].command).toBe("python3");
     });
 
+    it("filters non-string MCP args and env values when reading", async () => {
+      const adapter = new GeminiCliAdapter();
+      await fs.mkdir(path.join(mockHome, ".gemini"), { recursive: true });
+      await fs.writeFile(path.join(mockHome, ".gemini", "settings.json"), JSON.stringify({
+        mcpServers: {
+          mixed: {
+            command: "npx",
+            args: ["-y", 123, false],
+            env: {
+              GOOD: "ok",
+              BAD_NUMBER: 123,
+              BAD_BOOL: false,
+            },
+          },
+        },
+      }));
+
+      const { mcps } = await adapter.read();
+      expectHas(mcps, "mixed");
+      expect(mcps.mixed.args).toEqual(["-y"]);
+      expect(mcps.mixed.env).toEqual({ GOOD: "ok" });
+    });
+
     it("writes MCPs to settings.json", async () => {
       const adapter = new GeminiCliAdapter();
       await fs.mkdir(path.join(mockHome, ".gemini"), { recursive: true });
@@ -847,6 +893,30 @@ Compatibility skill content.`,
       expect(content.mcpServers.filesystem.command).toBe("npx");
       expect(content.mcpServers.filesystem.args).toEqual(["-y", "@modelcontextprotocol/server-filesystem", "/tmp"]);
       expect(content.mcpServers.filesystem.env).toEqual({ HOME: "/home" });
+    });
+
+    it("trims commands and removes existing entries with blank commands when writing", async () => {
+      const adapter = new GeminiCliAdapter();
+      await fs.mkdir(path.join(mockHome, ".gemini"), { recursive: true });
+      await fs.writeFile(path.join(mockHome, ".gemini", "settings.json"), JSON.stringify({
+        mcpServers: {
+          stale: { command: "old-command" },
+        },
+      }));
+
+      await adapter.write({
+        mcps: {
+          stale: { command: "   " },
+          fresh: { command: "  node  ", args: ["server.js"] },
+        },
+        agents: {},
+        skills: {},
+      });
+
+      const content = JSON.parse(await fs.readFile(path.join(mockHome, ".gemini", "settings.json"), "utf-8"));
+      expect(content.mcpServers.stale).toBeUndefined();
+      expect(content.mcpServers.fresh.command).toBe("node");
+      expect(content.mcpServers.fresh.args).toEqual(["server.js"]);
     });
 
     it("reads project config above user config", async () => {
@@ -981,6 +1051,28 @@ Compatibility skill content.`,
       const content = JSON.parse(await fs.readFile(path.join(mockHome, ".copilot", "mcp-config.json"), "utf-8"));
       expect(content.mcpServers?.["remote-only"]).toBeUndefined();
     });
+
+    it("removes stale MCP entries when command becomes empty", async () => {
+      const adapter = new GithubCopilotCliAdapter();
+      const mcpPath = path.join(mockHome, ".copilot", "mcp-config.json");
+      await fs.mkdir(path.dirname(mcpPath), { recursive: true });
+      await fs.writeFile(mcpPath, JSON.stringify({
+        mcpServers: {
+          stale: { command: "old-command" },
+        },
+      }));
+
+      await adapter.write({
+        mcps: {
+          stale: { command: "" },
+        },
+        agents: {},
+        skills: {},
+      });
+
+      const content = JSON.parse(await fs.readFile(mcpPath, "utf-8"));
+      expect(content.mcpServers.stale).toBeUndefined();
+    });
   });
 
   describe("ZedAdapter", () => {
@@ -1028,6 +1120,28 @@ Compatibility skill content.`,
 
       const content = JSON.parse(await fs.readFile(path.join(mockHome, ".config", "zed", "settings.json"), "utf-8"));
       expect(content.context_servers?.["remote-only"]).toBeUndefined();
+    });
+
+    it("removes stale context server entries when command becomes empty", async () => {
+      const adapter = new ZedAdapter();
+      const settingsPath = path.join(mockHome, ".config", "zed", "settings.json");
+      await fs.mkdir(path.dirname(settingsPath), { recursive: true });
+      await fs.writeFile(settingsPath, JSON.stringify({
+        context_servers: {
+          stale: { command: "old-command" },
+        },
+      }));
+
+      await adapter.write({
+        mcps: {
+          stale: { command: "" },
+        },
+        agents: {},
+        skills: {},
+      });
+
+      const content = JSON.parse(await fs.readFile(settingsPath, "utf-8"));
+      expect(content.context_servers.stale).toBeUndefined();
     });
   });
 

@@ -183,7 +183,10 @@ export class AntigravityAdapter implements ClientAdapter {
       existing.mcpServers = existing.mcpServers || {};
       for (const [key, value] of Object.entries(toWriteMcps)) {
         const formatted = mcpToAntigravityFormat(value);
-        if (!formatted) continue;
+        if (!formatted) {
+          delete existing.mcpServers[key];
+          continue;
+        }
         existing.mcpServers[key] = formatted;
       }
       await atomicWriteFile(configPath, JSON.stringify(existing, null, 2));

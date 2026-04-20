@@ -51,12 +51,18 @@ export function clampScrollOffset(scrollOffset: number, maxOffset: number): numb
   return Math.min(Math.max(scrollOffset, 0), maxOffset);
 }
 
+export function getResultMaxVisible(termHeight: number): number {
+  return Math.max(4, termHeight - 9);
+}
+
+export function isResultScrollable(outputLineCount: number, termHeight: number): boolean {
+  return outputLineCount > getResultMaxVisible(termHeight);
+}
+
 export function ResultView({ actionLabel, ok, elapsedMs, error, output }: ResultViewProps) {
   const { stdout } = useStdout();
   const termHeight = stdout?.rows ?? 36;
-  // Reserve lines for: status bar header (~3), status line (~1), error (~1 if any),
-  // border + padding (~2), scroll hint (~1), nav hint (~1) = ~9 lines of chrome
-  const maxVisible = Math.max(4, termHeight - 9);
+  const maxVisible = getResultMaxVisible(termHeight);
   const [scrollOffset, setScrollOffset] = useState(0);
   const maxOffset = Math.max(0, output.length - maxVisible);
   const canScrollUp = scrollOffset > 0;

@@ -28,6 +28,20 @@ function mcpToGeminiFormat(value: McpServer): Record<string, unknown> {
   return out;
 }
 
+function toStringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter((item): item is string => typeof item === "string");
+}
+
+function toStringRecord(value: unknown): Record<string, string> {
+  if (!value || typeof value !== "object") return {};
+  const out: Record<string, string> = {};
+  for (const [key, item] of Object.entries(value)) {
+    if (typeof item === "string") out[key] = item;
+  }
+  return out;
+}
+
 function writeGeminiTo(configPath: string, resources: { mcps?: Record<string, McpServer>; models?: Models; prompts?: Prompts }) {
   return fs.readFile(configPath, "utf-8")
     .then((data) => JSON.parse(data) as Record<string, any>)
@@ -38,7 +52,12 @@ function writeGeminiTo(configPath: string, resources: { mcps?: Record<string, Mc
       if (resources.mcps && Object.keys(resources.mcps).length > 0) {
         existing.mcpServers = existing.mcpServers || {};
         for (const [key, value] of Object.entries(resources.mcps)) {
-          if (value.command) existing.mcpServers[key] = mcpToGeminiFormat(value);
+          const command = typeof value.command === "string" ? value.command.trim() : "";
+          if (!command) {
+            delete existing.mcpServers[key];
+            continue;
+          }
+          existing.mcpServers[key] = mcpToGeminiFormat({ ...value, command });
         }
       }
       const dir = path.dirname(configPath);
@@ -88,8 +107,8 @@ export class GeminiCliAdapter implements ClientAdapter {
           if (val && typeof val === "object" && typeof val.command === "string") {
             result.mcps[key] = {
               command: val.command,
-              args: Array.isArray(val.args) ? val.args : [],
-              env: val.env || {},
+              args: toStringArray(val.args),
+              env: toStringRecord(val.env),
               scope: candidate.scope,
             };
           }

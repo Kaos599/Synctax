@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { clampScrollOffset } from "../../src/tui/components/RunningView.js";
+import { clampScrollOffset, getResultMaxVisible, isResultScrollable } from "../../src/tui/components/RunningView.js";
 
 describe("RunningView scroll offset clamping", () => {
   it("caps offsets above maxOffset", () => {
@@ -12,5 +12,17 @@ describe("RunningView scroll offset clamping", () => {
 
   it("keeps in-range offsets unchanged", () => {
     expect(clampScrollOffset(3, 5)).toBe(3);
+  });
+
+  it("computes visible result lines from terminal height", () => {
+    expect(getResultMaxVisible(36)).toBe(27);
+  });
+
+  it("reports non-scrollable output when it fits", () => {
+    expect(isResultScrollable(10, 36)).toBe(false);
+  });
+
+  it("reports scrollable output when lines exceed viewport", () => {
+    expect(isResultScrollable(28, 36)).toBe(true);
   });
 });

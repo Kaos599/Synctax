@@ -7,15 +7,10 @@ import { getVersion } from "../version.js";
 import { ConfigSchema } from "../types.js";
 import { requireInteractiveTTY } from "./_terminal.js";
 import { acquireLock } from "../lock.js";
+import { atomicWriteSecure } from "../fs-utils.js";
 
 function timestampLike(input: string): string {
   return input.replace(/[:.]/g, "-");
-}
-
-async function writeFileAtomic(targetPath: string, content: string): Promise<void> {
-  const tempPath = `${targetPath}.tmp-${Date.now()}-${Math.random().toString(16).slice(2)}`;
-  await fs.writeFile(tempPath, content, { encoding: "utf-8", mode: 0o600 });
-  await fs.rename(tempPath, targetPath);
 }
 
 function resolveBackupName(backups: string[], requested: string): string | null {
@@ -85,7 +80,7 @@ export async function restoreCommand(options: { from?: string }) {
       // No current config to snapshot.
     }
 
-    await writeFileAtomic(configPath, JSON.stringify(parsed, null, 2));
+    await atomicWriteSecure(configPath, JSON.stringify(parsed, null, 2));
     ui.success(`Restored from backup: ${targetBackup}`);
 
     console.log(ui.format.summary(timer.elapsed(), `restored from ${targetBackup}`));
@@ -107,7 +102,7 @@ export async function exportCommand(filePath: string) {
   if (exportable.resources) {
     delete exportable.resources.credentials;
   }
-  await writeFileAtomic(resolvedPath, JSON.stringify(exportable, null, 2));
+  await atomicWriteSecure(resolvedPath, JSON.stringify(exportable, null, 2));
   ui.success(`Exported master configuration to ${resolvedPath}`);
 
   console.log(ui.format.summary(timer.elapsed(), `exported to ${resolvedPath}`));
