@@ -1,6 +1,6 @@
 {
   "name": "synctax",
-  "version": "2.0.2",
+  "version": "2.1.0",
   "description": "Universal config sync for the agentic developer stack — sync MCP servers, agents, skills, and permissions across 9 AI clients from a single source of truth.",
   "type": "module",
   "license": "MIT",
