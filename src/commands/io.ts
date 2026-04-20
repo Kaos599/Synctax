@@ -107,7 +107,7 @@ export async function exportCommand(filePath: string) {
   if (exportable.resources) {
     delete exportable.resources.credentials;
   }
-  await fs.writeFile(resolvedPath, JSON.stringify(exportable, null, 2), { encoding: "utf-8", mode: 0o600 });
+  await writeFileAtomic(resolvedPath, JSON.stringify(exportable, null, 2));
   ui.success(`Exported master configuration to ${resolvedPath}`);
 
   console.log(ui.format.summary(timer.elapsed(), `exported to ${resolvedPath}`));

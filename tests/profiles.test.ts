@@ -72,6 +72,28 @@ describe("Profiles Domain", () => {
     expect(stat.mode & 0o777).toBe(0o600);
   });
 
+  it.skipIf(process.platform === "win32")("profilePublishCommand --output tightens permissions to 0o600 for existing files", async () => {
+    const outputPath = path.join(mockHome, "published-profile-existing.json");
+
+    await profileCreateCommand("work", { include: "mcp1" });
+
+    const previousUmask = process.umask(0o022);
+    try {
+      await fs.writeFile(outputPath, "insecure", { encoding: "utf-8", mode: 0o644 });
+
+      const before = await fs.stat(outputPath);
+      expect(before.mode & 0o777).toBe(0o644);
+
+      const { profilePublishCommand } = await import("../src/commands.js");
+      await profilePublishCommand("work", { output: outputPath });
+    } finally {
+      process.umask(previousUmask);
+    }
+
+    const stat = await fs.stat(outputPath);
+    expect(stat.mode & 0o777).toBe(0o600);
+  });
+
   it("profileCreateCommand creates matching profile env file", async () => {
     await profileCreateCommand("work", {});
 
