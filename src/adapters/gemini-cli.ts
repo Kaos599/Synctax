@@ -73,8 +73,13 @@ export class GeminiCliAdapter implements ClientAdapter {
         const data = await fs.readFile(candidate.path, "utf-8");
         const parsed = JSON.parse(data);
         if (parsed.model) {
-          result.models!.defaultModel =
-            typeof parsed.model === "string" ? parsed.model : (parsed.model?.name ?? "");
+          const modelName =
+            typeof parsed.model === "string"
+              ? parsed.model
+              : (typeof parsed.model?.name === "string" ? parsed.model.name : undefined);
+          if (typeof modelName === "string" && modelName.length > 0) {
+            result.models!.defaultModel = modelName;
+          }
         }
         if (parsed.systemInstruction) {
           result.prompts!.globalSystemPrompt = parsed.systemInstruction;

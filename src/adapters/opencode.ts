@@ -277,18 +277,24 @@ export class OpenCodeAdapter implements ClientAdapter {
       existing.mcp = existing.mcp || {};
       for (const [key, value] of Object.entries(mcps)) {
         const stripped = stripScope(value);
-        const isRemote = stripped.transport === "sse" || stripped.transport === "http" || !!stripped.url;
+        const remoteUrl = typeof stripped.url === "string" ? stripped.url.trim() : "";
+        const isRemote = stripped.transport === "sse" || stripped.transport === "http" || remoteUrl.length > 0;
         if (isRemote) {
+          if (!remoteUrl) {
+            throw new Error(`Remote MCP "${key}" is missing a required url`);
+          }
           existing.mcp[key] = {
             type: "remote",
-            url: stripped.url ?? "",
+            url: remoteUrl,
             ...(stripped.headers && Object.keys(stripped.headers).length > 0 ? { headers: stripped.headers } : {}),
             enabled: !stripped.disabled,
           };
         } else {
+          const command = typeof stripped.command === "string" ? stripped.command.trim() : "";
+          if (!command) continue;
           existing.mcp[key] = {
             type: "local",
-            command: [stripped.command, ...(stripped.args || [])],
+            command: [command, ...(stripped.args || [])],
             environment: stripped.env || {},
             enabled: !stripped.disabled,
           };

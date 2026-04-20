@@ -8,8 +8,11 @@ import { assertSafeResourceName } from "../resource-name.js";
 import { atomicWriteFile } from "../fs-utils.js";
 import { toArray } from "../coerce.js";
 
-function mcpToCopilotCliFormat(value: McpServer): Record<string, unknown> {
-  const out: Record<string, unknown> = { command: value.command };
+function mcpToCopilotCliFormat(value: McpServer): Record<string, unknown> | null {
+  const command = typeof value.command === "string" ? value.command.trim() : "";
+  if (!command) return null;
+
+  const out: Record<string, unknown> = { command };
   if (value.args && value.args.length > 0) out.args = value.args;
   if (value.env && Object.keys(value.env).length > 0) out.env = value.env;
   return out;
@@ -146,7 +149,9 @@ export class GithubCopilotCliAdapter implements ClientAdapter {
       const existing = await readJsonSafe(this.mcpConfigPath);
       existing.mcpServers = existing.mcpServers || {};
       for (const [key, value] of Object.entries(allMcps)) {
-        existing.mcpServers[key] = mcpToCopilotCliFormat(value);
+        const formatted = mcpToCopilotCliFormat(value);
+        if (!formatted) continue;
+        existing.mcpServers[key] = formatted;
       }
       await atomicWriteFile(this.mcpConfigPath, JSON.stringify(existing, null, 2));
     }

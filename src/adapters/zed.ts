@@ -5,8 +5,11 @@ import { firstExistingPath, homeDir, zedSettingsCandidates } from "../platform-p
 import { atomicWriteFile } from "../fs-utils.js";
 import { toArray } from "../coerce.js";
 
-function mcpToZedFormat(value: McpServer): Record<string, unknown> {
-  const out: Record<string, unknown> = { command: value.command };
+function mcpToZedFormat(value: McpServer): Record<string, unknown> | null {
+  const command = typeof value.command === "string" ? value.command.trim() : "";
+  if (!command) return null;
+
+  const out: Record<string, unknown> = { command };
   if (value.args && value.args.length > 0) out.args = value.args;
   if (value.env && Object.keys(value.env).length > 0) out.env = value.env;
   return out;
@@ -64,7 +67,9 @@ export class ZedAdapter implements ClientAdapter {
 
     existing.context_servers = existing.context_servers || {};
     for (const [key, value] of Object.entries(resources.mcps || {})) {
-      existing.context_servers[key] = mcpToZedFormat(value);
+      const formatted = mcpToZedFormat(value);
+      if (!formatted) continue;
+      existing.context_servers[key] = formatted;
     }
     await atomicWriteFile(configPath, JSON.stringify(existing, null, 2));
   }

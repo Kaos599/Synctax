@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { Box, Text, useInput, useStdout } from "ink";
 import { Spinner } from "@inkjs/ui";
 import { colors, chars } from "../theme.js";
@@ -47,6 +47,10 @@ export interface ResultViewProps {
   output: string[];
 }
 
+export function clampScrollOffset(scrollOffset: number, maxOffset: number): number {
+  return Math.min(Math.max(scrollOffset, 0), maxOffset);
+}
+
 export function ResultView({ actionLabel, ok, elapsedMs, error, output }: ResultViewProps) {
   const { stdout } = useStdout();
   const termHeight = stdout?.rows ?? 36;
@@ -57,6 +61,10 @@ export function ResultView({ actionLabel, ok, elapsedMs, error, output }: Result
   const maxOffset = Math.max(0, output.length - maxVisible);
   const canScrollUp = scrollOffset > 0;
   const canScrollDown = scrollOffset < maxOffset;
+
+  useEffect(() => {
+    setScrollOffset((offset) => clampScrollOffset(offset, maxOffset));
+  }, [maxOffset]);
 
   useInput((_input, key) => {
     if (key.upArrow) setScrollOffset((o) => Math.max(0, o - 1));

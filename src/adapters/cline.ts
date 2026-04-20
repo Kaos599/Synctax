@@ -13,8 +13,11 @@ function scopeWeight(scope: ConfigScope): number {
   return 2;
 }
 
-function mcpToClineFormat(value: McpServer): Record<string, unknown> {
-  const out: Record<string, unknown> = { command: value.command };
+function mcpToClineFormat(value: McpServer): Record<string, unknown> | null {
+  const command = typeof value.command === "string" ? value.command.trim() : "";
+  if (!command) return null;
+
+  const out: Record<string, unknown> = { command };
   if (value.args && value.args.length > 0) out.args = value.args;
   if (value.env && Object.keys(value.env).length > 0) out.env = value.env;
   if (value.disabled !== undefined) out.disabled = value.disabled;
@@ -160,7 +163,9 @@ export class ClineAdapter implements ClientAdapter {
 
     existing.mcpServers = {};
     for (const [key, value] of Object.entries(mcps)) {
-      existing.mcpServers[key] = mcpToClineFormat(value);
+      const formatted = mcpToClineFormat(value);
+      if (!formatted) continue;
+      existing.mcpServers[key] = formatted;
     }
 
     await atomicWriteFile(configPath, JSON.stringify(existing, null, 2));

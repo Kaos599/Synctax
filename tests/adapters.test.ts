@@ -649,6 +649,22 @@ Compatibility skill content.`,
       expect(written.environment).toBeUndefined();
       expect(written.headers?.Authorization).toBe("Bearer tok");
     });
+
+    it("rejects remote MCP entries without a url", async () => {
+      const adapter = new OpenCodeAdapter();
+
+      await expect(adapter.write({
+        mcps: {
+          "broken-remote": {
+            command: "",
+            transport: "sse",
+            scope: "user",
+          }
+        },
+        agents: {},
+        skills: {},
+      })).rejects.toThrow(/missing.*url/i);
+    });
   });
 
   describe("AntigravityAdapter", () => {
@@ -771,6 +787,28 @@ Compatibility skill content.`,
       expectHas(mcps, "valid");
       expect(mcps["remote-only"]).toBeUndefined();
     });
+
+    it("skips MCP entries with empty command values", async () => {
+      process.chdir(originalCwd);
+      const adapter = new AntigravityAdapter();
+
+      await adapter.write({
+        mcps: {
+          "remote-only": {
+            command: "",
+            url: "https://example.com",
+            transport: "sse",
+          }
+        },
+        agents: {},
+        skills: {},
+      });
+
+      const content = JSON.parse(
+        await fs.readFile(path.join(mockHome, ".gemini", "antigravity", "mcp_config.json"), "utf-8"),
+      );
+      expect(content.mcpServers?.["remote-only"]).toBeUndefined();
+    });
   });
 
   describe("GeminiCliAdapter", () => {
@@ -862,6 +900,24 @@ Compatibility skill content.`,
       const result = await adapter.read();
       expect(result.models?.defaultModel).toBe("gemini-1.5-pro");
     });
+
+    it("does not overwrite lower-scope model with invalid higher-scope object", async () => {
+      const adapter = new GeminiCliAdapter();
+      const projectDir = path.join(mockHome, "repo");
+      await fs.mkdir(path.join(mockHome, ".gemini"), { recursive: true });
+      await fs.mkdir(path.join(projectDir, ".gemini"), { recursive: true });
+
+      await fs.writeFile(path.join(mockHome, ".gemini", "settings.json"), JSON.stringify({
+        model: "gemini-user-model"
+      }));
+      await fs.writeFile(path.join(projectDir, ".gemini", "settings.json"), JSON.stringify({
+        model: {}
+      }));
+
+      process.chdir(projectDir);
+      const result = await adapter.read();
+      expect(result.models?.defaultModel).toBe("gemini-user-model");
+    });
   });
 
   describe("GithubCopilotCliAdapter", () => {
@@ -906,6 +962,25 @@ Compatibility skill content.`,
       expect(written.transport).toBeUndefined();
       expect(written.scope).toBeUndefined();
     });
+
+    it("skips MCP entries with empty command values", async () => {
+      const adapter = new GithubCopilotCliAdapter();
+
+      await adapter.write({
+        mcps: {
+          "remote-only": {
+            command: "",
+            url: "https://example.com",
+            transport: "sse",
+          }
+        },
+        agents: {},
+        skills: {},
+      });
+
+      const content = JSON.parse(await fs.readFile(path.join(mockHome, ".copilot", "mcp-config.json"), "utf-8"));
+      expect(content.mcpServers?.["remote-only"]).toBeUndefined();
+    });
   });
 
   describe("ZedAdapter", () => {
@@ -935,6 +1010,25 @@ Compatibility skill content.`,
       expect(written.transport).toBeUndefined();
       expect(written.scope).toBeUndefined();
     });
+
+    it("skips MCP entries with empty command values", async () => {
+      const adapter = new ZedAdapter();
+
+      await adapter.write({
+        mcps: {
+          "remote-only": {
+            command: "",
+            url: "https://example.com",
+            transport: "sse",
+          }
+        },
+        agents: {},
+        skills: {},
+      });
+
+      const content = JSON.parse(await fs.readFile(path.join(mockHome, ".config", "zed", "settings.json"), "utf-8"));
+      expect(content.context_servers?.["remote-only"]).toBeUndefined();
+    });
   });
 
   describe("ClineAdapter", () => {
@@ -962,6 +1056,25 @@ Compatibility skill content.`,
       expect(written.url).toBeUndefined();
       expect(written.transport).toBeUndefined();
       expect(written.scope).toBeUndefined();
+    });
+
+    it("skips MCP entries with empty command values", async () => {
+      const adapter = new ClineAdapter();
+
+      await adapter.write({
+        mcps: {
+          "remote-only": {
+            command: "",
+            url: "https://example.com",
+            transport: "sse",
+          }
+        },
+        agents: {},
+        skills: {},
+      });
+
+      const content = JSON.parse(await fs.readFile(path.join(mockHome, ".cline", "mcp_settings.json"), "utf-8"));
+      expect(content.mcpServers?.["remote-only"]).toBeUndefined();
     });
   });
 });
