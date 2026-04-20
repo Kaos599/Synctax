@@ -1,13 +1,15 @@
 import fs from "fs/promises";
 import path from "path";
-import type { ClientAdapter, McpServer, Agent, Skill, Permissions, Models, Prompts, Credentials, ResourceScope } from "../types.js";
+import type { ClientAdapter, McpServer, Agent, Skill, Permissions, Models, Prompts, Credentials } from "../types.js";
 import { firstExistingPath, homeDir, zedSettingsCandidates } from "../platform-paths.js";
 import { atomicWriteFile } from "../fs-utils.js";
 import { toArray } from "../coerce.js";
 
-function stripScope<T extends { scope?: ResourceScope }>(item: T): Omit<T, "scope"> {
-  const { scope: _scope, ...rest } = item;
-  return rest;
+function mcpToZedFormat(value: McpServer): Record<string, unknown> {
+  const out: Record<string, unknown> = { command: value.command };
+  if (value.args && value.args.length > 0) out.args = value.args;
+  if (value.env && Object.keys(value.env).length > 0) out.env = value.env;
+  return out;
 }
 
 export class ZedAdapter implements ClientAdapter {
@@ -62,7 +64,7 @@ export class ZedAdapter implements ClientAdapter {
 
     existing.context_servers = existing.context_servers || {};
     for (const [key, value] of Object.entries(resources.mcps || {})) {
-      existing.context_servers[key] = stripScope(value);
+      existing.context_servers[key] = mcpToZedFormat(value);
     }
     await atomicWriteFile(configPath, JSON.stringify(existing, null, 2));
   }

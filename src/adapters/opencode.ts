@@ -44,16 +44,27 @@ function mergeMcpServers(parsed: Record<string, any>, into: Record<string, McpSe
   const mcp = parsed.mcp || {};
   for (const [key, val] of Object.entries<any>(mcp)) {
     if (!val || typeof val !== "object") continue;
-    // OpenCode stores command as an ARRAY: [command, ...args]
-    const cmdArray: string[] = Array.isArray(val.command) ? val.command : [];
-    if (cmdArray.length === 0) continue;
-    into[key] = {
-      command: cmdArray[0] || "",
-      args: cmdArray.slice(1),
-      env: val.environment || {},
-      transport: val.type === "local" ? "stdio" : val.type === "remote" ? "sse" : undefined,
-      scope,
-    };
+    if (val.type === "remote") {
+      into[key] = {
+        command: "",
+        url: val.url,
+        headers: val.headers,
+        env: val.environment || {},
+        transport: "sse",
+        scope,
+      };
+    } else {
+      // OpenCode stores command as an ARRAY: [command, ...args]
+      const cmdArray: string[] = Array.isArray(val.command) ? val.command : [];
+      if (cmdArray.length === 0) continue;
+      into[key] = {
+        command: cmdArray[0] ?? "",
+        args: cmdArray.slice(1),
+        env: val.environment || {},
+        transport: "stdio",
+        scope,
+      };
+    }
   }
 }
 
@@ -266,12 +277,22 @@ export class OpenCodeAdapter implements ClientAdapter {
       existing.mcp = existing.mcp || {};
       for (const [key, value] of Object.entries(mcps)) {
         const stripped = stripScope(value);
-        existing.mcp[key] = {
-          type: stripped.transport === "sse" || stripped.transport === "http" ? "remote" : "local",
-          command: [stripped.command, ...(stripped.args || [])],
-          environment: stripped.env || {},
-          enabled: true,
-        };
+        const isRemote = stripped.transport === "sse" || stripped.transport === "http" || !!stripped.url;
+        if (isRemote) {
+          existing.mcp[key] = {
+            type: "remote",
+            url: stripped.url ?? "",
+            ...(stripped.headers && Object.keys(stripped.headers).length > 0 ? { headers: stripped.headers } : {}),
+            enabled: !stripped.disabled,
+          };
+        } else {
+          existing.mcp[key] = {
+            type: "local",
+            command: [stripped.command, ...(stripped.args || [])],
+            environment: stripped.env || {},
+            enabled: !stripped.disabled,
+          };
+        }
       }
     }
 

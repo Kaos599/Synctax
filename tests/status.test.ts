@@ -90,7 +90,7 @@ describe("statusCommand drift regression", () => {
       id: "gemini-cli",
       name: "Gemini CLI",
       resources: {
-        mcps: { "mcp-only": { command: "node", args: ["server.js"] } },
+        // agents and skills are unsupported domains for gemini-cli; mcps are now supported
         agents: { "agent-only": { name: "Agent Only", prompt: "hello" } },
         skills: { "skill-only": { name: "Skill Only", content: "world" } },
       },
