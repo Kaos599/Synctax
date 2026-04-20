@@ -1,5 +1,5 @@
-import React from "react";
-import { Box, Text } from "ink";
+import React, { useState } from "react";
+import { Box, Text, useInput, useStdout } from "ink";
 import { Spinner } from "@inkjs/ui";
 import { colors, chars } from "../theme.js";
 
@@ -48,7 +48,22 @@ export interface ResultViewProps {
 }
 
 export function ResultView({ actionLabel, ok, elapsedMs, error, output }: ResultViewProps) {
-  const lastOutput = output.slice(-4);
+  const { stdout } = useStdout();
+  const termHeight = stdout?.rows ?? 36;
+  // Reserve lines for: status bar header (~3), status line (~1), error (~1 if any),
+  // border + padding (~2), scroll hint (~1), nav hint (~1) = ~9 lines of chrome
+  const maxVisible = Math.max(4, termHeight - 9);
+  const [scrollOffset, setScrollOffset] = useState(0);
+  const maxOffset = Math.max(0, output.length - maxVisible);
+  const canScrollUp = scrollOffset > 0;
+  const canScrollDown = scrollOffset < maxOffset;
+
+  useInput((_input, key) => {
+    if (key.upArrow) setScrollOffset((o) => Math.max(0, o - 1));
+    if (key.downArrow) setScrollOffset((o) => Math.min(maxOffset, o + 1));
+  });
+
+  const visibleOutput = output.slice(scrollOffset, scrollOffset + maxVisible);
   const icon = ok ? chars.check : chars.cross_mark;
   const statusColor = ok ? colors.success : colors.error;
   const statusText = ok ? "completed successfully" : "failed";
@@ -72,19 +87,32 @@ export function ResultView({ actionLabel, ok, elapsedMs, error, output }: Result
         </Box>
       )}
 
-      {lastOutput.length > 0 && (
+      {output.length > 0 && (
         <Box flexDirection="column" borderStyle="single" borderColor={colors.border} paddingX={1} marginTop={1}>
-          {lastOutput.map((line, i) => (
+          {canScrollUp && (
+            <Text color={colors.textMuted} dimColor>
+              ↑ {scrollOffset} line{scrollOffset !== 1 ? "s" : ""} above
+            </Text>
+          )}
+          {visibleOutput.map((line, i) => (
             <Text key={i} color={colors.textSecondary} wrap="truncate">
               {line}
             </Text>
           ))}
+          {canScrollDown && (
+            <Text color={colors.textMuted} dimColor>
+              ↓ {maxOffset - scrollOffset} line{maxOffset - scrollOffset !== 1 ? "s" : ""} below
+            </Text>
+          )}
         </Box>
       )}
 
       <Box marginTop={1}>
         <Text color={colors.textMuted}>
-          Press any key to return to dashboard, <Text color={colors.hotkey} bold>q</Text> to quit
+          {output.length > maxVisible
+            ? <>Use <Text color={colors.hotkey} bold>↑↓</Text> to scroll · any other key to return · <Text color={colors.hotkey} bold>q</Text> to quit</>
+            : <>Press any key to return to dashboard, <Text color={colors.hotkey} bold>q</Text> to quit</>
+          }
         </Text>
       </Box>
     </Box>
