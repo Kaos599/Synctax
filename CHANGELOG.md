@@ -16,6 +16,17 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **OpenCode detection**: Expanded config and skills discovery to include `OPENCODE_CONFIG` and compatibility skill roots (`.claude/skills`, `.agents/skills`, plus global equivalents).
 - **Client aliases**: Added canonicalization for common client id variants (for example `open code`/`open-code` → `opencode`) in pull/init/sync/status/doctor flows.
 
+## [2.1.3] — 2026-04-20
+
+### Fixed
+
+- **File permissions**: Enforced `0o600` permissions for backup/restore atomic writes, `synctax export`, and `profile publish --output` files.
+
+### Changed
+
+- **README banner**: Updated top banner image to use the repository-hosted SVG asset.
+- **Version bump**: Updated CLI/package version to `2.1.3`.
+
 ## [2.1.2] — 2026-04-20
 
 ### Changed
