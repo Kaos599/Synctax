@@ -5,6 +5,8 @@ import { OpenCodeAdapter } from "../src/adapters/opencode.js";
 import { AntigravityAdapter } from "../src/adapters/antigravity.js";
 import { GithubCopilotCliAdapter } from "../src/adapters/github-copilot-cli.js";
 import { GeminiCliAdapter } from "../src/adapters/gemini-cli.js";
+import { ZedAdapter } from "../src/adapters/zed.js";
+import { ClineAdapter } from "../src/adapters/cline.js";
 import fs from "fs/promises";
 import path from "path";
 import os from "os";
@@ -598,6 +600,71 @@ Compatibility skill content.`,
         else process.env.APPDATA = previousAppData;
       }
     });
+
+    it("reads remote MCPs (type:remote, url) from OpenCode config", async () => {
+      const adapter = new OpenCodeAdapter();
+      await fs.mkdir(path.join(mockHome, ".config", "opencode"), { recursive: true });
+      await fs.writeFile(path.join(mockHome, ".config", "opencode", "config.json"), JSON.stringify({
+        mcp: {
+          "remote-mcp": {
+            type: "remote",
+            url: "https://mcp.context7.com/mcp",
+            headers: { "x-api-key": "abc" },
+            environment: {},
+          }
+        }
+      }));
+
+      const { mcps } = await adapter.read();
+      expectHas(mcps, "remote-mcp");
+      expect(mcps["remote-mcp"].url).toBe("https://mcp.context7.com/mcp");
+      expect(mcps["remote-mcp"].headers?.["x-api-key"]).toBe("abc");
+      expect(mcps["remote-mcp"].transport).toBe("sse");
+    });
+
+    it("writes remote MCPs with url and no command array", async () => {
+      const adapter = new OpenCodeAdapter();
+      await fs.mkdir(path.join(mockHome, ".config", "opencode"), { recursive: true });
+      await fs.writeFile(path.join(mockHome, ".config", "opencode", "config.json"), "{}");
+
+      await adapter.write({
+        mcps: {
+          "remote-mcp": {
+            command: "",
+            url: "https://mcp.example.com/sse",
+            headers: { Authorization: "Bearer tok" },
+            transport: "sse",
+            scope: "user",
+          }
+        },
+        agents: {},
+        skills: {},
+      });
+
+      const content = JSON.parse(await fs.readFile(path.join(mockHome, ".config", "opencode", "config.json"), "utf-8"));
+      const written = content.mcp["remote-mcp"];
+      expect(written.type).toBe("remote");
+      expect(written.url).toBe("https://mcp.example.com/sse");
+      expect(written.command).toBeUndefined();
+      expect(written.environment).toBeUndefined();
+      expect(written.headers?.Authorization).toBe("Bearer tok");
+    });
+
+    it("rejects remote MCP entries without a url", async () => {
+      const adapter = new OpenCodeAdapter();
+
+      await expect(adapter.write({
+        mcps: {
+          "broken-remote": {
+            command: "",
+            transport: "sse",
+            scope: "user",
+          }
+        },
+        agents: {},
+        skills: {},
+      })).rejects.toThrow(/missing.*url/i);
+    });
   });
 
   describe("AntigravityAdapter", () => {
@@ -674,9 +741,184 @@ Compatibility skill content.`,
       const projectSkillPath = path.join(mockHome, ".agents", "skills", "local-skill", "SKILL.md");
       await expect(fs.readFile(projectSkillPath, "utf-8")).resolves.toContain("Local antigravity skill.");
     });
+
+    it("write only serializes command/args/env — no Synctax-internal fields", async () => {
+      process.chdir(originalCwd);
+      const adapter = new AntigravityAdapter();
+      await fs.mkdir(path.join(mockHome, ".gemini", "antigravity"), { recursive: true });
+
+      await adapter.write({
+        mcps: {
+          "ctx7": {
+            command: "npx",
+            args: ["-y", "@context7/mcp-server"],
+            url: "https://mcp.context7.com/mcp",
+            headers: { "context7-api-key": "abc" },
+            transport: "http",
+            scope: "user",
+          }
+        },
+        agents: {},
+        skills: {},
+      });
+
+      const configPath = path.join(mockHome, ".gemini", "antigravity", "mcp_config.json");
+      const content = JSON.parse(await fs.readFile(configPath, "utf-8"));
+      const written = content.mcpServers["ctx7"];
+      expect(written.command).toBe("npx");
+      expect(written.url).toBeUndefined();
+      expect(written.headers).toBeUndefined();
+      expect(written.transport).toBeUndefined();
+      expect(written.scope).toBeUndefined();
+    });
+
+    it("read skips entries without a string command field", async () => {
+      process.chdir(originalCwd);
+      const adapter = new AntigravityAdapter();
+      await fs.mkdir(path.join(mockHome, ".gemini", "antigravity"), { recursive: true });
+      await fs.writeFile(path.join(mockHome, ".gemini", "antigravity", "mcp_config.json"), JSON.stringify({
+        mcpServers: {
+          "valid": { command: "npx", args: [] },
+          "remote-only": { url: "https://example.com", transport: "sse" },
+        }
+      }));
+
+      const { mcps } = await adapter.read();
+      expectHas(mcps, "valid");
+      expect(mcps["remote-only"]).toBeUndefined();
+    });
+
+    it("skips MCP entries with empty command values", async () => {
+      process.chdir(originalCwd);
+      const adapter = new AntigravityAdapter();
+
+      await adapter.write({
+        mcps: {
+          "remote-only": {
+            command: "",
+            url: "https://example.com",
+            transport: "sse",
+          }
+        },
+        agents: {},
+        skills: {},
+      });
+
+      const content = JSON.parse(
+        await fs.readFile(path.join(mockHome, ".gemini", "antigravity", "mcp_config.json"), "utf-8"),
+      );
+      expect(content.mcpServers?.["remote-only"]).toBeUndefined();
+    });
+
+    it("removes stale MCP entries when command becomes empty", async () => {
+      process.chdir(originalCwd);
+      const adapter = new AntigravityAdapter();
+      const configPath = path.join(mockHome, ".gemini", "antigravity", "mcp_config.json");
+      await fs.mkdir(path.dirname(configPath), { recursive: true });
+      await fs.writeFile(configPath, JSON.stringify({
+        mcpServers: {
+          stale: { command: "old-command" },
+        },
+      }));
+
+      await adapter.write({
+        mcps: {
+          stale: { command: "   " },
+        },
+        agents: {},
+        skills: {},
+      });
+
+      const content = JSON.parse(await fs.readFile(configPath, "utf-8"));
+      expect(content.mcpServers.stale).toBeUndefined();
+    });
   });
 
   describe("GeminiCliAdapter", () => {
+    it("reads MCPs from settings.json", async () => {
+      const adapter = new GeminiCliAdapter();
+      await fs.mkdir(path.join(mockHome, ".gemini"), { recursive: true });
+      await fs.writeFile(path.join(mockHome, ".gemini", "settings.json"), JSON.stringify({
+        mcpServers: {
+          "filesystem": { command: "npx", args: ["-y", "@modelcontextprotocol/server-filesystem", "/tmp"] },
+          "no-args": { command: "python3" },
+        }
+      }));
+
+      const { mcps } = await adapter.read();
+      expectHas(mcps, "filesystem");
+      expect(mcps.filesystem.command).toBe("npx");
+      expect(mcps.filesystem.args).toEqual(["-y", "@modelcontextprotocol/server-filesystem", "/tmp"]);
+      expectHas(mcps, "no-args");
+      expect(mcps["no-args"].command).toBe("python3");
+    });
+
+    it("filters non-string MCP args and env values when reading", async () => {
+      const adapter = new GeminiCliAdapter();
+      await fs.mkdir(path.join(mockHome, ".gemini"), { recursive: true });
+      await fs.writeFile(path.join(mockHome, ".gemini", "settings.json"), JSON.stringify({
+        mcpServers: {
+          mixed: {
+            command: "npx",
+            args: ["-y", 123, false],
+            env: {
+              GOOD: "ok",
+              BAD_NUMBER: 123,
+              BAD_BOOL: false,
+            },
+          },
+        },
+      }));
+
+      const { mcps } = await adapter.read();
+      expectHas(mcps, "mixed");
+      expect(mcps.mixed.args).toEqual(["-y"]);
+      expect(mcps.mixed.env).toEqual({ GOOD: "ok" });
+    });
+
+    it("writes MCPs to settings.json", async () => {
+      const adapter = new GeminiCliAdapter();
+      await fs.mkdir(path.join(mockHome, ".gemini"), { recursive: true });
+      await fs.writeFile(path.join(mockHome, ".gemini", "settings.json"), "{}");
+
+      await adapter.write({
+        mcps: {
+          "filesystem": { command: "npx", args: ["-y", "@modelcontextprotocol/server-filesystem", "/tmp"], env: { HOME: "/home" } },
+        },
+        agents: {},
+        skills: {},
+      });
+
+      const content = JSON.parse(await fs.readFile(path.join(mockHome, ".gemini", "settings.json"), "utf-8"));
+      expect(content.mcpServers.filesystem.command).toBe("npx");
+      expect(content.mcpServers.filesystem.args).toEqual(["-y", "@modelcontextprotocol/server-filesystem", "/tmp"]);
+      expect(content.mcpServers.filesystem.env).toEqual({ HOME: "/home" });
+    });
+
+    it("trims commands and removes existing entries with blank commands when writing", async () => {
+      const adapter = new GeminiCliAdapter();
+      await fs.mkdir(path.join(mockHome, ".gemini"), { recursive: true });
+      await fs.writeFile(path.join(mockHome, ".gemini", "settings.json"), JSON.stringify({
+        mcpServers: {
+          stale: { command: "old-command" },
+        },
+      }));
+
+      await adapter.write({
+        mcps: {
+          stale: { command: "   " },
+          fresh: { command: "  node  ", args: ["server.js"] },
+        },
+        agents: {},
+        skills: {},
+      });
+
+      const content = JSON.parse(await fs.readFile(path.join(mockHome, ".gemini", "settings.json"), "utf-8"));
+      expect(content.mcpServers.stale).toBeUndefined();
+      expect(content.mcpServers.fresh.command).toBe("node");
+      expect(content.mcpServers.fresh.args).toEqual(["server.js"]);
+    });
+
     it("reads project config above user config", async () => {
       const adapter = new GeminiCliAdapter();
       const projectDir = path.join(mockHome, "repo");
@@ -689,6 +931,62 @@ Compatibility skill content.`,
       const readData = await adapter.read();
       expect(readData.models?.defaultModel).toBe("project-model");
       expect(readData.prompts?.globalSystemPrompt).toBe("project prompt");
+    });
+
+    it("writes model as { name: ... } object format", async () => {
+      const adapter = new GeminiCliAdapter();
+      await fs.mkdir(path.join(mockHome, ".gemini"), { recursive: true });
+      await fs.writeFile(path.join(mockHome, ".gemini", "settings.json"), "{}");
+
+      await adapter.write({
+        mcps: {},
+        agents: {},
+        skills: {},
+        models: { defaultModel: "gemini-2.5-pro" },
+      });
+
+      const content = JSON.parse(await fs.readFile(path.join(mockHome, ".gemini", "settings.json"), "utf-8"));
+      expect(content.model).toEqual({ name: "gemini-2.5-pro" });
+    });
+
+    it("reads model from object format { name: ... }", async () => {
+      const adapter = new GeminiCliAdapter();
+      await fs.mkdir(path.join(mockHome, ".gemini"), { recursive: true });
+      await fs.writeFile(path.join(mockHome, ".gemini", "settings.json"), JSON.stringify({
+        model: { name: "gemini-2.5-pro" }
+      }));
+
+      const result = await adapter.read();
+      expect(result.models?.defaultModel).toBe("gemini-2.5-pro");
+    });
+
+    it("reads model from legacy string format (backwards compat)", async () => {
+      const adapter = new GeminiCliAdapter();
+      await fs.mkdir(path.join(mockHome, ".gemini"), { recursive: true });
+      await fs.writeFile(path.join(mockHome, ".gemini", "settings.json"), JSON.stringify({
+        model: "gemini-1.5-pro"
+      }));
+
+      const result = await adapter.read();
+      expect(result.models?.defaultModel).toBe("gemini-1.5-pro");
+    });
+
+    it("does not overwrite lower-scope model with invalid higher-scope object", async () => {
+      const adapter = new GeminiCliAdapter();
+      const projectDir = path.join(mockHome, "repo");
+      await fs.mkdir(path.join(mockHome, ".gemini"), { recursive: true });
+      await fs.mkdir(path.join(projectDir, ".gemini"), { recursive: true });
+
+      await fs.writeFile(path.join(mockHome, ".gemini", "settings.json"), JSON.stringify({
+        model: "gemini-user-model"
+      }));
+      await fs.writeFile(path.join(projectDir, ".gemini", "settings.json"), JSON.stringify({
+        model: {}
+      }));
+
+      process.chdir(projectDir);
+      const result = await adapter.read();
+      expect(result.models?.defaultModel).toBe("gemini-user-model");
     });
   });
 
@@ -707,6 +1005,190 @@ Compatibility skill content.`,
       const readResources = await adapter.read();
       expect(readResources.skills["proj-skill"]?.content).toBe("Project skill content.");
       expect(readResources.skills["user-skill"]?.content).toBe("User skill content.");
+    });
+
+    it("write only serializes command/args/env — no Synctax-internal fields", async () => {
+      const adapter = new GithubCopilotCliAdapter();
+      await fs.mkdir(path.join(mockHome, ".copilot"), { recursive: true });
+
+      await adapter.write({
+        mcps: {
+          "test-mcp": {
+            command: "npx",
+            args: ["-y", "server"],
+            url: "https://example.com/mcp",
+            transport: "sse",
+            scope: "user",
+          }
+        },
+        agents: {},
+        skills: {},
+      });
+
+      const content = JSON.parse(await fs.readFile(path.join(mockHome, ".copilot", "mcp-config.json"), "utf-8"));
+      const written = content.mcpServers["test-mcp"];
+      expect(written.command).toBe("npx");
+      expect(written.url).toBeUndefined();
+      expect(written.transport).toBeUndefined();
+      expect(written.scope).toBeUndefined();
+    });
+
+    it("skips MCP entries with empty command values", async () => {
+      const adapter = new GithubCopilotCliAdapter();
+
+      await adapter.write({
+        mcps: {
+          "remote-only": {
+            command: "",
+            url: "https://example.com",
+            transport: "sse",
+          }
+        },
+        agents: {},
+        skills: {},
+      });
+
+      const content = JSON.parse(await fs.readFile(path.join(mockHome, ".copilot", "mcp-config.json"), "utf-8"));
+      expect(content.mcpServers?.["remote-only"]).toBeUndefined();
+    });
+
+    it("removes stale MCP entries when command becomes empty", async () => {
+      const adapter = new GithubCopilotCliAdapter();
+      const mcpPath = path.join(mockHome, ".copilot", "mcp-config.json");
+      await fs.mkdir(path.dirname(mcpPath), { recursive: true });
+      await fs.writeFile(mcpPath, JSON.stringify({
+        mcpServers: {
+          stale: { command: "old-command" },
+        },
+      }));
+
+      await adapter.write({
+        mcps: {
+          stale: { command: "" },
+        },
+        agents: {},
+        skills: {},
+      });
+
+      const content = JSON.parse(await fs.readFile(mcpPath, "utf-8"));
+      expect(content.mcpServers.stale).toBeUndefined();
+    });
+  });
+
+  describe("ZedAdapter", () => {
+    it("write only serializes command/args/env — no Synctax-internal fields", async () => {
+      const adapter = new ZedAdapter();
+      await fs.mkdir(path.join(mockHome, ".config", "zed"), { recursive: true });
+      await fs.writeFile(path.join(mockHome, ".config", "zed", "settings.json"), "{}");
+
+      await adapter.write({
+        mcps: {
+          "test-mcp": {
+            command: "npx",
+            args: ["-y", "server"],
+            url: "https://example.com/mcp",
+            transport: "sse",
+            scope: "user",
+          }
+        },
+        agents: {},
+        skills: {},
+      });
+
+      const content = JSON.parse(await fs.readFile(path.join(mockHome, ".config", "zed", "settings.json"), "utf-8"));
+      const written = content.context_servers["test-mcp"];
+      expect(written.command).toBe("npx");
+      expect(written.url).toBeUndefined();
+      expect(written.transport).toBeUndefined();
+      expect(written.scope).toBeUndefined();
+    });
+
+    it("skips MCP entries with empty command values", async () => {
+      const adapter = new ZedAdapter();
+
+      await adapter.write({
+        mcps: {
+          "remote-only": {
+            command: "",
+            url: "https://example.com",
+            transport: "sse",
+          }
+        },
+        agents: {},
+        skills: {},
+      });
+
+      const content = JSON.parse(await fs.readFile(path.join(mockHome, ".config", "zed", "settings.json"), "utf-8"));
+      expect(content.context_servers?.["remote-only"]).toBeUndefined();
+    });
+
+    it("removes stale context server entries when command becomes empty", async () => {
+      const adapter = new ZedAdapter();
+      const settingsPath = path.join(mockHome, ".config", "zed", "settings.json");
+      await fs.mkdir(path.dirname(settingsPath), { recursive: true });
+      await fs.writeFile(settingsPath, JSON.stringify({
+        context_servers: {
+          stale: { command: "old-command" },
+        },
+      }));
+
+      await adapter.write({
+        mcps: {
+          stale: { command: "" },
+        },
+        agents: {},
+        skills: {},
+      });
+
+      const content = JSON.parse(await fs.readFile(settingsPath, "utf-8"));
+      expect(content.context_servers.stale).toBeUndefined();
+    });
+  });
+
+  describe("ClineAdapter", () => {
+    it("write only serializes command/args/env — no Synctax-internal fields", async () => {
+      const adapter = new ClineAdapter();
+      await fs.mkdir(path.join(mockHome, ".cline"), { recursive: true });
+
+      await adapter.write({
+        mcps: {
+          "test-mcp": {
+            command: "npx",
+            args: ["-y", "server"],
+            url: "https://example.com/mcp",
+            transport: "sse",
+            scope: "user",
+          }
+        },
+        agents: {},
+        skills: {},
+      });
+
+      const content = JSON.parse(await fs.readFile(path.join(mockHome, ".cline", "mcp_settings.json"), "utf-8"));
+      const written = content.mcpServers["test-mcp"];
+      expect(written.command).toBe("npx");
+      expect(written.url).toBeUndefined();
+      expect(written.transport).toBeUndefined();
+      expect(written.scope).toBeUndefined();
+    });
+
+    it("skips MCP entries with empty command values", async () => {
+      const adapter = new ClineAdapter();
+
+      await adapter.write({
+        mcps: {
+          "remote-only": {
+            command: "",
+            url: "https://example.com",
+            transport: "sse",
+          }
+        },
+        agents: {},
+        skills: {},
+      });
+
+      const content = JSON.parse(await fs.readFile(path.join(mockHome, ".cline", "mcp_settings.json"), "utf-8"));
+      expect(content.mcpServers?.["remote-only"]).toBeUndefined();
     });
   });
 });

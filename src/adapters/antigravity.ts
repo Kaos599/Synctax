@@ -21,13 +21,18 @@ function scopeWeight(scope: ConfigScope): number {
   return 2;
 }
 
-function stripScope<T extends { scope?: ResourceScope }>(item: T): Omit<T, "scope"> {
-  const { scope: _scope, ...rest } = item;
-  return rest;
-}
-
 async function fileExists(p: string): Promise<boolean> {
   try { await fs.access(p); return true; } catch { return false; }
+}
+
+function mcpToAntigravityFormat(value: McpServer): Record<string, unknown> | null {
+  const command = typeof value.command === "string" ? value.command.trim() : "";
+  if (!command) return null;
+
+  const out: Record<string, unknown> = { command };
+  if (value.args && value.args.length > 0) out.args = value.args;
+  if (value.env && Object.keys(value.env).length > 0) out.env = value.env;
+  return out;
 }
 
 async function readJsonSafe(p: string): Promise<any> {
@@ -177,7 +182,12 @@ export class AntigravityAdapter implements ClientAdapter {
       const existing = await readJsonSafe(configPath);
       existing.mcpServers = existing.mcpServers || {};
       for (const [key, value] of Object.entries(toWriteMcps)) {
-        existing.mcpServers[key] = stripScope(value);
+        const formatted = mcpToAntigravityFormat(value);
+        if (!formatted) {
+          delete existing.mcpServers[key];
+          continue;
+        }
+        existing.mcpServers[key] = formatted;
       }
       await atomicWriteFile(configPath, JSON.stringify(existing, null, 2));
     }

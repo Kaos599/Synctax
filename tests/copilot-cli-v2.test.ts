@@ -139,6 +139,26 @@ describe("GithubCopilotCliAdapter v2", () => {
       expect(data.mcpServers["scoped"].scope).toBeUndefined();
     });
 
+    it("skips MCP entries with empty command values", async () => {
+      const adapter = new GithubCopilotCliAdapter();
+
+      await adapter.write({
+        mcps: {
+          "remote-only": {
+            command: "",
+            url: "https://example.com/mcp",
+            transport: "sse",
+          }
+        },
+        agents: {},
+        skills: {},
+      });
+
+      const mcpPath = path.join(mockHome, ".copilot", "mcp-config.json");
+      const data = JSON.parse(await fs.readFile(mcpPath, "utf-8"));
+      expect(data.mcpServers?.["remote-only"]).toBeUndefined();
+    });
+
     it("returns empty MCPs when no mcp-config.json exists", async () => {
       const adapter = new GithubCopilotCliAdapter();
       const { mcps } = await adapter.read();

@@ -8,9 +8,14 @@ import { assertSafeResourceName } from "../resource-name.js";
 import { atomicWriteFile } from "../fs-utils.js";
 import { toArray } from "../coerce.js";
 
-function stripScope<T extends { scope?: ResourceScope }>(item: T): Omit<T, "scope"> {
-  const { scope: _scope, ...rest } = item;
-  return rest;
+function mcpToCopilotCliFormat(value: McpServer): Record<string, unknown> | null {
+  const command = typeof value.command === "string" ? value.command.trim() : "";
+  if (!command) return null;
+
+  const out: Record<string, unknown> = { command };
+  if (value.args && value.args.length > 0) out.args = value.args;
+  if (value.env && Object.keys(value.env).length > 0) out.env = value.env;
+  return out;
 }
 
 async function fileExists(p: string): Promise<boolean> {
@@ -144,7 +149,12 @@ export class GithubCopilotCliAdapter implements ClientAdapter {
       const existing = await readJsonSafe(this.mcpConfigPath);
       existing.mcpServers = existing.mcpServers || {};
       for (const [key, value] of Object.entries(allMcps)) {
-        existing.mcpServers[key] = stripScope(value);
+        const formatted = mcpToCopilotCliFormat(value);
+        if (!formatted) {
+          delete existing.mcpServers[key];
+          continue;
+        }
+        existing.mcpServers[key] = formatted;
       }
       await atomicWriteFile(this.mcpConfigPath, JSON.stringify(existing, null, 2));
     }

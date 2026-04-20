@@ -1,6 +1,6 @@
 import fs from "fs/promises";
 import path from "path";
-import type { ClientAdapter, McpServer, Agent, Skill, Permissions, Models, Prompts, Credentials, ResourceScope } from "../types.js";
+import type { ClientAdapter, McpServer, Agent, Skill, Permissions, Models, Prompts, Credentials } from "../types.js";
 import { homeDir, xdgStyleConfigCandidates, firstExistingScopedPath, firstExistingPath } from "../platform-paths.js";
 import type { ConfigScope } from "../platform-paths.js";
 import { splitByScope } from "../scopes.js";
@@ -13,9 +13,15 @@ function scopeWeight(scope: ConfigScope): number {
   return 2;
 }
 
-function stripScope<T extends { scope?: ResourceScope }>(item: T): Omit<T, "scope"> {
-  const { scope: _scope, ...rest } = item;
-  return rest;
+function mcpToClineFormat(value: McpServer): Record<string, unknown> | null {
+  const command = typeof value.command === "string" ? value.command.trim() : "";
+  if (!command) return null;
+
+  const out: Record<string, unknown> = { command };
+  if (value.args && value.args.length > 0) out.args = value.args;
+  if (value.env && Object.keys(value.env).length > 0) out.env = value.env;
+  if (value.disabled !== undefined) out.disabled = value.disabled;
+  return out;
 }
 
 function mergeMcpServers(parsed: Record<string, any>, into: Record<string, McpServer>, scope: ConfigScope) {
@@ -157,7 +163,9 @@ export class ClineAdapter implements ClientAdapter {
 
     existing.mcpServers = {};
     for (const [key, value] of Object.entries(mcps)) {
-      existing.mcpServers[key] = stripScope(value);
+      const formatted = mcpToClineFormat(value);
+      if (!formatted) continue;
+      existing.mcpServers[key] = formatted;
     }
 
     await atomicWriteFile(configPath, JSON.stringify(existing, null, 2));

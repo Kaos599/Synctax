@@ -63,7 +63,7 @@ describe("OpenCode Adapter v2", () => {
           mcp: {
             remote: {
               type: "remote",
-              command: ["curl", "https://example.com/mcp"],
+              url: "https://example.com/mcp",
               environment: {},
               enabled: true,
             },
@@ -74,6 +74,32 @@ describe("OpenCode Adapter v2", () => {
       const { mcps } = await adapter.read();
       expectHas(mcps, "remote");
       expect(mcps.remote.transport).toBe("sse");
+      expect(mcps.remote.url).toBe("https://example.com/mcp");
+    });
+
+    it("skips remote MCP entries without a non-empty url", async () => {
+      const adapter = new OpenCodeAdapter();
+      await fs.mkdir(path.join(mockHome, ".config", "opencode"), { recursive: true });
+      await fs.writeFile(
+        path.join(mockHome, ".config", "opencode", "config.json"),
+        JSON.stringify({
+          mcp: {
+            remoteMissing: {
+              type: "remote",
+              environment: {},
+            },
+            remoteBlank: {
+              type: "remote",
+              url: "   ",
+              environment: {},
+            },
+          },
+        }),
+      );
+
+      const { mcps } = await adapter.read();
+      expect(mcps.remoteMissing).toBeUndefined();
+      expect(mcps.remoteBlank).toBeUndefined();
     });
 
     it("reads single-element command array correctly", async () => {
@@ -195,10 +221,10 @@ describe("OpenCode Adapter v2", () => {
       await adapter.write({
         mcps: {
           remote: {
-            command: "curl",
-            args: ["https://example.com"],
+            command: "",
             env: {},
             transport: "sse",
+            url: "https://example.com/mcp",
           },
         },
         agents: {},
@@ -208,6 +234,22 @@ describe("OpenCode Adapter v2", () => {
       const configPath = path.join(mockHome, ".config", "opencode", "config.json");
       const config = JSON.parse(await fs.readFile(configPath, "utf-8"));
       expect(config.mcp.remote.type).toBe("remote");
+      expect(config.mcp.remote.url).toBe("https://example.com/mcp");
+    });
+
+    it("throws when writing remote MCP without url", async () => {
+      const adapter = new OpenCodeAdapter();
+
+      await expect(adapter.write({
+        mcps: {
+          remote: {
+            command: "",
+            transport: "sse",
+          },
+        },
+        agents: {},
+        skills: {},
+      })).rejects.toThrow(/missing.*url/i);
     });
 
     it("writes MCP with no args as single-element command array", async () => {

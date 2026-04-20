@@ -5,6 +5,7 @@ import { getVersion } from "../version.js";
 import { EnvVault } from "../env-vault.js";
 import { assertSafeResourceMapKeys } from "../resource-name.js";
 import { acquireLock } from "../lock.js";
+import { atomicWriteSecure } from "../fs-utils.js";
 
 function toSortedKeys(record: Record<string, unknown> | undefined): string[] {
   return Object.keys(record || {}).sort((a, b) => a.localeCompare(b));
@@ -329,8 +330,7 @@ export async function profilePublishCommand(name: string, options?: any): Promis
   const jsonStr = JSON.stringify(exportPayload, null, 2);
 
   if (options?.output) {
-    const fs = await import("fs/promises");
-    await fs.writeFile(options.output, jsonStr, "utf-8");
+    await atomicWriteSecure(options.output, jsonStr);
     ui.success(`Profile ${name} exported to ${options.output}`);
   } else {
     ui.header(`Profile Export JSON:`);

@@ -1,5 +1,5 @@
-import React from "react";
-import { Box, Text } from "ink";
+import React, { useEffect, useState } from "react";
+import { Box, Text, useInput, useStdout } from "ink";
 import { Spinner } from "@inkjs/ui";
 import { colors, chars } from "../theme.js";
 
@@ -47,8 +47,37 @@ export interface ResultViewProps {
   output: string[];
 }
 
+export function clampScrollOffset(scrollOffset: number, maxOffset: number): number {
+  return Math.min(Math.max(scrollOffset, 0), maxOffset);
+}
+
+export function getResultMaxVisible(termHeight: number): number {
+  return Math.max(4, termHeight - 9);
+}
+
+export function isResultScrollable(outputLineCount: number, termHeight: number): boolean {
+  return outputLineCount > getResultMaxVisible(termHeight);
+}
+
 export function ResultView({ actionLabel, ok, elapsedMs, error, output }: ResultViewProps) {
-  const lastOutput = output.slice(-4);
+  const { stdout } = useStdout();
+  const termHeight = stdout?.rows ?? 36;
+  const maxVisible = getResultMaxVisible(termHeight);
+  const [scrollOffset, setScrollOffset] = useState(0);
+  const maxOffset = Math.max(0, output.length - maxVisible);
+  const canScrollUp = scrollOffset > 0;
+  const canScrollDown = scrollOffset < maxOffset;
+
+  useEffect(() => {
+    setScrollOffset((offset) => clampScrollOffset(offset, maxOffset));
+  }, [maxOffset]);
+
+  useInput((_input, key) => {
+    if (key.upArrow) setScrollOffset((o) => Math.max(0, o - 1));
+    if (key.downArrow) setScrollOffset((o) => Math.min(maxOffset, o + 1));
+  });
+
+  const visibleOutput = output.slice(scrollOffset, scrollOffset + maxVisible);
   const icon = ok ? chars.check : chars.cross_mark;
   const statusColor = ok ? colors.success : colors.error;
   const statusText = ok ? "completed successfully" : "failed";
@@ -72,19 +101,32 @@ export function ResultView({ actionLabel, ok, elapsedMs, error, output }: Result
         </Box>
       )}
 
-      {lastOutput.length > 0 && (
+      {output.length > 0 && (
         <Box flexDirection="column" borderStyle="single" borderColor={colors.border} paddingX={1} marginTop={1}>
-          {lastOutput.map((line, i) => (
+          {canScrollUp && (
+            <Text color={colors.textMuted} dimColor>
+              ↑ {scrollOffset} line{scrollOffset !== 1 ? "s" : ""} above
+            </Text>
+          )}
+          {visibleOutput.map((line, i) => (
             <Text key={i} color={colors.textSecondary} wrap="truncate">
               {line}
             </Text>
           ))}
+          {canScrollDown && (
+            <Text color={colors.textMuted} dimColor>
+              ↓ {maxOffset - scrollOffset} line{maxOffset - scrollOffset !== 1 ? "s" : ""} below
+            </Text>
+          )}
         </Box>
       )}
 
       <Box marginTop={1}>
         <Text color={colors.textMuted}>
-          Press any key to return to dashboard, <Text color={colors.hotkey} bold>q</Text> to quit
+          {output.length > maxVisible
+            ? <>Use <Text color={colors.hotkey} bold>↑↓</Text> to scroll · any other key to return · <Text color={colors.hotkey} bold>q</Text> to quit</>
+            : <>Press any key to return to dashboard, <Text color={colors.hotkey} bold>q</Text> to quit</>
+          }
         </Text>
       </Box>
     </Box>

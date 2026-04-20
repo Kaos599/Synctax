@@ -10,7 +10,7 @@ import { StatusBar } from "./StatusBar.js";
 import { ConfirmView } from "./ConfirmModal.js";
 import { HelpView } from "./HelpOverlay.js";
 import { CommandPalette } from "./CommandPalette.js";
-import { RunningView, ResultView } from "./RunningView.js";
+import { RunningView, ResultView, isResultScrollable } from "./RunningView.js";
 import { SourceSelector } from "./SourceSelector.js";
 import { ThemeSelector } from "./ThemeSelector.js";
 import { ProfileSelector } from "./ProfileSelector.js";
@@ -177,8 +177,11 @@ export function App({ data, executeAction }: AppProps) {
       return;
     }
 
-    // Result mode — any key returns to dashboard
+    // Result mode — arrow keys are handled by ResultView for scrolling; any other key exits
     if (mode === "result") {
+      const lineCount = lastResult?.output.length ?? 0;
+      const canScroll = isResultScrollable(lineCount, stdout?.rows ?? 36);
+      if (canScroll && (key.upArrow || key.downArrow)) return;
       goHome();
       setLastResult(undefined);
       setRunOutput([]);

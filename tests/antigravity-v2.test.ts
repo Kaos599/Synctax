@@ -150,6 +150,26 @@ describe("AntigravityAdapter v2", () => {
       expect(data.mcpServers["scoped-mcp"].command).toBe("node");
     });
 
+    it("skips MCP entries with empty command values", async () => {
+      const adapter = new AntigravityAdapter();
+
+      await adapter.write({
+        mcps: {
+          "remote-only": {
+            command: "",
+            url: "https://example.com/mcp",
+            transport: "sse",
+          }
+        },
+        agents: {},
+        skills: {},
+      });
+
+      const mcpPath = path.join(mockHome, ".gemini", "antigravity", "mcp_config.json");
+      const data = JSON.parse(await fs.readFile(mcpPath, "utf-8"));
+      expect(data.mcpServers?.["remote-only"]).toBeUndefined();
+    });
+
     it("skips writing when no MCPs are provided", async () => {
       const adapter = new AntigravityAdapter();
       await adapter.write({ mcps: {}, agents: {}, skills: {} });
