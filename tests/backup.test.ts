@@ -78,6 +78,21 @@ describe("backupCommand", () => {
     expect(entries.includes("manifest.json")).toBe(true);
   });
 
+  it.skipIf(process.platform === "win32")("writes bundled archives with 0o600 permissions", async () => {
+    const { backupCommand } = await import("../src/commands.js") as any;
+    const output = path.join(projectDir, "secure-bundle.zip");
+
+    const previousUmask = process.umask(0o022);
+    try {
+      await backupCommand({ output });
+    } finally {
+      process.umask(previousUmask);
+    }
+
+    const stat = await fs.stat(output);
+    expect(stat.mode & 0o777).toBe(0o600);
+  });
+
   it("supports selecting a single client", async () => {
     const { backupCommand } = await import("../src/commands.js") as any;
 

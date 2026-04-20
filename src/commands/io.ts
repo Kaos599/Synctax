@@ -14,7 +14,7 @@ function timestampLike(input: string): string {
 
 async function writeFileAtomic(targetPath: string, content: string): Promise<void> {
   const tempPath = `${targetPath}.tmp-${Date.now()}-${Math.random().toString(16).slice(2)}`;
-  await fs.writeFile(tempPath, content, "utf-8");
+  await fs.writeFile(tempPath, content, { encoding: "utf-8", mode: 0o600 });
   await fs.rename(tempPath, targetPath);
 }
 
@@ -107,7 +107,7 @@ export async function exportCommand(filePath: string) {
   if (exportable.resources) {
     delete exportable.resources.credentials;
   }
-  await fs.writeFile(resolvedPath, JSON.stringify(exportable, null, 2), "utf-8");
+  await fs.writeFile(resolvedPath, JSON.stringify(exportable, null, 2), { encoding: "utf-8", mode: 0o600 });
   ui.success(`Exported master configuration to ${resolvedPath}`);
 
   console.log(ui.format.summary(timer.elapsed(), `exported to ${resolvedPath}`));

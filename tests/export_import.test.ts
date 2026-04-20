@@ -64,6 +64,20 @@ describe("Export/Import Commands", () => {
       const parsed = JSON.parse(exportedData);
       expect(parsed.resources.mcps.test.command).toBe("test");
     });
+
+    it.skipIf(process.platform === "win32")("writes exported config with 0o600 permissions", async () => {
+      const exportPath = "secure-export.json";
+
+      const previousUmask = process.umask(0o022);
+      try {
+        await exportCommand(exportPath);
+      } finally {
+        process.umask(previousUmask);
+      }
+
+      const stat = await fs.stat(path.join(tmpDir, exportPath));
+      expect(stat.mode & 0o777).toBe(0o600);
+    });
   });
 
   describe("export credential stripping", () => {
