@@ -14,7 +14,8 @@ function timestampLike(input: string): string {
 
 async function writeFileAtomic(targetPath: string, content: string): Promise<void> {
   const tempPath = `${targetPath}.tmp-${Date.now()}-${Math.random().toString(16).slice(2)}`;
-  await fs.writeFile(tempPath, content, "utf-8");
+  // Write sensitive configuration files with owner-only permissions
+  await fs.writeFile(tempPath, content, { encoding: "utf-8", mode: 0o600 });
   await fs.rename(tempPath, targetPath);
 }
 
