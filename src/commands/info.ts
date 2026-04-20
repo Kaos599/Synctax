@@ -20,7 +20,7 @@ const DRIFT_DOMAIN_OVERRIDES: Partial<Record<AdapterId, readonly DriftDomain[]>>
   cline: ["mcps"],
   "github-copilot": ["mcps"],
   "github-copilot-cli": ["skills"],
-  "gemini-cli": [],
+  "gemini-cli": ["mcps"],
 };
 
 function normalizeComparable(value: unknown): unknown {
@@ -34,7 +34,19 @@ function normalizeComparable(value: unknown): unknown {
 
     for (const key of Object.keys(obj).sort()) {
       if (key === "scope") continue;
-      normalized[key] = normalizeComparable(obj[key]);
+      const val = obj[key];
+      // Empty env is semantically identical to absent env (clients that don't store env omit it)
+      if (key === "env" && typeof val === "object" && val !== null && Object.keys(val as object).length === 0) continue;
+      // Remote transport variants: "http" and "sse" both mean remote — clients that use a
+      // generic "remote" type can't preserve the distinction, so treat them as equal
+      if (key === "transport" && (val === "http" || val === "sse")) {
+        normalized[key] = "sse";
+        continue;
+      }
+      // "stdio" is the implicit default for command-based MCPs — clients that don't store
+      // transport will omit it, so skip it to avoid spurious drift
+      if (key === "transport" && val === "stdio") continue;
+      normalized[key] = normalizeComparable(val);
     }
 
     return normalized;

@@ -16,6 +16,12 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **OpenCode detection**: Expanded config and skills discovery to include `OPENCODE_CONFIG` and compatibility skill roots (`.claude/skills`, `.agents/skills`, plus global equivalents).
 - **Client aliases**: Added canonicalization for common client id variants (for example `open code`/`open-code` → `opencode`) in pull/init/sync/status/doctor flows.
 
+## [2.1.2] — 2026-04-20
+
+### Changed
+
+- **Version bump**: Updated CLI/package version to `2.1.2`.
+
 ## [2.0.1] — 2026-04-05
 
 ### Fixed

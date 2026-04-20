@@ -1,5 +1,6 @@
+
 <p align="center">
-  <img src="assets/banner.svg" alt="Synctax" width="480">
+  <img width="1920" height="1080" alt="Frame 2095585445" src="https://github.com/user-attachments/assets/094b7221-236e-4470-aec8-c4a1cce8c9e6" />
 </p>
 
 <p align="center"><strong>Universal Sync for the Agentic Developer Stack</strong></p>

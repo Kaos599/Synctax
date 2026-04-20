@@ -177,8 +177,9 @@ export function App({ data, executeAction }: AppProps) {
       return;
     }
 
-    // Result mode — any key returns to dashboard
+    // Result mode — arrow keys are handled by ResultView for scrolling; any other key exits
     if (mode === "result") {
+      if (key.upArrow || key.downArrow) return;
       goHome();
       setLastResult(undefined);
       setRunOutput([]);

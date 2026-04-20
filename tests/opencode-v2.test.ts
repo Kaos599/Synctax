@@ -195,10 +195,10 @@ describe("OpenCode Adapter v2", () => {
       await adapter.write({
         mcps: {
           remote: {
-            command: "curl",
-            args: ["https://example.com"],
+            command: "",
             env: {},
             transport: "sse",
+            url: "https://example.com/mcp",
           },
         },
         agents: {},
@@ -208,6 +208,22 @@ describe("OpenCode Adapter v2", () => {
       const configPath = path.join(mockHome, ".config", "opencode", "config.json");
       const config = JSON.parse(await fs.readFile(configPath, "utf-8"));
       expect(config.mcp.remote.type).toBe("remote");
+      expect(config.mcp.remote.url).toBe("https://example.com/mcp");
+    });
+
+    it("throws when writing remote MCP without url", async () => {
+      const adapter = new OpenCodeAdapter();
+
+      await expect(adapter.write({
+        mcps: {
+          remote: {
+            command: "",
+            transport: "sse",
+          },
+        },
+        agents: {},
+        skills: {},
+      })).rejects.toThrow(/missing.*url/i);
     });
 
     it("writes MCP with no args as single-element command array", async () => {

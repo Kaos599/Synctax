@@ -21,13 +21,26 @@ function configCandidates(h = homeDir()) {
   ];
 }
 
-function writeGeminiTo(configPath: string, resources: { models?: Models; prompts?: Prompts }) {
+function mcpToGeminiFormat(value: McpServer): Record<string, unknown> {
+  const out: Record<string, unknown> = { command: value.command };
+  if (value.args && value.args.length > 0) out.args = value.args;
+  if (value.env && Object.keys(value.env).length > 0) out.env = value.env;
+  return out;
+}
+
+function writeGeminiTo(configPath: string, resources: { mcps?: Record<string, McpServer>; models?: Models; prompts?: Prompts }) {
   return fs.readFile(configPath, "utf-8")
     .then((data) => JSON.parse(data) as Record<string, any>)
     .catch(() => ({} as Record<string, any>))
     .then(async (existing) => {
-      if (resources.models?.defaultModel) existing.model = resources.models.defaultModel;
+      if (resources.models?.defaultModel) existing.model = { name: resources.models.defaultModel };
       if (resources.prompts?.globalSystemPrompt) existing.systemInstruction = resources.prompts.globalSystemPrompt;
+      if (resources.mcps && Object.keys(resources.mcps).length > 0) {
+        existing.mcpServers = existing.mcpServers || {};
+        for (const [key, value] of Object.entries(resources.mcps)) {
+          if (value.command) existing.mcpServers[key] = mcpToGeminiFormat(value);
+        }
+      }
       const dir = path.dirname(configPath);
       await fs.mkdir(dir, { recursive: true }).catch(() => {});
       await atomicWriteFile(configPath, JSON.stringify(existing, null, 2));
@@ -60,10 +73,26 @@ export class GeminiCliAdapter implements ClientAdapter {
         const data = await fs.readFile(candidate.path, "utf-8");
         const parsed = JSON.parse(data);
         if (parsed.model) {
-          result.models!.defaultModel = parsed.model;
+          const modelName =
+            typeof parsed.model === "string"
+              ? parsed.model
+              : (typeof parsed.model?.name === "string" ? parsed.model.name : undefined);
+          if (typeof modelName === "string" && modelName.length > 0) {
+            result.models!.defaultModel = modelName;
+          }
         }
         if (parsed.systemInstruction) {
           result.prompts!.globalSystemPrompt = parsed.systemInstruction;
+        }
+        for (const [key, val] of Object.entries<any>(parsed.mcpServers || {})) {
+          if (val && typeof val === "object" && typeof val.command === "string") {
+            result.mcps[key] = {
+              command: val.command,
+              args: Array.isArray(val.args) ? val.args : [],
+              env: val.env || {},
+              scope: candidate.scope,
+            };
+          }
         }
       } catch {
         /* missing or invalid */
@@ -74,7 +103,7 @@ export class GeminiCliAdapter implements ClientAdapter {
 
   async write(resources: { mcps: Record<string, McpServer>, agents: Record<string, Agent>, skills: Record<string, Skill>, models?: Models, prompts?: Prompts }): Promise<void> {
     const configPath = await this.resolvedConfigPath();
-    await writeGeminiTo(configPath, resources);
+    await writeGeminiTo(configPath, { mcps: resources.mcps, models: resources.models, prompts: resources.prompts });
   }
 
   getMemoryFileName(): string { return ".geminirules"; }
