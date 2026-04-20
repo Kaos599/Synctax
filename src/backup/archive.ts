@@ -21,7 +21,7 @@ function sha256(input: Uint8Array): string {
 
 async function writeFileAtomic(targetPath: string, data: Uint8Array | Buffer | string): Promise<void> {
   const tempPath = `${targetPath}.tmp-${Date.now()}-${Math.random().toString(16).slice(2)}`;
-  await fs.writeFile(tempPath, data);
+  await fs.writeFile(tempPath, data, { mode: 0o600 });
   await fs.rename(tempPath, targetPath);
 }
 

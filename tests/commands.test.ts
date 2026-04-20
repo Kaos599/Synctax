@@ -405,6 +405,39 @@ describe("CLI Commands", () => {
     expect(config.resources.mcps["bad"]).toBeUndefined();
   });
 
+  it.skipIf(process.platform === "win32")("restoreCommand writes restored config with 0o600 permissions", async () => {
+    const { restoreCommand } = await import("../src/commands.js");
+
+    await manager.write(createConfig({
+      version: 1,
+      source: "claude",
+      clients: {},
+      resources: createResources({
+        mcps: { secure: { command: "secure" } },
+      }),
+    }));
+    await manager.backup();
+
+    await manager.write(createConfig({
+      version: 1,
+      source: "claude",
+      clients: {},
+      resources: createResources({
+        mcps: { temp: { command: "temp" } },
+      }),
+    }));
+
+    const previousUmask = process.umask(0o022);
+    try {
+      await restoreCommand({});
+    } finally {
+      process.umask(previousUmask);
+    }
+
+    const stat = await fs.stat(path.join(mockHome, ".synctax", "config.json"));
+    expect(stat.mode & 0o777).toBe(0o600);
+  });
+
   it("restoreCommand requires exact --from backup identifier", async () => {
     const { restoreCommand } = await import("../src/commands.js");
 
