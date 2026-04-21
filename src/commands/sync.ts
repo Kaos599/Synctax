@@ -521,7 +521,16 @@ async function syncCommandInner(
     }
   }
 
-  let writeFailed = results.some((result) => !result.ok);
+  const writeStats = results.reduce(
+    (acc, r) => {
+      if (r.ok) acc.success += 1;
+      else acc.failed += 1;
+      return acc;
+    },
+    { success: 0, failed: 0 }
+  );
+
+  let writeFailed = writeStats.failed > 0;
   if (writeFailed && !options.dryRun) {
     const successfulClients = enabledClients.filter((client) => {
       const result = results.find((entry) => entry.id === client.id);
@@ -529,7 +538,7 @@ async function syncCommandInner(
     });
 
     if (successfulClients.length > 0) {
-      const failedCount = results.filter((result) => !result.ok).length;
+      const failedCount = writeStats.failed;
       ui.warn(`Write failed on ${failedCount} client${failedCount !== 1 ? "s" : ""}. Starting rollback for ${successfulClients.length} client${successfulClients.length !== 1 ? "s" : ""}...`);
     }
 
@@ -595,8 +604,8 @@ async function syncCommandInner(
     process.exitCode = 1;
   }
 
-  const successCount = results.filter((r) => r.ok).length;
-  const failCount = results.filter((r) => !r.ok).length;
+  const successCount = writeStats.success;
+  const failCount = writeStats.failed;
   const summaryParts: string[] = [`${successCount} client${successCount !== 1 ? "s" : ""} synced`];
   if (failCount > 0) summaryParts.push(`${failCount} failed`);
   const phaseTimings = [
