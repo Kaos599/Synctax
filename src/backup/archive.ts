@@ -144,6 +144,17 @@ export async function writeBackupBundle(params: {
     });
   }
 
+  const stats = clientResults.reduce(
+    (acc, r) => {
+      if (r.status === "success") acc.success += 1;
+      else if (r.status === "partial") acc.partial += 1;
+      else if (r.status === "skipped") acc.skipped += 1;
+      else if (r.status === "failed") acc.failed += 1;
+      return acc;
+    },
+    { success: 0, partial: 0, skipped: 0, failed: 0 }
+  );
+
   const rootManifest = {
     manifestVersion: 1,
     kind: "synctax-backup-bundle",
@@ -158,10 +169,10 @@ export async function writeBackupBundle(params: {
     })),
     totals: {
       clients: clientResults.length,
-      success: clientResults.filter((r) => r.status === "success").length,
-      partial: clientResults.filter((r) => r.status === "partial").length,
-      skipped: clientResults.filter((r) => r.status === "skipped").length,
-      failed: clientResults.filter((r) => r.status === "failed").length,
+      success: stats.success,
+      partial: stats.partial,
+      skipped: stats.skipped,
+      failed: stats.failed,
     },
   };
 
