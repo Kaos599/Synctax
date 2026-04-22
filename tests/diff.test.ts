@@ -184,6 +184,66 @@ describe("diffCommand", () => {
     expect(output).not.toContain("Diff A (diff-a)");
   });
 
+  it("diff runs client reads in parallel", async () => {
+    const readA = vi.fn(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      return { mcps: {}, agents: {}, skills: {} };
+    });
+    const readB = vi.fn(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      return { mcps: {}, agents: {}, skills: {} };
+    });
+
+    setAdapter("diff-a", {
+      id: "diff-a",
+      name: "Diff A",
+      detect: async () => true,
+      read: readA,
+      write: async () => {},
+      getMemoryFileName: () => "MOCK.md",
+      readMemory: async () => null,
+      writeMemory: async () => {},
+    });
+
+    setAdapter("diff-b", {
+      id: "diff-b",
+      name: "Diff B",
+      detect: async () => true,
+      read: readB,
+      write: async () => {},
+      getMemoryFileName: () => "MOCK.md",
+      readMemory: async () => null,
+      writeMemory: async () => {},
+    });
+
+    await manager.write({
+      version: 1,
+      source: "diff-a",
+      activeProfile: "default",
+      clients: {
+        "diff-a": { enabled: true },
+        "diff-b": { enabled: true },
+      },
+      profiles: { default: {} },
+      resources: {
+        mcps: {},
+        agents: {},
+        skills: {},
+      },
+    } as any);
+
+    const start = Date.now();
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    await diffCommand(undefined, { json: true });
+    logSpy.mockRestore();
+    const duration = Date.now() - start;
+
+    expect(readA).toHaveBeenCalledTimes(1);
+    expect(readB).toHaveBeenCalledTimes(1);
+    // If sequential, duration would be ~100ms. If parallel, ~50ms.
+    expect(duration).toBeLessThan(80);
+  });
+
   it("diff supports --json", async () => {
     setAdapter("diff-json", {
       id: "diff-json",

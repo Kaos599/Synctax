@@ -1,0 +1,3 @@
+## 2024-04-22 - Diff Read Parallelization
+**Learning:** Sequential file reads in commands acting on multiple target clients limit CLI performance. Reading from all active clients in parallel, bounded by using `Promise.all()` with individual try-catches and a returned outcome type containing `success: true/false as const`, speeds up CLI commands considerably when multiple AI clients are enabled. This aligns with findings in other commands across this codebase.
+**Action:** When working on CLI tools aggregating data from multiple configurable AI clients, use `Promise.all()` with explicitly typed `success` responses instead of loops sequentially awaiting filesystem/external calls to prevent unnecessary blocking behavior.
