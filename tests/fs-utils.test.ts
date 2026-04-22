@@ -55,3 +55,16 @@ describe("atomicWriteSecure", () => {
     expect(stat.mode & 0o777).toBe(0o600);
   });
 });
+
+describe("atomicWriteFile security", () => {
+  it("does not use insecure Math.random for temp file generation", async () => {
+    const originalRandom = Math.random;
+    Math.random = () => { throw new Error("Math.random is insecure"); };
+    try {
+      const target = path.join(tmpDir, "secure-test.json");
+      await atomicWriteFile(target, "test");
+    } finally {
+      Math.random = originalRandom;
+    }
+  });
+});

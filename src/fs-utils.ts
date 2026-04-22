@@ -1,5 +1,6 @@
 import fs from "fs/promises";
 import path from "path";
+import crypto from "crypto";
 
 /**
  * Write a file atomically: write to a temp file in the same directory,
@@ -14,7 +15,10 @@ export async function atomicWriteFile(
   const dir = path.dirname(targetPath);
   await fs.mkdir(dir, { recursive: true }).catch(() => {});
 
-  const tmpSuffix = `${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  // SECURITY WARNING: Do not use Math.random() for sensitive/temporary filenames
+  // as it is predictable. Using crypto.randomBytes() to prevent file collision and
+  // path prediction attacks.
+  const tmpSuffix = `${process.pid}-${Date.now()}-${crypto.randomBytes(8).toString("hex")}`;
   const tempPath = `${targetPath}.synctax-tmp-${tmpSuffix}`;
   await fs.writeFile(tempPath, content, {
     encoding: "utf-8",
