@@ -156,13 +156,16 @@ export async function writeBackupBundle(params: {
       byteCount: r.byteCount,
       warnings: r.warnings,
     })),
-    totals: {
-      clients: clientResults.length,
-      success: clientResults.filter((r) => r.status === "success").length,
-      partial: clientResults.filter((r) => r.status === "partial").length,
-      skipped: clientResults.filter((r) => r.status === "skipped").length,
-      failed: clientResults.filter((r) => r.status === "failed").length,
-    },
+    totals: clientResults.reduce(
+      (acc, r) => {
+        if (r.status === "success") acc.success++;
+        else if (r.status === "partial") acc.partial++;
+        else if (r.status === "skipped") acc.skipped++;
+        else if (r.status === "failed") acc.failed++;
+        return acc;
+      },
+      { clients: clientResults.length, success: 0, partial: 0, skipped: 0, failed: 0 }
+    ),
   };
 
   entries["manifest.json"] = strToU8(JSON.stringify(rootManifest, null, 2));
