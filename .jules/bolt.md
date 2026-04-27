@@ -1,0 +1,3 @@
+## 2025-03-01 - Parallelizing adapter detection in CLI startup
+**Learning:** Initializing multiple external adapters sequentially via `for...of` loops introduces significant blocking I/O overhead on app startup when iterating over the file system, delaying the CLI responsiveness considerably. Additionally, trying to handle failures with `try/catch` wrapping for parallel results changes the explicit throw behavior.
+**Action:** Use `Promise.all` with `Array.map` to execute filesystem/I/O-bound initialization sequences concurrently when fetching setup statuses, without modifying the existing error bubbling behavior (unless explicit).
