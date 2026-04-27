@@ -1,0 +1,4 @@
+## 2024-05-01 - Predictable Temporary Filenames (Insecure Randomness)
+**Vulnerability:** The codebase was using `Math.random().toString(36).slice(2)` to generate temporary filenames for atomic file writes in `src/fs-utils.ts` and `src/backup/archive.ts`.
+**Learning:** `Math.random()` is not a cryptographically secure pseudo-random number generator (CSPRNG). Using it for temporary filenames makes the names predictable, which can be exploited in a shared environment (e.g., via symlink attacks or race conditions where an attacker preemptively creates a file with the predicted name).
+**Prevention:** Always use cryptographically secure methods like `crypto.randomBytes(8).toString('hex')` or `crypto.randomUUID()` when generating temporary filenames or handling any logic requiring unpredictability.
