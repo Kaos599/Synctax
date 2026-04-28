@@ -529,7 +529,7 @@ async function syncCommandInner(
     });
 
     if (successfulClients.length > 0) {
-      const failedCount = results.filter((result) => !result.ok).length;
+      const failedCount = results.reduce((count, result) => (result.ok ? count : count + 1), 0);
       ui.warn(`Write failed on ${failedCount} client${failedCount !== 1 ? "s" : ""}. Starting rollback for ${successfulClients.length} client${successfulClients.length !== 1 ? "s" : ""}...`);
     }
 
@@ -595,8 +595,15 @@ async function syncCommandInner(
     process.exitCode = 1;
   }
 
-  const successCount = results.filter((r) => r.ok).length;
-  const failCount = results.filter((r) => !r.ok).length;
+  const { successCount, failCount } = results.reduce(
+    (acc, r) => {
+      if (r.ok) acc.successCount++;
+      else acc.failCount++;
+      return acc;
+    },
+    { successCount: 0, failCount: 0 }
+  );
+
   const summaryParts: string[] = [`${successCount} client${successCount !== 1 ? "s" : ""} synced`];
   if (failCount > 0) summaryParts.push(`${failCount} failed`);
   const phaseTimings = [
