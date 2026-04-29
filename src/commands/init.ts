@@ -83,13 +83,27 @@ export async function initCommand(options: {
     ui.dim("Detecting clients...");
     ui.dim("(Looking for client config files on disk, not running processes.)");
     const spin = ui.spinner("Scanning for installed clients...");
-    for (const [id, adapter] of Object.entries(adapters)) {
-      const detected = await adapter.detect();
-      if (detected) {
-        spin.text(`Found ${adapter.name}`);
-        newConfig.clients[id] = { enabled: true };
+
+    // Performance optimization: parallelize independent adapter detections
+    // to significantly reduce the execution time of the init command.
+    const results = await Promise.all(
+      Object.entries(adapters).map(async ([id, adapter]) => {
+        const detected = await adapter.detect();
+        if (detected) {
+          // Update the spinner dynamically as soon as an adapter is found
+          // so the user still gets immediate visual feedback
+          spin.text(`Found ${adapter.name}`);
+        }
+        return { id, detected };
+      })
+    );
+
+    for (const result of results) {
+      if (result.detected) {
+        newConfig.clients[result.id] = { enabled: true };
       }
     }
+
     const clientCount = Object.keys(newConfig.clients).length;
     if (clientCount > 0) {
       spin.succeed(`Detected ${clientCount} client${clientCount !== 1 ? "s" : ""}`);

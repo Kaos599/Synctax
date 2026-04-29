@@ -1,0 +1,3 @@
+## 2025-02-23 - Parallel adapter detection preserves `init` CLI responsiveness
+**Learning:** Swapping sequential `await` loops for `Promise.all` mapping significantly improves command execution speed but can silently squash intermediate UI updates if not handled inside the concurrent closures. Also, while `Promise.all` guarantees mapped result order, applying it carefully is required to ensure config generation remains deterministic.
+**Action:** When parallelizing mapping tasks with CLI output, trigger intermediate visual feedback directly within the async iterator function (e.g., `spin.text(...)`), but allow the final deterministic state modifications to happen iteratively over the returned array results.
