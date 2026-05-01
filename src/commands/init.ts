@@ -83,8 +83,20 @@ export async function initCommand(options: {
     ui.dim("Detecting clients...");
     ui.dim("(Looking for client config files on disk, not running processes.)");
     const spin = ui.spinner("Scanning for installed clients...");
-    for (const [id, adapter] of Object.entries(adapters)) {
-      const detected = await adapter.detect();
+
+    // Performance optimization: Parallelize adapter detection.
+    // Instead of sequentially waiting for each adapter.detect(), we run them all concurrently.
+    // This reduces the total detection time from O(N) to O(1) in terms of I/O latency,
+    // significantly speeding up the initialization process when multiple adapters are present.
+    const detectResults = await Promise.all(
+      Object.entries(adapters).map(async ([id, adapter]) => ({
+        id,
+        adapter,
+        detected: await adapter.detect(),
+      }))
+    );
+
+    for (const { id, adapter, detected } of detectResults) {
       if (detected) {
         spin.text(`Found ${adapter.name}`);
         newConfig.clients[id] = { enabled: true };
