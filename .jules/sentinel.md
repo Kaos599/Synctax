@@ -1,0 +1,4 @@
+## 2025-05-01 - Predictable temporary file names
+**Vulnerability:** Temporary files created during atomic file writes (in `src/fs-utils.ts` and `src/backup/archive.ts`) used `Math.random()` to generate the file suffix. `Math.random()` is not cryptographically secure and can be guessed, leading to predictable temporary file names. This can potentially be exploited by an attacker to overwrite, hijack, or read the contents of the temporary file before it is renamed.
+**Learning:** `Math.random()` was used for uniqueness rather than security, but temporary filenames in atomic operations need both to prevent collision attacks and race conditions.
+**Prevention:** Always use `crypto.randomBytes(8).toString('hex')` or `crypto.randomUUID()` when generating temporary filenames instead of `Math.random()`.
