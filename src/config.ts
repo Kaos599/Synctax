@@ -70,16 +70,21 @@ export class ConfigManager {
       .reverse();
 
     const toDelete = backups.slice(maxBackups);
-    const deleted: string[] = [];
 
-    for (const file of toDelete) {
-      try {
-        await fs.unlink(path.join(dir, file));
-        deleted.push(file);
-      } catch {
-        // Ignore individual delete failures
-      }
-    }
+    // ⚡ Bolt Optimization: Parallelize file unlinking to prevent sequential I/O bottleneck
+    const deleteResults = await Promise.all(
+      toDelete.map(async (file) => {
+        try {
+          await fs.unlink(path.join(dir, file));
+          return file;
+        } catch {
+          // Ignore individual delete failures
+          return null;
+        }
+      })
+    );
+
+    const deleted = deleteResults.filter((f): f is string => f !== null);
 
     return deleted;
   }
