@@ -103,28 +103,40 @@ export async function validateCommand(options?: { strict?: boolean }): Promise<b
     ui.success(`Active profile \"${config.activeProfile}\" exists.`, { indent: 2 });
   }
 
-  for (const [id, clientConfig] of Object.entries<any>(config.clients || {})) {
-    if (!clientConfig?.enabled) continue;
+  const enabledClientsToDetect = Object.entries<any>(config.clients || {})
+    .filter(([_, clientConfig]) => clientConfig?.enabled)
+    .map(([id]) => ({ id, adapter: adapters[id] }));
 
-    const adapter = adapters[id];
+  for (const { id, adapter } of enabledClientsToDetect) {
     if (!adapter) {
-      ui.error(`Enabled client \"${id}\" has no adapter implementation.`);
+      ui.error(`Enabled client "${id}" has no adapter implementation.`);
       healthy = false;
-      continue;
     }
+  }
 
+  const detectResults = await Promise.all(
+    enabledClientsToDetect
+      .filter((client): client is { id: string; adapter: NonNullable<typeof client.adapter> } => !!client.adapter)
+      .map(async ({ adapter }) => {
+        try {
+          const detected = await adapter.detect();
+          return { adapter, detected, error: null };
+        } catch (error: any) {
+          return { adapter, detected: false, error: error?.message || String(error) };
+        }
+      })
+  );
+
+  for (const { adapter, detected, error } of detectResults) {
     const spin = ui.spinner(`Detecting ${adapter.name}...`);
-    try {
-      const detected = await adapter.detect();
-      if (!detected) {
-        spin.fail(`${adapter.name} not detected.`);
-        healthy = false;
-      } else {
-        spin.succeed(`${adapter.name} detected.`);
-      }
-    } catch (error: any) {
-      spin.fail(`${adapter.name} detection failed: ${error?.message || String(error)}`);
+    if (error) {
+      spin.fail(`${adapter.name} detection failed: ${error}`);
       healthy = false;
+    } else if (!detected) {
+      spin.fail(`${adapter.name} not detected.`);
+      healthy = false;
+    } else {
+      spin.succeed(`${adapter.name} detected.`);
     }
   }
 
