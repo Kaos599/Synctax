@@ -96,26 +96,44 @@ export async function writeBackupBundle(params: {
   for (const client of params.clients) {
     const manifestFiles: ClientManifestFileEntry[] = [];
 
-    for (const file of client.files) {
-      let raw: Uint8Array;
-      try {
-        raw = new Uint8Array(await fs.readFile(file.path));
-      } catch {
-        client.warnings.push(`Unreadable file skipped: ${file.path}`);
-        continue;
+    const fileResults: Array<{ error: string } | { success: true, archivePath: string, raw: Uint8Array, manifestEntry: ClientManifestFileEntry }> = [];
+
+    const CHUNK_SIZE = 50;
+    for (let i = 0; i < client.files.length; i += CHUNK_SIZE) {
+      const chunk = client.files.slice(i, i + CHUNK_SIZE);
+      const chunkResults = await Promise.all(chunk.map(async (file) => {
+        let raw: Uint8Array;
+        try {
+          raw = new Uint8Array(await fs.readFile(file.path));
+        } catch {
+          return { error: `Unreadable file skipped: ${file.path}` };
+        }
+
+        const archivePath = `clients/${client.id}/files/${file.scope}${toArchiveSafePath(file.path)}`;
+        return {
+          success: true as const,
+          archivePath,
+          raw,
+          manifestEntry: {
+            scope: file.scope,
+            kind: file.kind,
+            sourceAbsPath: path.resolve(file.path),
+            archivePath,
+            size: raw.byteLength,
+            sha256: sha256(raw),
+          }
+        };
+      }));
+      fileResults.push(...chunkResults);
+    }
+
+    for (const result of fileResults) {
+      if ('error' in result) {
+        client.warnings.push(result.error);
+      } else if ('success' in result && result.success) {
+        entries[result.archivePath] = result.raw;
+        manifestFiles.push(result.manifestEntry);
       }
-
-      const archivePath = `clients/${client.id}/files/${file.scope}${toArchiveSafePath(file.path)}`;
-      entries[archivePath] = raw;
-
-      manifestFiles.push({
-        scope: file.scope,
-        kind: file.kind,
-        sourceAbsPath: path.resolve(file.path),
-        archivePath,
-        size: raw.byteLength,
-        sha256: sha256(raw),
-      });
     }
 
     const status = manifestFiles.length === 0
@@ -204,26 +222,44 @@ export async function writePerClientBackups(params: {
     const entries: Record<string, Uint8Array> = {};
     const manifestFiles: ClientManifestFileEntry[] = [];
 
-    for (const file of client.files) {
-      let raw: Uint8Array;
-      try {
-        raw = new Uint8Array(await fs.readFile(file.path));
-      } catch {
-        client.warnings.push(`Unreadable file skipped: ${file.path}`);
-        continue;
+    const fileResults: Array<{ error: string } | { success: true, archivePath: string, raw: Uint8Array, manifestEntry: ClientManifestFileEntry }> = [];
+
+    const CHUNK_SIZE = 50;
+    for (let i = 0; i < client.files.length; i += CHUNK_SIZE) {
+      const chunk = client.files.slice(i, i + CHUNK_SIZE);
+      const chunkResults = await Promise.all(chunk.map(async (file) => {
+        let raw: Uint8Array;
+        try {
+          raw = new Uint8Array(await fs.readFile(file.path));
+        } catch {
+          return { error: `Unreadable file skipped: ${file.path}` };
+        }
+
+        const archivePath = `files/${file.scope}${toArchiveSafePath(file.path)}`;
+        return {
+          success: true as const,
+          archivePath,
+          raw,
+          manifestEntry: {
+            scope: file.scope,
+            kind: file.kind,
+            sourceAbsPath: path.resolve(file.path),
+            archivePath,
+            size: raw.byteLength,
+            sha256: sha256(raw),
+          }
+        };
+      }));
+      fileResults.push(...chunkResults);
+    }
+
+    for (const result of fileResults) {
+      if ('error' in result) {
+        client.warnings.push(result.error);
+      } else if ('success' in result && result.success) {
+        entries[result.archivePath] = result.raw;
+        manifestFiles.push(result.manifestEntry);
       }
-
-      const archivePath = `files/${file.scope}${toArchiveSafePath(file.path)}`;
-      entries[archivePath] = raw;
-
-      manifestFiles.push({
-        scope: file.scope,
-        kind: file.kind,
-        sourceAbsPath: path.resolve(file.path),
-        archivePath,
-        size: raw.byteLength,
-        sha256: sha256(raw),
-      });
     }
 
     const status = manifestFiles.length === 0
