@@ -1,0 +1,3 @@
+## 2025-05-18 - Parallelizing array of async operations
+**Learning:** In the `diffCommand`, iterating over async I/O operations (like adapter reads) sequentially using `for...of` loops introduces a significant performance bottleneck. While `Promise.all` inherently preserves input array order, ensuring error handling within the `.map` callback prevents early termination of the promise aggregate.
+**Action:** Always favor mapping to a discriminated union over sequential awaits for non-dependent async I/O tasks, catching errors locally inside the mapped function to allow parallel success states to survive alongside failed attempts.
