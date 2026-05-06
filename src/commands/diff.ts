@@ -24,16 +24,16 @@ export async function diffCommand(clientId?: string, options?: { json?: boolean 
   const clientDiffs: ClientDiff[] = [];
   const readErrors: Array<{ id: string; message: string }> = [];
 
-  for (const id of targetClientIds) {
+  const readPromises = targetClientIds.map(async (id) => {
     const adapter = adapters[id];
     if (!adapter) {
-      readErrors.push({ id, message: `Unknown client: ${id}` });
-      continue;
+      return { type: "error" as const, id, message: `Unknown client: ${id}` };
     }
 
     try {
       const data = await adapter.read();
-      clientDiffs.push({
+      return {
+        type: "success" as const,
         id,
         name: adapter.name,
         domains: {
@@ -41,9 +41,26 @@ export async function diffCommand(clientId?: string, options?: { json?: boolean 
           agents: compareDomain(config.resources.agents || {}, data.agents || {}),
           skills: compareDomain(config.resources.skills || {}, data.skills || {}),
         },
-      });
+      };
     } catch (error: any) {
-      readErrors.push({ id, message: error?.message || String(error) });
+      return { type: "error" as const, id, message: error?.message || String(error) };
+    }
+  });
+
+  const results = await Promise.all(readPromises);
+
+  for (const result of results) {
+    if (result.type === "success") {
+      clientDiffs.push({
+        id: result.id,
+        name: result.name,
+        domains: result.domains,
+      });
+    } else {
+      readErrors.push({
+        id: result.id,
+        message: result.message,
+      });
     }
   }
 
