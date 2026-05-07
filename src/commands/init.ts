@@ -83,13 +83,29 @@ export async function initCommand(options: {
     ui.dim("Detecting clients...");
     ui.dim("(Looking for client config files on disk, not running processes.)");
     const spin = ui.spinner("Scanning for installed clients...");
-    for (const [id, adapter] of Object.entries(adapters)) {
-      const detected = await adapter.detect();
+
+    // Performance optimization: detect all adapters in parallel
+    const detectResults = await Promise.all(
+      Object.entries(adapters).map(async ([id, adapter]) => {
+        try {
+          const detected = await adapter.detect();
+          if (detected) {
+            spin.text(`Found ${adapter.name}`);
+          }
+          return { id, adapter, detected };
+        } catch (error) {
+          // Do not swallow errors on critical initialization; let them propagate
+          throw error;
+        }
+      })
+    );
+
+    for (const { id, detected } of detectResults) {
       if (detected) {
-        spin.text(`Found ${adapter.name}`);
         newConfig.clients[id] = { enabled: true };
       }
     }
+
     const clientCount = Object.keys(newConfig.clients).length;
     if (clientCount > 0) {
       spin.succeed(`Detected ${clientCount} client${clientCount !== 1 ? "s" : ""}`);

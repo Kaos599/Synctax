@@ -1,0 +1,3 @@
+## 2024-05-07 - Preserving Real-Time UI Feedback in Parallel Refactors
+**Learning:** When refactoring a sequential loop (that updates a CLI spinner) into a parallel `Promise.all` map, moving the UI update to a subsequent loop after the `Promise.all` degrades the user experience by batching the feedback. The spinner text updates should occur *inside* the mapped async function immediately after the awaited operation to maintain real-time visibility.
+**Action:** When parallelizing loops with UI side-effects, keep the side-effect (e.g., `spin.text(...)`) inside the `Promise.all` map callback. Also, ensure temporary codebase exploration scripts (like Python or bash helpers) are deleted before running final tests and submitting PRs.
