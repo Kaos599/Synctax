@@ -1,0 +1,3 @@
+## 2024-05-10 - CLI Data Aggregation Bottlenecks
+**Learning:** In standard node scripts without event loops filled by inbound requests, sequentially awaiting heavy I/O operations (like file discovery or config reads) across multiple clients scales poorly as the number of enabled clients grows. The `backupCommand` bottlenecked by processing adapters sequentially.
+**Action:** When aggregating results across multiple adapter domains (e.g., in sync loops, backups, or status reporting), refactor loops into `.map(async ...)` wrappers resolving simultaneously via `Promise.all` to take advantage of native async execution, ensuring iteration order preservation logic is still applied if result sorting is required for UI stability.

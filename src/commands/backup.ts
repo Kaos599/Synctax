@@ -95,16 +95,21 @@ export async function backupCommand(options: BackupCommandOptions = {}) {
     files: Array<{ scope: "global" | "user" | "project" | "local"; kind: any; path: string }>;
   }> = [];
 
-  for (const id of uniqueSelected) {
+  const discoveryPromises = uniqueSelected.map(async (id) => {
     const adapter = adapters[id];
-    if (!adapter) continue;
+    if (!adapter) return null;
     const discovery = await discoverBackupFilesForAdapter(adapter, id, process.cwd());
-    clientInputs.push({
+    return {
       id,
       name: adapter.name,
       warnings: [...discovery.warnings],
       files: discovery.files.map((f) => ({ scope: f.scope, kind: f.kind, path: f.path })),
-    });
+    };
+  });
+
+  const discoveryResults = await Promise.all(discoveryPromises);
+  for (const res of discoveryResults) {
+    if (res) clientInputs.push(res);
   }
 
   const createdAt = new Date().toISOString();
