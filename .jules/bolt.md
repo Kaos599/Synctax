@@ -1,0 +1,3 @@
+## 2023-10-27 - Optimize PATH checking
+**Learning:** Sequential `for...of` loops checking if a command exists on the `PATH` using `fs.access` block on disk I/O for each directory in the path. This creates significant latency when evaluating many directories, especially if the command isn't found early or at all.
+**Action:** When searching `PATH` or checking multiple candidate files, collect all candidates into an array and map them with `fs.access` via `Promise.all` for parallel resolution, returning `true` if any resolve successfully. This transforms an O(N) waiting process into an O(1) concurrent one.
