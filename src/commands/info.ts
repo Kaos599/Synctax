@@ -5,6 +5,7 @@ import { getVersion } from "../version.js";
 import { access } from "fs/promises";
 import { constants } from "fs";
 import path from "path";
+import { commandExistsOnPath } from "../fs-utils.js";
 import { resolveClientId } from "../client-id.js";
 
 const ALL_DRIFT_DOMAINS = ["mcps", "agents", "skills"] as const;
@@ -95,57 +96,6 @@ function getRequiredEnvVarName(value: string): string | null {
     return wrapped || null;
   }
   return raw;
-}
-
-async function commandExistsOnPath(commandName: string): Promise<boolean> {
-  const trimmed = commandName.trim();
-  if (!trimmed) return false;
-
-  const hasPathSeparator = trimmed.includes("/") || trimmed.includes("\\");
-  if (hasPathSeparator) {
-    try {
-      await access(trimmed, constants.X_OK);
-      return true;
-    } catch {
-      return false;
-    }
-  }
-
-  const pathEnv = process.env.PATH ?? "";
-  const pathSegments = pathEnv.split(path.delimiter).filter(Boolean);
-
-  if (process.platform === "win32") {
-    const pathext = (process.env.PATHEXT ?? ".COM;.EXE;.BAT;.CMD")
-      .split(";")
-      .map((ext) => ext.toLowerCase());
-    const candidateHasExt = /\.[^\\/]+$/.test(trimmed);
-    const candidates = candidateHasExt ? [trimmed] : pathext.map((ext) => `${trimmed}${ext}`);
-
-    for (const segment of pathSegments) {
-      for (const candidate of candidates) {
-        const fullPath = path.join(segment, candidate);
-        try {
-          await access(fullPath, constants.F_OK);
-          return true;
-        } catch {
-          // Continue scanning PATH
-        }
-      }
-    }
-    return false;
-  }
-
-  for (const segment of pathSegments) {
-    const fullPath = path.join(segment, trimmed);
-    try {
-      await access(fullPath, constants.X_OK);
-      return true;
-    } catch {
-      // Continue scanning PATH
-    }
-  }
-
-  return false;
 }
 
 export async function listCommand() {
