@@ -77,16 +77,18 @@ describe("atomic write security — no predictable temp names", () => {
 describe("commandExistsOnPath", () => {
   let savedPath: string | undefined;
   let savedPatheExt: string | undefined;
-  let savedPlatform: string;
 
   beforeEach(() => {
     savedPath = process.env.PATH;
     savedPatheExt = process.env.PATHEXT;
-    savedPlatform = process.platform;
   });
 
   afterEach(() => {
-    process.env.PATH = savedPath;
+    if (savedPath !== undefined) {
+      process.env.PATH = savedPath;
+    } else {
+      delete process.env.PATH;
+    }
     if (savedPatheExt !== undefined) {
       process.env.PATHEXT = savedPatheExt;
     } else {

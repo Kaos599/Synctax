@@ -19,7 +19,7 @@ export async function commandExistsOnPath(command: string): Promise<boolean> {
   const trimmed = command.trim();
   if (!trimmed) return false;
 
-  if (trimmed.includes(path.sep) || path.isAbsolute(trimmed)) {
+  if (/[\\/]/.test(trimmed) || path.isAbsolute(trimmed)) {
     return isExecutableFile(trimmed);
   }
 

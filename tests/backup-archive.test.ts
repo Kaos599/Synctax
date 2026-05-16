@@ -125,12 +125,12 @@ describe("bounded concurrency — file reads execute in parallel", () => {
     let maxConcurrentReads = 0;
     const originalReadFile = fs.readFile;
 
-    vi.spyOn(fs, "readFile").mockImplementation(async (filePath: any, ...rest: any[]) => {
+    vi.spyOn(fs, "readFile").mockImplementation(async (...args: Parameters<typeof fs.readFile>) => {
       concurrentReads++;
       maxConcurrentReads = Math.max(maxConcurrentReads, concurrentReads);
       await new Promise((r) => setTimeout(r, delayMs));
       concurrentReads--;
-      return originalReadFile(filePath, ...rest);
+      return originalReadFile(...args);
     });
 
     const outputPath = path.join(tmpDir, "concurrent.zip");
@@ -167,12 +167,12 @@ describe("bounded concurrency — file reads execute in parallel", () => {
     let maxConcurrentReads = 0;
     const originalReadFile = fs.readFile;
 
-    vi.spyOn(fs, "readFile").mockImplementation(async (filePath: any, ...rest: any[]) => {
+    vi.spyOn(fs, "readFile").mockImplementation(async (...args: Parameters<typeof fs.readFile>) => {
       concurrentReads++;
       maxConcurrentReads = Math.max(maxConcurrentReads, concurrentReads);
       await new Promise((r) => setTimeout(r, delayMs));
       concurrentReads--;
-      return originalReadFile(filePath, ...rest);
+      return originalReadFile(...args);
     });
 
     const result = await writePerClientBackups({

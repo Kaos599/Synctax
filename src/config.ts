@@ -70,18 +70,25 @@ export class ConfigManager {
       .reverse();
 
     const toDelete = backups.slice(maxBackups);
-    const deleteResults = await Promise.all(
-      toDelete.map(async (file) => {
-        try {
-          await fs.unlink(path.join(dir, file));
-          return file;
-        } catch {
-          return null;
-        }
-      }),
-    );
+    const deleted: string[] = [];
+    const chunkSize = 8;
 
-    return deleteResults.filter((f): f is string => f !== null);
+    for (let i = 0; i < toDelete.length; i += chunkSize) {
+      const chunk = toDelete.slice(i, i + chunkSize);
+      const chunkResults = await Promise.all(
+        chunk.map(async (file) => {
+          try {
+            await fs.unlink(path.join(dir, file));
+            return file;
+          } catch {
+            return null;
+          }
+        }),
+      );
+      deleted.push(...chunkResults.filter((f): f is string => f !== null));
+    }
+
+    return deleted;
   }
 
   async getTheme(): Promise<string> {
