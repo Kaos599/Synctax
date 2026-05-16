@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import fs from "fs/promises";
 import path from "path";
 import os from "os";
@@ -53,5 +53,23 @@ describe("atomicWriteSecure", () => {
     await atomicWriteSecure(target, "SECRET=value");
     const stat = await fs.stat(target);
     expect(stat.mode & 0o777).toBe(0o600);
+  });
+});
+
+describe("atomic write security — no predictable temp names", () => {
+  it("atomicWriteFile does NOT call Math.random for temp suffix", async () => {
+    const randomSpy = vi.spyOn(Math, "random");
+    const target = path.join(tmpDir, "secure-test.json");
+    await atomicWriteFile(target, '{"secure":true}');
+    expect(randomSpy).not.toHaveBeenCalled();
+    randomSpy.mockRestore();
+  });
+
+  it("atomicWriteSecure does NOT call Math.random for temp suffix", async () => {
+    const randomSpy = vi.spyOn(Math, "random");
+    const target = path.join(tmpDir, "secure-test.env");
+    await atomicWriteSecure(target, "SECRET=value");
+    expect(randomSpy).not.toHaveBeenCalled();
+    randomSpy.mockRestore();
   });
 });
