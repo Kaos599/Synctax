@@ -95,15 +95,23 @@ export async function backupCommand(options: BackupCommandOptions = {}) {
     files: Array<{ scope: "global" | "user" | "project" | "local"; kind: any; path: string }>;
   }> = [];
 
-  for (const id of uniqueSelected) {
-    const adapter = adapters[id];
+  const discoveryResults = await Promise.all(
+    uniqueSelected.map(async (id) => {
+      const adapter = adapters[id];
+      if (!adapter) return null;
+      return { id, discovery: await discoverBackupFilesForAdapter(adapter, id, process.cwd()) };
+    }),
+  );
+
+  for (const result of discoveryResults) {
+    if (!result) continue;
+    const adapter = adapters[result.id];
     if (!adapter) continue;
-    const discovery = await discoverBackupFilesForAdapter(adapter, id, process.cwd());
     clientInputs.push({
-      id,
+      id: result.id,
       name: adapter.name,
-      warnings: [...discovery.warnings],
-      files: discovery.files.map((f) => ({ scope: f.scope, kind: f.kind, path: f.path })),
+      warnings: [...result.discovery.warnings],
+      files: result.discovery.files.map((f) => ({ scope: f.scope, kind: f.kind, path: f.path })),
     });
   }
 

@@ -71,14 +71,21 @@ export class ConfigManager {
 
     const toDelete = backups.slice(maxBackups);
     const deleted: string[] = [];
+    const chunkSize = 8;
 
-    for (const file of toDelete) {
-      try {
-        await fs.unlink(path.join(dir, file));
-        deleted.push(file);
-      } catch {
-        // Ignore individual delete failures
-      }
+    for (let i = 0; i < toDelete.length; i += chunkSize) {
+      const chunk = toDelete.slice(i, i + chunkSize);
+      const chunkResults = await Promise.all(
+        chunk.map(async (file) => {
+          try {
+            await fs.unlink(path.join(dir, file));
+            return file;
+          } catch {
+            return null;
+          }
+        }),
+      );
+      deleted.push(...chunkResults.filter((f): f is string => f !== null));
     }
 
     return deleted;

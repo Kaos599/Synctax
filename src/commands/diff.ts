@@ -24,27 +24,37 @@ export async function diffCommand(clientId?: string, options?: { json?: boolean 
   const clientDiffs: ClientDiff[] = [];
   const readErrors: Array<{ id: string; message: string }> = [];
 
-  for (const id of targetClientIds) {
-    const adapter = adapters[id];
-    if (!adapter) {
-      readErrors.push({ id, message: `Unknown client: ${id}` });
+  const readResults = await Promise.all(
+    targetClientIds.map(async (id) => {
+      const adapter = adapters[id];
+      if (!adapter) {
+        return { id, error: `Unknown client: ${id}`, data: null, adapter: null };
+      }
+      try {
+        const data = await adapter.read();
+        return { id, error: null, data, adapter };
+      } catch (error: any) {
+        return { id, error: error?.message || String(error), data: null, adapter };
+      }
+    }),
+  );
+
+  for (const result of readResults) {
+    if (result.error) {
+      readErrors.push({ id: result.id, message: result.error });
       continue;
     }
+    if (!result.adapter || !result.data) continue;
 
-    try {
-      const data = await adapter.read();
-      clientDiffs.push({
-        id,
-        name: adapter.name,
-        domains: {
-          mcps: compareDomain(config.resources.mcps || {}, data.mcps || {}),
-          agents: compareDomain(config.resources.agents || {}, data.agents || {}),
-          skills: compareDomain(config.resources.skills || {}, data.skills || {}),
-        },
-      });
-    } catch (error: any) {
-      readErrors.push({ id, message: error?.message || String(error) });
-    }
+    clientDiffs.push({
+      id: result.id,
+      name: result.adapter.name,
+      domains: {
+        mcps: compareDomain(config.resources.mcps || {}, result.data.mcps || {}),
+        agents: compareDomain(config.resources.agents || {}, result.data.agents || {}),
+        skills: compareDomain(config.resources.skills || {}, result.data.skills || {}),
+      },
+    });
   }
 
   clientDiffs.sort((a, b) => a.id.localeCompare(b.id));

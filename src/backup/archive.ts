@@ -1,6 +1,6 @@
 import fs from "fs/promises";
 import path from "path";
-import { createHash } from "crypto";
+import { createHash, randomBytes } from "crypto";
 import { strToU8, zipSync } from "fflate";
 import type {
   BackupLayout,
@@ -9,6 +9,31 @@ import type {
   ClientBackupResult,
   ClientManifestFileEntry,
 } from "./types.js";
+
+const DEFAULT_CONCURRENCY = 8;
+
+async function mapConcurrent<T, R>(
+  items: T[],
+  fn: (item: T) => Promise<R>,
+  concurrency: number = DEFAULT_CONCURRENCY,
+): Promise<R[]> {
+  const results: R[] = new Array(items.length);
+  let index = 0;
+
+  async function worker() {
+    while (true) {
+      const currentIndex = index++;
+      if (currentIndex >= items.length) return;
+      const item = items[currentIndex];
+      if (item === undefined) return;
+      results[currentIndex] = await fn(item);
+    }
+  }
+
+  const workers = Array.from({ length: Math.min(concurrency, items.length) }, () => worker());
+  await Promise.all(workers);
+  return results;
+}
 
 function toArchiveSafePath(absPath: string): string {
   const normalized = path.resolve(absPath).split(path.sep).join("/");
@@ -20,7 +45,7 @@ function sha256(input: Uint8Array): string {
 }
 
 async function writeFileAtomic(targetPath: string, data: Uint8Array | Buffer | string): Promise<void> {
-  const tempPath = `${targetPath}.tmp-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  const tempPath = `${targetPath}.tmp-${Date.now()}-${randomBytes(8).toString("hex")}`;
   await fs.writeFile(tempPath, data, { mode: 0o600 });
   await fs.rename(tempPath, targetPath);
 }
@@ -94,29 +119,39 @@ export async function writeBackupBundle(params: {
   const clientResults: ClientBackupResult[] = [];
 
   for (const client of params.clients) {
-    const manifestFiles: ClientManifestFileEntry[] = [];
-
-    for (const file of client.files) {
-      let raw: Uint8Array;
+    const fileReadResults = await mapConcurrent(client.files, async (file) => {
       try {
-        raw = new Uint8Array(await fs.readFile(file.path));
+        const raw = new Uint8Array(await fs.readFile(file.path));
+        return { file, raw, ok: true as const };
       } catch {
-        client.warnings.push(`Unreadable file skipped: ${file.path}`);
+        return { file, raw: null, ok: false as const };
+      }
+    });
+
+    const manifestFiles: ClientManifestFileEntry[] = [];
+    const warnings: string[] = [];
+
+    for (const result of fileReadResults) {
+      if (!result.ok) {
+        warnings.push(`Unreadable file skipped: ${result.file.path}`);
         continue;
       }
 
-      const archivePath = `clients/${client.id}/files/${file.scope}${toArchiveSafePath(file.path)}`;
+      const raw = result.raw!;
+      const archivePath = `clients/${client.id}/files/${result.file.scope}${toArchiveSafePath(result.file.path)}`;
       entries[archivePath] = raw;
 
       manifestFiles.push({
-        scope: file.scope,
-        kind: file.kind,
-        sourceAbsPath: path.resolve(file.path),
+        scope: result.file.scope,
+        kind: result.file.kind,
+        sourceAbsPath: path.resolve(result.file.path),
         archivePath,
         size: raw.byteLength,
         sha256: sha256(raw),
       });
     }
+
+    client.warnings.push(...warnings);
 
     const status = manifestFiles.length === 0
       ? (client.warnings.length > 0 ? "partial" : "skipped")
@@ -158,10 +193,13 @@ export async function writeBackupBundle(params: {
     })),
     totals: {
       clients: clientResults.length,
-      success: clientResults.filter((r) => r.status === "success").length,
-      partial: clientResults.filter((r) => r.status === "partial").length,
-      skipped: clientResults.filter((r) => r.status === "skipped").length,
-      failed: clientResults.filter((r) => r.status === "failed").length,
+      ...clientResults.reduce(
+        (acc, r) => {
+          acc[r.status] = (acc[r.status] || 0) + 1;
+          return acc;
+        },
+        { success: 0, partial: 0, skipped: 0, failed: 0 } as Record<string, number>,
+      ),
     },
   };
 
@@ -202,29 +240,40 @@ export async function writePerClientBackups(params: {
 
   for (const client of params.clients) {
     const entries: Record<string, Uint8Array> = {};
-    const manifestFiles: ClientManifestFileEntry[] = [];
 
-    for (const file of client.files) {
-      let raw: Uint8Array;
+    const fileReadResults = await mapConcurrent(client.files, async (file) => {
       try {
-        raw = new Uint8Array(await fs.readFile(file.path));
+        const raw = new Uint8Array(await fs.readFile(file.path));
+        return { file, raw, ok: true as const };
       } catch {
-        client.warnings.push(`Unreadable file skipped: ${file.path}`);
+        return { file, raw: null, ok: false as const };
+      }
+    });
+
+    const manifestFiles: ClientManifestFileEntry[] = [];
+    const warnings: string[] = [];
+
+    for (const result of fileReadResults) {
+      if (!result.ok) {
+        warnings.push(`Unreadable file skipped: ${result.file.path}`);
         continue;
       }
 
-      const archivePath = `files/${file.scope}${toArchiveSafePath(file.path)}`;
+      const raw = result.raw!;
+      const archivePath = `files/${result.file.scope}${toArchiveSafePath(result.file.path)}`;
       entries[archivePath] = raw;
 
       manifestFiles.push({
-        scope: file.scope,
-        kind: file.kind,
-        sourceAbsPath: path.resolve(file.path),
+        scope: result.file.scope,
+        kind: result.file.kind,
+        sourceAbsPath: path.resolve(result.file.path),
         archivePath,
         size: raw.byteLength,
         sha256: sha256(raw),
       });
     }
+
+    client.warnings.push(...warnings);
 
     const status = manifestFiles.length === 0
       ? (client.warnings.length > 0 ? "partial" : "skipped")
