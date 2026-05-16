@@ -10,6 +10,29 @@ import type {
   ClientManifestFileEntry,
 } from "./types.js";
 
+const DEFAULT_CONCURRENCY = 8;
+
+async function mapConcurrent<T, R>(
+  items: T[],
+  fn: (item: T) => Promise<R>,
+  concurrency: number = DEFAULT_CONCURRENCY,
+): Promise<R[]> {
+  const results: R[] = new Array(items.length);
+  let index = 0;
+
+  async function worker() {
+    while (true) {
+      const currentIndex = index++;
+      if (currentIndex >= items.length) return;
+      results[currentIndex] = await fn(items[currentIndex]);
+    }
+  }
+
+  const workers = Array.from({ length: Math.min(concurrency, items.length) }, () => worker());
+  await Promise.all(workers);
+  return results;
+}
+
 function toArchiveSafePath(absPath: string): string {
   const normalized = path.resolve(absPath).split(path.sep).join("/");
   return normalized.replace(/^[A-Za-z]:/, "");
@@ -94,29 +117,39 @@ export async function writeBackupBundle(params: {
   const clientResults: ClientBackupResult[] = [];
 
   for (const client of params.clients) {
-    const manifestFiles: ClientManifestFileEntry[] = [];
-
-    for (const file of client.files) {
-      let raw: Uint8Array;
+    const fileReadResults = await mapConcurrent(client.files, async (file) => {
       try {
-        raw = new Uint8Array(await fs.readFile(file.path));
+        const raw = new Uint8Array(await fs.readFile(file.path));
+        return { file, raw, ok: true as const };
       } catch {
-        client.warnings.push(`Unreadable file skipped: ${file.path}`);
+        return { file, raw: null, ok: false as const };
+      }
+    });
+
+    const manifestFiles: ClientManifestFileEntry[] = [];
+    const warnings: string[] = [];
+
+    for (const result of fileReadResults) {
+      if (!result.ok) {
+        warnings.push(`Unreadable file skipped: ${result.file.path}`);
         continue;
       }
 
-      const archivePath = `clients/${client.id}/files/${file.scope}${toArchiveSafePath(file.path)}`;
+      const raw = result.raw!;
+      const archivePath = `clients/${client.id}/files/${result.file.scope}${toArchiveSafePath(result.file.path)}`;
       entries[archivePath] = raw;
 
       manifestFiles.push({
-        scope: file.scope,
-        kind: file.kind,
-        sourceAbsPath: path.resolve(file.path),
+        scope: result.file.scope,
+        kind: result.file.kind,
+        sourceAbsPath: path.resolve(result.file.path),
         archivePath,
         size: raw.byteLength,
         sha256: sha256(raw),
       });
     }
+
+    client.warnings.push(...warnings);
 
     const status = manifestFiles.length === 0
       ? (client.warnings.length > 0 ? "partial" : "skipped")
@@ -202,29 +235,40 @@ export async function writePerClientBackups(params: {
 
   for (const client of params.clients) {
     const entries: Record<string, Uint8Array> = {};
-    const manifestFiles: ClientManifestFileEntry[] = [];
 
-    for (const file of client.files) {
-      let raw: Uint8Array;
+    const fileReadResults = await mapConcurrent(client.files, async (file) => {
       try {
-        raw = new Uint8Array(await fs.readFile(file.path));
+        const raw = new Uint8Array(await fs.readFile(file.path));
+        return { file, raw, ok: true as const };
       } catch {
-        client.warnings.push(`Unreadable file skipped: ${file.path}`);
+        return { file, raw: null, ok: false as const };
+      }
+    });
+
+    const manifestFiles: ClientManifestFileEntry[] = [];
+    const warnings: string[] = [];
+
+    for (const result of fileReadResults) {
+      if (!result.ok) {
+        warnings.push(`Unreadable file skipped: ${result.file.path}`);
         continue;
       }
 
-      const archivePath = `files/${file.scope}${toArchiveSafePath(file.path)}`;
+      const raw = result.raw!;
+      const archivePath = `files/${result.file.scope}${toArchiveSafePath(result.file.path)}`;
       entries[archivePath] = raw;
 
       manifestFiles.push({
-        scope: file.scope,
-        kind: file.kind,
-        sourceAbsPath: path.resolve(file.path),
+        scope: result.file.scope,
+        kind: result.file.kind,
+        sourceAbsPath: path.resolve(result.file.path),
         archivePath,
         size: raw.byteLength,
         sha256: sha256(raw),
       });
     }
+
+    client.warnings.push(...warnings);
 
     const status = manifestFiles.length === 0
       ? (client.warnings.length > 0 ? "partial" : "skipped")
