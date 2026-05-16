@@ -13,6 +13,7 @@ beforeEach(async () => {
 
 afterEach(async () => {
   await fs.rm(tmpDir, { recursive: true, force: true });
+  vi.restoreAllMocks();
 });
 
 describe("atomicWriteFile", () => {
@@ -62,7 +63,6 @@ describe("atomic write security — no predictable temp names", () => {
     const target = path.join(tmpDir, "secure-test.json");
     await atomicWriteFile(target, '{"secure":true}');
     expect(randomSpy).not.toHaveBeenCalled();
-    randomSpy.mockRestore();
   });
 
   it("atomicWriteSecure does NOT call Math.random for temp suffix", async () => {
@@ -70,7 +70,6 @@ describe("atomic write security — no predictable temp names", () => {
     const target = path.join(tmpDir, "secure-test.env");
     await atomicWriteSecure(target, "SECRET=value");
     expect(randomSpy).not.toHaveBeenCalled();
-    randomSpy.mockRestore();
   });
 });
 

@@ -1,10 +1,11 @@
 import fs from "fs/promises";
+import { constants } from "fs";
 import path from "path";
 import crypto from "crypto";
 
 async function isExecutableFile(filePath: string): Promise<boolean> {
   try {
-    await fs.access(filePath, fs.constants.X_OK);
+    await fs.access(filePath, constants.X_OK);
     return true;
   } catch {
     return false;
