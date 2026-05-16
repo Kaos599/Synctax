@@ -24,7 +24,9 @@ async function mapConcurrent<T, R>(
     while (true) {
       const currentIndex = index++;
       if (currentIndex >= items.length) return;
-      results[currentIndex] = await fn(items[currentIndex]);
+      const item = items[currentIndex];
+      if (item === undefined) return;
+      results[currentIndex] = await fn(item);
     }
   }
 

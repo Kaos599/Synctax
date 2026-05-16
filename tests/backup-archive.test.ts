@@ -41,9 +41,9 @@ describe("writeBackupBundle", () => {
 
     expect(result.layout).toBe("bundle");
     expect(result.clientResults).toHaveLength(1);
-    expect(result.clientResults[0].fileCount).toBe(2);
+    expect(result.clientResults[0]!.fileCount).toBe(2);
     expect(result.artifacts).toHaveLength(1);
-    expect(result.artifacts[0].path).toBe(outputPath);
+    expect(result.artifacts[0]!.path).toBe(outputPath);
   });
 
   it("handles unreadable files gracefully", async () => {
@@ -68,9 +68,9 @@ describe("writeBackupBundle", () => {
       ],
     });
 
-    expect(result.clientResults[0].status).toBe("partial");
-    expect(result.clientResults[0].fileCount).toBe(1);
-    expect(result.clientResults[0].warnings).toHaveLength(1);
+    expect(result.clientResults[0]!.status).toBe("partial");
+    expect(result.clientResults[0]!.fileCount).toBe(1);
+    expect(result.clientResults[0]!.warnings).toHaveLength(1);
   });
 });
 
@@ -142,7 +142,7 @@ describe("bounded concurrency — file reads execute in parallel", () => {
       ],
     });
 
-    expect(result.clientResults[0].fileCount).toBe(fileCount);
+    expect(result.clientResults[0]!.fileCount).toBe(fileCount);
     expect(maxConcurrentReads).toBeGreaterThan(1);
   });
 
@@ -185,8 +185,8 @@ describe("bounded concurrency — file reads execute in parallel", () => {
     });
 
     expect(result.clientResults).toHaveLength(2);
-    expect(result.clientResults[0].fileCount).toBe(3);
-    expect(result.clientResults[1].fileCount).toBe(3);
+    expect(result.clientResults[0]!.fileCount).toBe(3);
+    expect(result.clientResults[1]!.fileCount).toBe(3);
     expect(maxConcurrentReads).toBeGreaterThan(1);
   });
 });
