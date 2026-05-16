@@ -3,7 +3,7 @@ import fs from "fs/promises";
 import path from "path";
 import os from "os";
 
-import { atomicWriteFile, atomicWriteSecure } from "../src/fs-utils.js";
+import { atomicWriteFile, atomicWriteSecure, commandExistsOnPath } from "../src/fs-utils.js";
 
 let tmpDir: string;
 
@@ -71,5 +71,68 @@ describe("atomic write security — no predictable temp names", () => {
     await atomicWriteSecure(target, "SECRET=value");
     expect(randomSpy).not.toHaveBeenCalled();
     randomSpy.mockRestore();
+  });
+});
+
+describe("commandExistsOnPath", () => {
+  let savedPath: string | undefined;
+  let savedPatheExt: string | undefined;
+  let savedPlatform: string;
+
+  beforeEach(() => {
+    savedPath = process.env.PATH;
+    savedPatheExt = process.env.PATHEXT;
+    savedPlatform = process.platform;
+  });
+
+  afterEach(() => {
+    process.env.PATH = savedPath;
+    if (savedPatheExt !== undefined) {
+      process.env.PATHEXT = savedPatheExt;
+    } else {
+      delete process.env.PATHEXT;
+    }
+  });
+
+  it("returns false for empty string", async () => {
+    expect(await commandExistsOnPath("")).toBe(false);
+  });
+
+  it("returns false for whitespace-only string", async () => {
+    expect(await commandExistsOnPath("   ")).toBe(false);
+  });
+
+  it("returns true for absolute path to executable file", async () => {
+    const exePath = path.join(tmpDir, "my-cmd");
+    await fs.writeFile(exePath, "#!/bin/sh\necho hi", { mode: 0o755 });
+    expect(await commandExistsOnPath(exePath)).toBe(true);
+  });
+
+  it.skipIf(process.platform === "win32")("returns false for absolute path to non-executable file", async () => {
+    const filePath = path.join(tmpDir, "not-executable");
+    await fs.writeFile(filePath, "read-only", { mode: 0o444 });
+    expect(await commandExistsOnPath(filePath)).toBe(false);
+  });
+
+  it("returns false for absolute path to nonexistent file", async () => {
+    expect(await commandExistsOnPath(path.join(tmpDir, "does-not-exist"))).toBe(false);
+  });
+
+  it("finds command on PATH (POSIX)", async () => {
+    const binDir = path.join(tmpDir, "bin");
+    await fs.mkdir(binDir);
+    await fs.writeFile(path.join(binDir, "test-cmd"), "#!/bin/sh\necho hi", { mode: 0o755 });
+    process.env.PATH = binDir;
+    expect(await commandExistsOnPath("test-cmd")).toBe(true);
+  });
+
+  it("returns false when command not on PATH", async () => {
+    process.env.PATH = tmpDir;
+    expect(await commandExistsOnPath("nonexistent-command-xyz")).toBe(false);
+  });
+
+  it("returns false when PATH is empty", async () => {
+    process.env.PATH = "";
+    expect(await commandExistsOnPath("anything")).toBe(false);
   });
 });

@@ -1,73 +1,8 @@
-import fs from "fs/promises";
-import { constants as fsConstants } from "fs";
-import path from "path";
 import * as ui from "../ui/index.js";
 import { adapters } from "../adapters/index.js";
 import { getVersion } from "../version.js";
 import { getConfigManager } from "./_shared.js";
-
-async function isExecutableFile(filePath: string): Promise<boolean> {
-  try {
-    await fs.access(filePath, fsConstants.X_OK);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-async function commandExistsOnPath(command: string): Promise<boolean> {
-  if (!command) return false;
-
-  if (command.includes(path.sep) || path.isAbsolute(command)) {
-    return isExecutableFile(command);
-  }
-
-  const pathValue = process.env.PATH || "";
-  const pathParts = pathValue.split(path.delimiter).filter(Boolean);
-  const isWindows = process.platform === "win32";
-  const extensions = isWindows
-    ? (process.env.PATHEXT || ".EXE;.CMD;.BAT;.COM").split(";")
-    : [""];
-  const hasKnownWindowsExtension =
-    isWindows &&
-    extensions.some((ext) => {
-      const normalizedExt = ext.startsWith(".") ? ext : `.${ext}`;
-      return Boolean(normalizedExt) && command.toLowerCase().endsWith(normalizedExt.toLowerCase());
-    });
-
-  for (const dir of pathParts) {
-    if (isWindows) {
-      const commandAsIs = path.join(dir, command);
-      if (await isExecutableFile(commandAsIs)) {
-        return true;
-      }
-
-      if (hasKnownWindowsExtension) {
-        continue;
-      }
-
-      for (const ext of extensions) {
-        const normalizedExt = ext.startsWith(".") ? ext : `.${ext}`;
-        if (!normalizedExt) {
-          continue;
-        }
-
-        const candidate = path.join(dir, `${command}${normalizedExt}`);
-        if (await isExecutableFile(candidate)) {
-          return true;
-        }
-      }
-      continue;
-    }
-
-    const candidate = path.join(dir, command);
-    if (await isExecutableFile(candidate)) {
-      return true;
-    }
-  }
-
-  return false;
-}
+import { commandExistsOnPath } from "../fs-utils.js";
 
 export async function validateCommand(options?: { strict?: boolean }): Promise<boolean> {
   const timer = ui.startTimer();
