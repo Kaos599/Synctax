@@ -70,18 +70,18 @@ export class ConfigManager {
       .reverse();
 
     const toDelete = backups.slice(maxBackups);
-    const deleted: string[] = [];
+    const deleteResults = await Promise.all(
+      toDelete.map(async (file) => {
+        try {
+          await fs.unlink(path.join(dir, file));
+          return file;
+        } catch {
+          return null;
+        }
+      }),
+    );
 
-    for (const file of toDelete) {
-      try {
-        await fs.unlink(path.join(dir, file));
-        deleted.push(file);
-      } catch {
-        // Ignore individual delete failures
-      }
-    }
-
-    return deleted;
+    return deleteResults.filter((f): f is string => f !== null);
   }
 
   async getTheme(): Promise<string> {
