@@ -191,10 +191,13 @@ export async function writeBackupBundle(params: {
     })),
     totals: {
       clients: clientResults.length,
-      success: clientResults.filter((r) => r.status === "success").length,
-      partial: clientResults.filter((r) => r.status === "partial").length,
-      skipped: clientResults.filter((r) => r.status === "skipped").length,
-      failed: clientResults.filter((r) => r.status === "failed").length,
+      ...clientResults.reduce(
+        (acc, r) => {
+          acc[r.status] = (acc[r.status] || 0) + 1;
+          return acc;
+        },
+        { success: 0, partial: 0, skipped: 0, failed: 0 } as Record<string, number>,
+      ),
     },
   };
 
