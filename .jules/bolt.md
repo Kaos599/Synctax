@@ -1,0 +1,3 @@
+## 2024-05-18 - Single-Pass Aggregation with Reduce Over Filter
+**Learning:** When aggregating array items by specific fields (like multiple status strings in `src/backup/archive.ts`), using `Array.prototype.filter` multiple times leads to O(N * M) passes. Refactoring this into a single `Array.prototype.reduce` converts it into an O(N) operation.
+**Action:** When computing aggregates from an array, avoid chaining multiple `.filter().length` calls. Instead, use a single `.reduce()` or `for...of` loop to traverse the array once and increment the necessary counters, but be careful to strictly validate properties to avoid prototype pollution or assigning to the wrong key.
