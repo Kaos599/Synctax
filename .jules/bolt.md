@@ -1,0 +1,3 @@
+## 2024-05-21 - [Bottleneck] O(N) redundant iterations in backup totals calculation
+**Learning:** In `src/backup/archive.ts`, the code is redundantly filtering over `clientResults` multiple times to generate counts, allocating new arrays instead of doing it in O(N). The project has explicit instructions in memory: "When aggregating status counts or totals from result arrays (e.g., for backup manifests), a single-pass `.reduce()` implementation is preferred over multiple `.filter().length` calls to achieve O(N) complexity and minimize array allocations."
+**Action:** Use single-pass `.reduce()` correctly to achieve O(N) complexity and minimize array allocations, and explicitly validate dynamic keys when building the object map.
