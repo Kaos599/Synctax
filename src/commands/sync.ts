@@ -529,7 +529,7 @@ async function syncCommandInner(
     });
 
     if (successfulClients.length > 0) {
-      const failedCount = results.filter((result) => !result.ok).length;
+      const failedCount = results.length - successfulClients.length;
       ui.warn(`Write failed on ${failedCount} client${failedCount !== 1 ? "s" : ""}. Starting rollback for ${successfulClients.length} client${successfulClients.length !== 1 ? "s" : ""}...`);
     }
 
@@ -595,8 +595,15 @@ async function syncCommandInner(
     process.exitCode = 1;
   }
 
-  const successCount = results.filter((r) => r.ok).length;
-  const failCount = results.filter((r) => !r.ok).length;
+  // ⚡ Bolt Optimization: Aggregating sync statuses using a single-pass loop
+  // instead of multiple filter().length iterations, reducing time complexity from O(2N) to O(N).
+  let successCount = 0;
+  let failCount = 0;
+  for (const r of results) {
+    if (r.ok) successCount++;
+    else failCount++;
+  }
+
   const summaryParts: string[] = [`${successCount} client${successCount !== 1 ? "s" : ""} synced`];
   if (failCount > 0) summaryParts.push(`${failCount} failed`);
   const phaseTimings = [

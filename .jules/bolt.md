@@ -1,0 +1,3 @@
+## 2024-05-22 - O(N) optimizations for array counting
+**Learning:** Found several places where the codebase was using multiple `.filter(condition).length` calls over arrays to aggregate counts (e.g. for backup or sync result status codes). This unnecessarily traverses the array multiple times, creating intermediate array allocations which wastes memory and processing time.
+**Action:** Replaced these `O(K*N)` array filtering structures with a single-pass `reduce()` or `for...of` loop. This avoids intermediate garbage collection pressure and makes the time complexity `O(N)`. I should always look for these patterns when parsing aggregated lists or config arrays.
